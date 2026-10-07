@@ -25,11 +25,12 @@
  *   classes('sister') every class whose name has "sister" in it, with how many objects each has
  *   snap('Sister')    remember the objects of those classes; do one thing in the game, then
  *   diff()            print which words of them changed since (and remember the new values)
+ *   fields('SpawnedGatherer')  every property of a class (and the classes it extends) and where it sits
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.4';
+const PROBE_VERSION = '2026-10-07.5';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -235,7 +236,8 @@ const DECLARED = {
     'AwardAchievement', 'PlayerPickedUpLog', 'WeaponUpgraded'],
 };
 
-const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null };
+const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null, propertyOffset: null,
+  superOffset: undefined };
 
 function objectAt(index) {
   const data = pointerAt(objects.table);
@@ -411,6 +413,9 @@ function learnClass(className, cls) {
     return null;
   }
   log(`${className}: property offsets at property+${hex(offset.at)} (${offset.distinct} distinct of ${offset.of})`);
+  if (objects.propertyOffset === null) {
+    objects.propertyOffset = offset.at;
+  }
   const properties = new Map();
   for (const field of layout.chain) {
     const kind = classNameOf(field) || '';
@@ -623,6 +628,134 @@ globalThis.classes = function (pattern) {
   return `${counts.size} classes`;
 };
 
+// The class a class extends: the word in a class that points at another class, the same word in every class,
+// leading up to Object. Voted on across the classes already learned.
+function findSuperOffset() {
+  const known = [...found.classes.values()];
+  for (let at = 0x20; at <= 0x100; at += 4) {
+    if (at === objects.classOffset) {
+      continue;
+    }
+    const reachesObject = known.filter((cls) => {
+      let current = cls;
+      for (let step = 0; step < 30 && current !== null && !current.isNull(); step++) {
+        if (nameOfObject(current) === 'Object') {
+          return step > 0;
+        }
+        const next = pointerAt(current.add(at));
+        if (next === null || next.isNull() || classNameOf(next) !== 'Class') {
+          return false;
+        }
+        current = next;
+      }
+      return false;
+    }).length;
+    if (known.length > 0 && reachesObject === known.length) {
+      return at;
+    }
+  }
+  return null;
+}
+
+function findClass(className) {
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && nameOfObject(object) === className && classNameOf(object) === 'Class') {
+      return object;
+    }
+  }
+  return null;
+}
+
+// Every property of a class and the classes above it, with where it sits in an object, using the layout learned
+// from Quest. Also kept so diff() can name the words that change.
+function learnAnyClass(className) {
+  if (objects.layout === null || objects.propertyOffset === null) {
+    return { error: 'the layout of classes is not known (Quest was not learned)' };
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+    log(`classes extend the class at class+${objects.superOffset === null ? '?' : hex(objects.superOffset)}`);
+  }
+  let cls = findClass(className);
+  if (cls === null) {
+    return { error: `no class named ${className}` };
+  }
+  const lineage = [];
+  const properties = new Map();
+  while (cls !== null && !cls.isNull() && lineage.length < 30) {
+    const name = nameOfObject(cls);
+    lineage.push(name);
+    if (name === 'Object') {
+      break;
+    }
+    let field = pointerAt(cls.add(objects.layout.childrenOffset));
+    const bools = new Map();
+    for (let n = 0; field !== null && !field.isNull() && n < 500 && readable(field, 0x80); n++) {
+      const kind = classNameOf(field) || '';
+      if (/Property$/.test(kind)) {
+        const at = u32(field.add(objects.propertyOffset));
+        let mask = null;
+        if (kind === 'BoolProperty') {
+          const sharing = bools.get(at) || 0;
+          bools.set(at, sharing + 1);
+          mask = 1 << sharing;
+        }
+        const fieldName = nameOfObject(field);
+        if (!properties.has(fieldName)) {
+          properties.set(fieldName, { offset: at, kind, mask, owner: name });
+        }
+      }
+      field = pointerAt(field.add(objects.layout.nextOffset));
+    }
+    if (objects.superOffset === null) {
+      break;
+    }
+    cls = pointerAt(cls.add(objects.superOffset));
+  }
+  if (!layouts.has(className)) {
+    layouts.set(className, properties);
+  }
+  return { lineage, properties };
+}
+
+globalThis.fields = function (className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return learned.error;
+  }
+  log(`${className}: ${learned.lineage.join(' < ')}`);
+  const sorted = [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted) {
+    log(`  +${hex(p.offset)}${p.mask === null ? '' : ` bit ${hex(p.mask)}`} ${name} (${p.kind}, ${p.owner})`);
+  }
+  return `${learned.properties.size} properties`;
+};
+
+// What a changed word is, by the properties at that offset.
+function labelOf(className, offset, before, after) {
+  const properties = layouts.get(className);
+  if (properties === undefined) {
+    return '';
+  }
+  const names = [];
+  for (const [name, p] of properties) {
+    if (p.offset !== offset) {
+      continue;
+    }
+    if (p.mask === null) {
+      names.push(name);
+    } else if (((before ^ after) & p.mask) !== 0) {
+      names.push(`${name} ${(after & p.mask) !== 0}`);
+    }
+  }
+  return names.length === 0 ? '' : ` (${names.join(', ')})`;
+}
+
 const SNAP_BYTES = 0x800;
 let snapshot = null;
 
@@ -633,6 +766,9 @@ globalThis.snap = function (pattern) {
   snapshot = { pattern, objects: new Map() };
   let count = 0;
   for (const [className, list] of matchingObjects(pattern)) {
+    if (!layouts.has(className)) {
+      learnAnyClass(className);
+    }
     for (const object of list.slice(0, 300)) {
       let length = SNAP_BYTES;
       while (length > 0x40 && !readable(object, length)) {
@@ -656,24 +792,29 @@ globalThis.diff = function () {
   let changed = 0;
   for (const { object, className, words } of snapshot.objects.values()) {
     if (!readable(object, words.length * 4)) {
-      log(`  ${nameOfObject(object) || object} (${className}): gone`);
+      log(`  ${className} at ${object}: gone`);
       continue;
     }
     const now = new Uint32Array(object.readByteArray(words.length * 4));
     const lines = [];
     for (let i = 0; i < words.length; i++) {
       if (now[i] !== words[i]) {
-        const known = layouts.has(className) ? [...layouts.get(className).entries()].find(([, p]) => p.offset === i * 4) : undefined;
-        lines.push(`+${hex(i * 4)}${known ? ` (${known[0]})` : ''}: ${words[i].toString(16)} -> ${now[i].toString(16)}`);
+        lines.push(`+${hex(i * 4)}${labelOf(className, i * 4, words[i], now[i])}: ` +
+          `${words[i].toString(16)} -> ${now[i].toString(16)}`);
       }
     }
-    if (lines.length > 0 && lines.length <= 40) {
+    // Words that name a property are printed in full; the rest (positions, timers) only when there are few.
+    const named = lines.filter((line) => line.includes(' ('));
+    const label = `${className} at ${object}`;
+    if (now[0] !== words[0]) {
       changed++;
-      log(`  ${nameOfObject(object) || object} (${className}): ${lines.join(', ')}`);
+      log(`  ${label}: deleted (its vtable changed)${named.length ? `; before that: ${named.join(', ')}` : ''}`);
+    } else if (lines.length > 0 && lines.length <= 40) {
+      changed++;
+      log(`  ${label}: ${lines.join(', ')}`);
     } else if (lines.length > 40) {
       changed++;
-      log(`  ${nameOfObject(object) || object} (${className}): ${lines.length} words changed (moving, probably); ` +
-          `first: ${lines.slice(0, 8).join(', ')}`);
+      log(`  ${label}: ${lines.length} words changed; named: ${named.join(', ') || 'none'}`);
     }
     snapshot.objects.get(object.toString()).words = now;
   }

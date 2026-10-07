@@ -150,6 +150,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     }
   }
   let sisterAt = null;
+  let questAt = null;
   if (gobjects) {
     // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
     // a property's offset at +0x48 and a bool's mask at +0x4C.
@@ -193,6 +194,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
       ['NumGatherersInteracted', intProperty, 0x44], ['NumGatherersHarvested', intProperty, 0x40]]);
     const level = make('Medical', packageClass);
     const q1 = make('Medical_FindRyan', quest);
+    questAt = q1;
     writeU32(q1 + 0x18, level);
     writeU32(q1 + 0x60, 3); writeU32(q1 + 0x5C, 2); writeU32(q1 + 0x58, 2);
     const q2 = make('Medical_GetKey', quest);
@@ -244,7 +246,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, time: 1000,
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, time: 1000,
   };
 
   const context = {
@@ -405,8 +407,21 @@ test('classes() finds a class by part of its name, and snap()/diff() show what c
   rt.logs.length = 0;
   rt.writeU32(rt.sisterAt + 0x80, 5);
   assert.strictEqual(rt.context.diff(), '1 of 1 objects changed (diff() again compares with now)');
-  assert.match(rt.logs.join('\n'), /LittleSister0 \(LittleSisterHarvestable\): \+0x80: 0 -> 5/);
+  assert.match(rt.logs.join('\n'), /LittleSisterHarvestable at 0x[0-9a-f]+: \+0x80: 0 -> 5/);
   assert.strictEqual(rt.context.diff(), '0 of 1 objects changed (diff() again compares with now)');
+});
+
+test('fields() lists a class\'s properties, and diff() names the ones that changed', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.fields('Quest'), '7 properties');
+  const text = rt.logs.join('\n');
+  assert.match(text, /\+0x60 bit 0x2 Completed \(BoolProperty, Quest\)/);
+  assert.strictEqual(rt.context.fields('Nope'), 'no class named Nope');
+  rt.context.snap('^Quest$');
+  rt.logs.length = 0;
+  rt.writeU32(rt.questAt + 0x60, 1);
+  rt.context.diff();
+  assert.match(rt.logs.join('\n'), /Quest at 0x[0-9a-f]+: \+0x60 \(Completed false\): 3 -> 1/);
 });
 
 test('without an object table it says so and goes on to the script calls', () => {
