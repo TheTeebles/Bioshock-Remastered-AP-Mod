@@ -9,7 +9,7 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.4"
+WORLD_VERSION = "0.1.5"
 SLOT_DATA_VERSION = 2  # 2: story checks; audio_diary_checks and directors_commentary_checks are 0/1/2
 
 

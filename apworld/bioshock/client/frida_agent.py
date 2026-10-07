@@ -28,6 +28,7 @@ from typing import Any
 from .game_data import delivers_in, normalize_map
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
+    LittleSisterResolved,
 )
 
 PROCESS_NAME = "BioshockHD.exe"
@@ -150,6 +151,8 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
             return AgentMessage(f"The game agent could not do '{payload.get('name')}': "
                                 f"{payload.get('reason', 'unknown reason')}")
         return ActionResult(int(payload["id"]), bool(payload.get("ok")), str(payload.get("reason", "")))
+    if kind == "little_sister":
+        return LittleSisterResolved(normalize_map(payload.get("map")))
     if kind == "exec_disabled":
         return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
     return None

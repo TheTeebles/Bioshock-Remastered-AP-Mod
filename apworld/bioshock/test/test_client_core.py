@@ -749,6 +749,30 @@ class TestLevelAccess(unittest.TestCase):
         h.core.on_state(core_module.GameState(ready=True, milestones=frozenset({"steinman", "not a real one"})))
         self.assertIn(loc("Medical Pavilion - Story: Defeat Dr. Steinman"), h.core.collected)
 
+    def test_little_sisters_reported_one_at_a_time_take_the_next_sister_of_their_level(self) -> None:
+        h = Harness().connect().attach()
+        sister = core_module.LittleSisterResolved
+        h.core.on_event(sister("1-medical"), 0.0)
+        h.step(2)
+        self.assertEqual(h.sent_checks, [loc("Medical Pavilion - Little Sister 1")])
+        h.restart_client()  # the agent starts counting again; the client goes on from what it has collected
+        h.step(2)
+        h.core.on_event(sister("1-medical"), 0.0)
+        h.core.on_event(sister("1-medical"), 0.0)  # Medical Pavilion has two: a third changes nothing
+        h.step(2)
+        self.assertEqual(sorted(h.sent_checks), [loc("Medical Pavilion - Little Sister 1"),
+                                                 loc("Medical Pavilion - Little Sister 2")])
+        h.core.on_event(sister("3-arcadia"), 0.0)
+        self.assertIn(loc("Arcadia - Little Sister 1"), h.core.held_locations())
+
+    def test_a_little_sister_in_a_map_that_is_no_level_is_said_and_not_counted(self) -> None:
+        h = Harness().connect().attach()
+        before = set(h.core.collected)
+        h.core.on_event(core_module.LittleSisterResolved("entry"), 0.0)
+        h.step(1)
+        self.assertEqual(h.core.collected, before)
+        self.assertTrue(any("Little Sister" in notice.text and notice.warning for notice in h.notices))
+
     def test_shared_access_items(self) -> None:
         h = Harness().connect().attach()
         h.game.collect_diary(39)  # Smuggler's Hideout

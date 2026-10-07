@@ -22,7 +22,9 @@ from ..client.frida_agent import (
     event_from_message, missing_class, python_candidates, raised_from_message, raised_summary, routine_lookup,
     state_from_agent,
 )
-from ..client.protocol import ActionResult, AgentError, AgentMessage, CommandResult, CommandStarted, GameState
+from ..client.protocol import (
+    ActionResult, AgentError, AgentMessage, CommandResult, CommandStarted, GameState, LittleSisterResolved,
+)
 from .frida_harness import PYTHON, PYTHON_WITHOUT_FRIDA, FakeFrida, RawHelper, wait_for
 
 GAME_IN_MEDICAL = GameState(ready=True, map="1-medical")
@@ -972,6 +974,7 @@ class TestTranslation(unittest.TestCase):
                           "kept for the line that sums the command up; not an event of its own")
         self.assertEqual(sent({"type": "action_result", "id": 4, "ok": True}), ActionResult(4, True))
         self.assertIsInstance(sent({"type": "exec_disabled", "reason": "different build"}), AgentMessage)
+        self.assertEqual(sent({"type": "little_sister", "map": "1-Medical.bsm"}), LittleSisterResolved("1-medical"))
         self.assertIsNone(sent({"type": "something new"}))
         self.assertIsNone(event_from_message({"type": "send", "payload": "text"}))
         self.assertEqual(event_from_message({"type": "error", "description": "ReferenceError", "lineNumber": 7}),

@@ -5,6 +5,7 @@
  *   - runs console commands such as `GiveItem 10 ShockGame.ADAM` on the game thread, with no key presses
  *   - passes on what the game prints in answer to a command, and which exceptions it raises while the command runs
  *   - reports the map the player is in, the loading flag and the phase of the Fontaine fight
+ *   - reports each Little Sister rescued or harvested, as a `little_sister` message naming the map
  *
  * Seen working on the real game (Steam build 1.0.127355, by hand, 2026-10-06 and 2026-10-07):
  *   - attaching, build detection and the game-thread hook
@@ -50,7 +51,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-07.1';
+const AGENT_VERSION = '2026-10-07.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -91,6 +92,21 @@ const PAWN_STATS = [
   { name: 'ADAM', offset: 0xAF4, float: false, code: '29 9E F4 0A 00 00' },
 ];
 
+// How the engine describes its objects and classes, on the Steam build (found with client-poc/probe_script_calls.js,
+// 2026-10-07). The name table is an array of entries with the name's text (UTF-16) at entry + nameText. An object
+// keeps its name's index and its class; a class keeps the class it extends and its first field; a field keeps the
+// next one; a property keeps its offset into an object. All of it is checked against names before it is used.
+const STEAM_OBJECTS = {
+  names: 0x13904EC,
+  nameText: 0x10,
+  objectName: 0x28,
+  objectClass: 0x30,
+  classSuper: 0x40,
+  structChildren: 0x5C,
+  fieldNext: 0x44,
+  propertyOffset: 0x74,
+};
+
 // Known builds, told apart by module size. State paths are [module offset, then pointer offsets...]; the last
 // offset is where the value itself lives.
 const BUILDS = {
@@ -101,6 +117,7 @@ const BUILDS = {
     loading: [0x1356680],
     inGame: [0x1356620, 0x214, 0x6E8, 0x38],
     fontainePhase: [0x1356200, 0x0, 0x14, 0x1C, 0x1148],
+    objects: STEAM_OBJECTS,
   },
   23552000: {
     name: 'Epic 1.0.127355',
@@ -543,6 +560,9 @@ function readState() {
     // raised since the agent was loaded. The second is for judging what watching costs.
     watching,
     exceptionsSeen,
+    // Little Sisters this agent saw rescued or harvested, by map. The client counts them as they are reported.
+    littleSistersSeen: Object.fromEntries(sistersResolved),
+    sisterTrouble,
   };
 }
 
@@ -1149,6 +1169,159 @@ function probeTick(level, now) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Objects by name: the engine's name table, and the classes and properties of objects
+// ---------------------------------------------------------------------------------------------------------------
+
+const objectModel = build.objects || null;
+const nameCache = new Map(); // name index -> text. An index keeps its text for as long as the game runs
+
+function nameOf(index) {
+  if (objectModel === null || index === null || index < 0 || index > 0x400000) {
+    return null;
+  }
+  if (nameCache.has(index)) {
+    return nameCache.get(index);
+  }
+  const table = carefulPtr(base.add(objectModel.names));
+  const count = carefulS32(base.add(objectModel.names + 4));
+  if (table === null || count === null || index >= count) {
+    return null;
+  }
+  const entry = carefulPtr(table.add(index * 4));
+  if (entry === null || entry.isNull() || !readable(entry.add(objectModel.nameText)) ||
+      !readable(entry.add(objectModel.nameText + 128))) {
+    return null;
+  }
+  let text = null;
+  try {
+    text = entry.add(objectModel.nameText).readUtf16String(64);
+  } catch (e) {
+    return null;
+  }
+  if (text === null || !/^[\w.-]+$/.test(text)) {
+    return null;
+  }
+  nameCache.set(index, text);
+  return text;
+}
+
+function nameOfObject(object) {
+  return object === null || object.isNull() ? null : nameOf(carefulS32(object.add(objectModel.objectName)));
+}
+
+function classOf(object) {
+  return carefulPtr(object.add(objectModel.objectClass));
+}
+
+// The class itself, then the classes it extends, up to Object.
+function lineageOf(cls) {
+  const lineage = [];
+  let current = cls;
+  while (current !== null && !current.isNull() && lineage.length < 40) {
+    lineage.push(current);
+    if (nameOfObject(current) === 'Object') {
+      break;
+    }
+    current = carefulPtr(current.add(objectModel.classSuper));
+  }
+  return lineage;
+}
+
+// Where a bool property sits in an object of this class: its offset and its bit. Bools declared one after another
+// share a word, one bit each in the order they are declared.
+function findBoolProperty(cls, wanted) {
+  for (const owner of lineageOf(cls)) {
+    const sharing = new Map();
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      if (nameOfObject(classOf(field)) === 'BoolProperty') {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        const bit = sharing.get(offset) || 0;
+        sharing.set(offset, bit + 1);
+        if (nameOfObject(field) === wanted) {
+          return offset === null || offset < 0x30 || offset > 0x8000 || bit > 31 ? null : { offset, mask: (1 << bit) >>> 0 };
+        }
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Little Sisters
+// ---------------------------------------------------------------------------------------------------------------
+
+// A Little Sister is an actor whose class extends Gatherer. Her HasBeenSavedOrPacified turns true when she is
+// rescued or harvested, and she is deleted a little later. She is also deleted whenever she climbs into a vent,
+// and a new one comes out of it later, but then the flag stays false. Both seen in Medical Pavilion, 2026-10-07.
+const SISTER_INTERVAL_MS = 100;
+const SISTER_FLAG = 'HasBeenSavedOrPacified';
+const sisterClasses = new Map(); // class address -> where its flag is, or null for classes that are not sisters
+const sistersSeen = new Map(); // actor address -> whether her flag was already true when last looked at
+const sistersResolved = new Map(); // map -> sisters this agent saw rescued or harvested there
+let lastSisterLook = 0;
+let sisterTrouble = null;
+
+function sisterFlagOf(cls) {
+  const key = cls.toString();
+  if (sisterClasses.has(key)) {
+    return sisterClasses.get(key);
+  }
+  let flag = null;
+  if (lineageOf(cls).some((c) => nameOfObject(c) === 'Gatherer')) {
+    flag = findBoolProperty(cls, SISTER_FLAG);
+    if (flag === null) {
+      sisterTrouble = `could not find ${SISTER_FLAG} in ${nameOfObject(cls)}`;
+      log(`Little Sisters cannot be watched: ${sisterTrouble}`);
+    } else {
+      log(`watching Little Sisters of class ${nameOfObject(cls)}: ${SISTER_FLAG} at +0x${flag.offset.toString(16)}, ` +
+        `bit 0x${flag.mask.toString(16)}`);
+    }
+  }
+  if (sisterClasses.size > 4096) {
+    sisterClasses.clear();
+  }
+  sisterClasses.set(key, flag);
+  return flag;
+}
+
+// Runs on the game thread for the level the player is in, a few times a second.
+function watchSisters(level, map, now) {
+  if (objectModel === null || virtualQuery === null || now - lastSisterLook < SISTER_INTERVAL_MS) {
+    return;
+  }
+  lastSisterLook = now;
+  const present = new Set();
+  for (const actor of actorsOf(level).actors) {
+    const cls = ptrAt(actor.add(objectModel.objectClass)); // a listed actor is a real object: plain reads will do
+    if (cls === null || cls.isNull()) {
+      continue;
+    }
+    const flag = sisterFlagOf(cls);
+    if (flag === null) {
+      continue;
+    }
+    const key = actor.toString();
+    present.add(key);
+    const word = s32At(actor.add(flag.offset));
+    const resolved = word !== null && ((word >>> 0) & flag.mask) !== 0;
+    if (resolved && sistersSeen.get(key) !== true) {
+      const count = (sistersResolved.get(map) || 0) + 1;
+      sistersResolved.set(map, count);
+      log(`a Little Sister was rescued or harvested in ${map} (${count} seen there by this agent)`);
+      send({ type: 'little_sister', map });
+    }
+    sistersSeen.set(key, resolved);
+  }
+  for (const key of [...sistersSeen.keys()]) {
+    if (!present.has(key)) {
+      sistersSeen.delete(key); // deleted: rescued, harvested or gone into a vent. Its address may be used again
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // The hook
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -1164,6 +1337,10 @@ function onLevelTick(level) {
     if (info !== null) {
       lookForPlayer(level, now);
       noteLevel(level, info, now);
+      const seen = levelsSeen.get(level.toString());
+      if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
+        watchSisters(level, seen.map, now);
+      }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
       log('the hooked function is not handing over levels as expected, so commands go to the engine alone.');
