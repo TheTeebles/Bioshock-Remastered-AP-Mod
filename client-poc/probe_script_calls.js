@@ -20,11 +20,13 @@
  *   top(20)           the 20 most frequent function names so far (to see what the hook can see at all)
  *   stop()            take the hook out
  *   use(0x1b)         if it could not decide which native is execVirtualFunction: hook GNatives[0x1b]
+ *   quests()          the game's quests as they are now: name, completed, objectives done (read from memory)
+ *   managers()        the counters AwardAchievementsManager keeps (sisters harvested and so on)
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.2';
+const PROBE_VERSION = '2026-10-07.3';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -209,6 +211,327 @@ function indexOfName(wanted) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// The object table (GObjects), read-only: a TArray of UObject pointers. Each object keeps its name (an FName index)
+// and its class (a pointer to another object) at offsets learned here. From a class, its properties: the class's
+// first child, each child's next, and each property's offset into an instance. Names of the declared properties
+// (from the UE Explorer export) tell which pointers are which.
+// ---------------------------------------------------------------------------------------------------------------
+
+const DECLARED = {
+  Quest: ['HintName', 'Text', 'FriendlyName', 'Description', 'ObjectiveDescription', 'CompletedDescription',
+    'CompletedObjectiveDescription', 'LevelFriendlyName', 'CompleteMessage', 'ObjectiveMessage', 'ParentName',
+    'MapUIRegion', 'ArrowActor', 'ArrowActorLevelLabel', 'ReleventLevelLabel', 'TimeToComplete', 'FailureTime',
+    'NumberOfObjectivesToComplete', 'NumberOfObjectivesCompleted', 'CompleteWhenAllChildrenAreCompleted',
+    'QuestHints', 'CurrentHintName', 'HintReminderTime', 'HasSeenCurrentHint', 'Completed', 'ADAMAward', 'Hidden',
+    'Active', 'Parent', 'Children', 'ReplacedBy', 'ObjectiveIcon', 'DumpQuest'],
+  AwardAchievementsManager: ['NumMachinesHacked', 'NumItemsCrafted', 'WasSecurityEverTriggered',
+    'DidDamageUsingNonWrenchWeapon', 'AmmoCrafted', 'NumGatherersHarvested', 'NumGatherersInteracted',
+    'NumTracksMaxed', 'PlayerOwner', 'DifficultyChanged', 'PlayerRespawned', 'JustCraftedAnItem',
+    'NumGatherersInGame', 'MachinesHackedForAward', 'TotalLogsInGame', 'TotalPassivePlasmidsInGame',
+    'ItemsCraftedForAward', 'CraftableAmmoTypes', 'SavedGatherer', 'CollectedGatherer', 'GameFinished',
+    'AwardAchievement', 'PlayerPickedUpLog', 'WeaponUpgraded'],
+};
+
+const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null };
+
+function objectAt(index) {
+  const data = pointerAt(objects.table);
+  const object = data === null ? null : pointerAt(data.add(index * 4));
+  return object === null || object.isNull() ? null : object;
+}
+
+function nameOfObject(object) {
+  return object === null ? null : nameOf(u32(object.add(objects.nameOffset)));
+}
+
+function classOf(object) {
+  return object === null ? null : pointerAt(object.add(objects.classOffset));
+}
+
+function classNameOf(object) {
+  return nameOfObject(classOf(object));
+}
+
+function findObjects() {
+  for (const range of mod.enumerateRanges('rw-')) {
+    let words;
+    try {
+      words = new Uint32Array(range.base.readByteArray(range.size & ~3));
+    } catch (e) {
+      continue;
+    }
+    for (let i = 0; i + 2 < words.length; i++) {
+      const count = words[i + 1];
+      const max = words[i + 2];
+      const array = range.base.add(i * 4);
+      if (count < 5000 || count > 2000000 || max < count || max > 4000000 || array.equals(names.array)) {
+        continue;
+      }
+      const data = ptr(words[i]);
+      const sampled = [];
+      for (let k = 0; k < 400 && sampled.length < 64; k++) {
+        const object = pointerAt(data.add(k * 4));
+        if (object === null) {
+          break;
+        }
+        if (!object.isNull() && readable(object, 0x60)) {
+          sampled.push(object);
+        }
+      }
+      if (sampled.length < 32) {
+        continue;
+      }
+      for (let nameOffset = 0x8; nameOffset <= 0x40; nameOffset += 4) {
+        const named = sampled.filter((o) => {
+          const index = u32(o.add(nameOffset));
+          return index !== 0 && nameOf(index) !== null;
+        }).length;
+        if (named < sampled.length * 0.9) {
+          continue;
+        }
+        for (let classOffset = 0x8; classOffset <= 0x48; classOffset += 4) {
+          if (classOffset === nameOffset) {
+            continue;
+          }
+          const classed = sampled.filter((o) => {
+            const cls = pointerAt(o.add(classOffset));
+            const meta = cls === null ? null : pointerAt(cls.add(classOffset));
+            return meta !== null && nameOf(u32(meta.add(nameOffset))) === 'Class';
+          }).length;
+          if (classed >= sampled.length * 0.9) {
+            return { table: array, count, nameOffset, classOffset };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Every object of the given class names, and the classes of those names, in one pass over the table.
+function scanObjects(classNames) {
+  const wanted = new Set(classNames);
+  const found = { instances: new Map(), classes: new Map() };
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === 'Class') {
+      const name = nameOfObject(object);
+      if (wanted.has(name)) {
+        found.classes.set(name, object);
+      }
+    } else if (wanted.has(className)) {
+      if (!found.instances.has(className)) {
+        found.instances.set(className, []);
+      }
+      found.instances.get(className).push(object);
+    }
+  }
+  return found;
+}
+
+// Children and Next: pointers that lead from the class to its declared fields and from field to field.
+function findLayout(cls, declared) {
+  const known = new Set(declared);
+  for (let childrenOffset = 0x20; childrenOffset <= 0x100; childrenOffset += 4) {
+    const first = pointerAt(cls.add(childrenOffset));
+    if (first === null || !readable(first, 0x80) || !known.has(nameOfObject(first))) {
+      continue;
+    }
+    for (let nextOffset = 0x20; nextOffset <= 0x60; nextOffset += 4) {
+      const chain = [];
+      let field = first;
+      while (field !== null && !field.isNull() && chain.length < 300 && readable(field, 0x80)) {
+        chain.push(field);
+        field = pointerAt(field.add(nextOffset));
+      }
+      const hits = chain.filter((f) => known.has(nameOfObject(f))).length;
+      if (hits >= Math.min(4, declared.length) && hits >= chain.length * 0.6) {
+        return { childrenOffset, nextOffset, chain };
+      }
+    }
+  }
+  return null;
+}
+
+// The property's offset into an instance: the field offset, the same for every property, where the numbers are
+// distinct (bools aside), plausible and in step with the declaration order.
+function findPropertyOffset(chain) {
+  const properties = chain.filter((f) => /Property$/.test(classNameOf(f) || ''));
+  let best = null;
+  for (let at = 0x24; at <= 0x80; at += 4) {
+    const values = properties.map((p) => u32(p.add(at)));
+    if (values.some((v) => v === null || v < 0x20 || v > 0x4000)) {
+      continue;
+    }
+    const distinct = new Set(values).size;
+    if (best === null || distinct > best.distinct) {
+      best = { at, distinct, of: properties.length };
+    }
+  }
+  return best;
+}
+
+function hexWords(object, from, to) {
+  const out = [];
+  for (let at = from; at < to; at += 4) {
+    const value = u32(object.add(at));
+    out.push(value === null ? '????????' : value.toString(16).padStart(8, '0'));
+  }
+  return out.join(' ');
+}
+
+const layouts = new Map(); // class name -> {properties: Map name -> {offset, kind, mask}}
+
+function learnClass(className, cls) {
+  const layout = findLayout(cls, DECLARED[className]);
+  if (layout === null) {
+    log(`${className}: could not find its fields. Its first 0x100 bytes: ${hexWords(cls, 0, 0x100)}`);
+    return null;
+  }
+  const chainNames = layout.chain.map((f) => nameOfObject(f) || '?');
+  log(`${className}: fields from class+${hex(layout.childrenOffset)}, next at field+${hex(layout.nextOffset)}: ` +
+      chainNames.join(', '));
+  if (objects.layout === null) {
+    objects.layout = layout;
+  }
+  const offset = findPropertyOffset(layout.chain);
+  for (const field of layout.chain.slice(0, 4)) {
+    log(`  ${nameOfObject(field)} (${classNameOf(field)}): ${hexWords(field, 0x20, 0x70)}`);
+  }
+  if (offset === null) {
+    log(`${className}: could not tell where a property keeps its offset`);
+    return null;
+  }
+  log(`${className}: property offsets at property+${hex(offset.at)} (${offset.distinct} distinct of ${offset.of})`);
+  const properties = new Map();
+  for (const field of layout.chain) {
+    const kind = classNameOf(field) || '';
+    if (/Property$/.test(kind)) {
+      // A bool keeps its bit mask right after the offset, more or less: the first power of two after it.
+      let mask = null;
+      if (kind === 'BoolProperty') {
+        for (let at = offset.at + 4; at <= offset.at + 0x20 && mask === null; at += 4) {
+          const value = u32(field.add(at));
+          if (value !== null && value !== 0 && (value & (value - 1)) === 0) {
+            mask = value;
+          }
+        }
+      }
+      properties.set(nameOfObject(field), { offset: u32(field.add(offset.at)), kind, mask });
+    }
+  }
+  layouts.set(className, properties);
+  return properties;
+}
+
+function readProperty(object, property) {
+  if (property === undefined || property.offset === null) {
+    return '?';
+  }
+  const at = object.add(property.offset);
+  const value = u32(at);
+  if (value === null) {
+    return '?';
+  }
+  if (property.kind === 'BoolProperty') {
+    return property.mask === null ? `0x${value.toString(16)}` : String((value & property.mask) !== 0);
+  }
+  if (property.kind === 'NameProperty') {
+    return nameOf(value) || `#${value}`;
+  }
+  if (property.kind === 'FloatProperty') {
+    return at.readFloat().toFixed(1);
+  }
+  return String(value | 0);
+}
+
+let found = null;
+
+function describeQuests(limit) {
+  const quests = found === null ? [] : (found.instances.get('Quest') || []);
+  const properties = layouts.get('Quest');
+  const lines = [`${quests.length} quests`];
+  for (const quest of quests.slice(0, limit)) {
+    if (properties === undefined) {
+      lines.push(`  ${nameOfObject(quest)}`);
+      continue;
+    }
+    lines.push(`  ${nameOfObject(quest)}: completed ${readProperty(quest, properties.get('Completed'))}, ` +
+      `active ${readProperty(quest, properties.get('Active'))}, objectives ` +
+      `${readProperty(quest, properties.get('NumberOfObjectivesCompleted'))}/` +
+      `${readProperty(quest, properties.get('NumberOfObjectivesToComplete'))}`);
+  }
+  return lines;
+}
+
+function describeManagers() {
+  const managers = found === null ? [] : (found.instances.get('AwardAchievementsManager') || []);
+  const properties = layouts.get('AwardAchievementsManager');
+  const lines = [`${managers.length} AwardAchievementsManager`];
+  for (const manager of managers) {
+    const values = properties === undefined ? 'fields unknown'
+      : [...properties.entries()].filter(([, p]) => p.kind !== 'ArrayProperty' && p.kind !== 'ObjectProperty')
+        .map(([name, p]) => `${name} ${readProperty(manager, p)}`).join(', ');
+    lines.push(`  ${nameOfObject(manager)}: ${values}`);
+  }
+  return lines;
+}
+
+function rescan() {
+  found = scanObjects(Object.keys(DECLARED));
+  for (const className of Object.keys(DECLARED)) {
+    const count = (found.instances.get(className) || []).length;
+    log(`${className}: class ${found.classes.has(className) ? 'found' : 'not found'}, ${count} objects`);
+  }
+}
+
+const objectTable = findObjects();
+if (objectTable === null) {
+  log('could not find the object table; quests() and managers() are not available');
+} else {
+  Object.assign(objects, objectTable);
+  log(`object table at ${rel(objects.table)}: ${objects.count} objects, name at object+${hex(objects.nameOffset)}, ` +
+      `class at object+${hex(objects.classOffset)}`);
+  rescan();
+  for (const className of Object.keys(DECLARED)) {
+    if (found.classes.has(className)) {
+      learnClass(className, found.classes.get(className));
+    }
+  }
+  for (const line of describeQuests(40)) {
+    log(line);
+  }
+  for (const line of describeManagers()) {
+    log(line);
+  }
+}
+
+globalThis.quests = function (limit) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  rescan();
+  const lines = describeQuests(limit || 200);
+  lines.forEach((line) => log(line));
+  return `${lines.length - 1} listed`;
+};
+
+globalThis.managers = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  rescan();
+  const lines = describeManagers();
+  lines.forEach((line) => log(line));
+  return 'listed';
+};
+
+// ---------------------------------------------------------------------------------------------------------------
 // execVirtualFunction, from the table of natives by name ("intUObjectexecVirtualFunction" -> function)
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -304,13 +627,14 @@ if (natives.length === 0) {
     log(`natives by opcode at ${rel(table.table)}: ${table.defined} in use, the rest ${rel(ptr(table.undefinedNative))}`);
   }
   if (tables.length === 0) {
-    log('could not find the table of natives by opcode either. Please send the log as it is.');
-    throw new Error('no execVirtualFunction');
+    log('could not find the table of natives by opcode either, so no script calls are watched. ' +
+        'quests() and managers() still work.');
+  } else {
+    gnatives = tables[0];
+    const target = ptr(gnatives.words[EX_VIRTUAL_FUNCTION]);
+    log(`GNatives[${hex(EX_VIRTUAL_FUNCTION)}], execVirtualFunction in the stock engine: ${rel(target)}`);
+    candidates.push({ label: `GNatives[${hex(EX_VIRTUAL_FUNCTION)}]`, target });
   }
-  gnatives = tables[0];
-  const target = ptr(gnatives.words[EX_VIRTUAL_FUNCTION]);
-  log(`GNatives[${hex(EX_VIRTUAL_FUNCTION)}], execVirtualFunction in the stock engine: ${rel(target)}`);
-  candidates.push({ label: `GNatives[${hex(EX_VIRTUAL_FUNCTION)}]`, target });
 }
 let virtualFunction = null;
 
@@ -659,4 +983,6 @@ globalThis.stop = function () {
   return 'hook removed';
 };
 
-startSampling();
+if (candidates.length > 0) {
+  startSampling();
+}

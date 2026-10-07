@@ -37,7 +37,7 @@ const GNATIVES = BASE + 0x181000;
 const UNDEFINED_NATIVE = BASE + 0x1F00;
 const nativeAt = (opcode) => BASE + 0x2000 + opcode * 0x10;
 
-function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {}) {
+function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobjects = true } = {}) {
   const pages = new Map();
   const page = (address, create) => {
     const key = address >>> 12;
@@ -83,6 +83,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {
     readU32() { return readU32(this.value); }
     readS32() { return readU32(this.value) | 0; }
     readU8() { return getByte(this.value); }
+    readFloat() { return new Float32Array(new Uint32Array([readU32(this.value)]).buffer)[0]; }
     readPointer() { return new Ptr(readU32(this.value)); }
     writeS32(v) { writeU32(this.value, v); return this; }
     readByteArray(length) {
@@ -114,7 +115,10 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {
   // The game: a name table, objects, frames.
   const names = ['None', 'ByteProperty', 'IntProperty', 'BoolProperty', 'Tick', 'CompleteQuest',
     'InteractedWithGatherer', 'PlayerPickedUpLog', 'QuestManager0', 'ActionCompleteQuest3', 'ShockPlayer0',
-    'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS];
+    'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
+    'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
+    'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -144,6 +148,58 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {
       const value = opcode === gnatives.virtualAt ? NATIVE_FUNCTION : opcode < 0xD0 ? nativeAt(opcode) : UNDEFINED_NATIVE;
       writeU32(GNATIVES + 4 * opcode, value);
     }
+  }
+  if (gobjects) {
+    // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
+    // a property's offset at +0x48 and a bool's mask at +0x4C.
+    const TABLE = BASE + 0x185000;
+    const DATA = 0x12000000;
+    let nextAt = 0x13000000;
+    let slot = 0;
+    const make = (name, cls) => {
+      const at = nextAt;
+      nextAt += 0x100;
+      writeU32(at, 0x00500000);
+      writeU32(at + 0x20, index(name));
+      writeU32(at + 0x24, cls === 'self' ? at : cls);
+      writeU32(DATA + 4 * slot++, at);
+      return at;
+    };
+    const classClass = make('Class', 'self');
+    const cls = (name) => make(name, classClass);
+    const intProperty = cls('IntProperty');
+    const boolProperty = cls('BoolProperty');
+    const nameProperty = cls('NameProperty');
+    const functionClass = cls('Function');
+    const packageClass = cls('Package');
+    for (let i = 0; i < 40; i++) { make('Core', packageClass); }
+    const fields = (owner, list) => {
+      let previous = null;
+      for (const [name, kind, offset, mask] of list) {
+        const field = make(name, kind);
+        writeU32(field + 0x48, offset);
+        if (mask) { writeU32(field + 0x4C, mask); }
+        if (previous === null) { writeU32(owner + 0x40, field); } else { writeU32(previous + 0x30, field); }
+        previous = field;
+      }
+    };
+    const quest = cls('Quest');
+    fields(quest, [['DumpQuest', functionClass, 0], ['Active', boolProperty, 0x60, 2], ['Completed', boolProperty, 0x60, 1],
+      ['NumberOfObjectivesCompleted', intProperty, 0x5C], ['NumberOfObjectivesToComplete', intProperty, 0x58],
+      ['Description', nameProperty, 0x54], ['FriendlyName', nameProperty, 0x50], ['HintName', nameProperty, 0x4C]]);
+    const manager = cls('AwardAchievementsManager');
+    fields(manager, [['SavedGatherer', functionClass, 0], ['PlayerRespawned', boolProperty, 0x48, 4],
+      ['NumGatherersInteracted', intProperty, 0x44], ['NumGatherersHarvested', intProperty, 0x40]]);
+    const q1 = make('Medical_FindRyan', quest);
+    writeU32(q1 + 0x60, 3); writeU32(q1 + 0x5C, 2); writeU32(q1 + 0x58, 2);
+    const q2 = make('Medical_GetKey', quest);
+    writeU32(q2 + 0x60, 2); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
+    const m = make('AwardAchievementsManager0', manager);
+    writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
+    writeU32(TABLE, DATA);
+    writeU32(TABLE + 4, 6000);
+    writeU32(TABLE + 8, 8192);
+    page(DATA + 4 * 6000, true);
   }
   // Code and data pages exist in full, as in the real module.
   for (const range of RANGES) {
@@ -186,7 +242,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {
   const context = {
     console: { log: (text) => runtime.logs.push(String(text)) },
     Date: { now: () => runtime.time },
-    Map, Set, Math, JSON, Array, Uint8Array, Uint32Array, Error, parseInt, String, Number,
+    Map, Set, Math, JSON, Array, Uint8Array, Uint32Array, Float32Array, Error, parseInt, String, Number,
     globalThis: null,
     ptr,
     setTimeout: (fn) => runtime.timers.push(fn),
@@ -319,6 +375,27 @@ test('learns the layout from sampled calls, then hands over to the native filter
   assert.match(text, /"FailQuest" is not in the name table/);
 });
 
+test('reads quests and the achievements manager straight from the object table', () => {
+  const rt = startedProbe();
+  const text = rt.logs.join('\n');
+  assert.match(text, /object table at module\+0x185000: 6000 objects, name at object\+0x20, class at object\+0x24/);
+  assert.match(text, /Quest: class found, 2 objects/);
+  assert.match(text, /Quest: fields from class\+0x40, next at field\+0x30: DumpQuest, Active, Completed/);
+  assert.match(text, /Quest: property offsets at property\+0x48/);
+  assert.match(text, /Medical_FindRyan: completed true, active true, objectives 2\/2/);
+  assert.match(text, /Medical_GetKey: completed false, active true, objectives 0\/1/);
+  assert.match(text, /AwardAchievementsManager0: PlayerRespawned false, NumGatherersInteracted 3, NumGatherersHarvested 1/);
+  rt.writeU32(0x13000000, 0); // no effect on what follows: quests() scans again
+  assert.strictEqual(rt.context.quests(), '2 listed');
+});
+
+test('without an object table it says so and goes on to the script calls', () => {
+  const rt = startedProbe({ gobjects: false });
+  assert.match(rt.logs.join('\n'), /could not find the object table/);
+  assert.strictEqual(rt.context.quests(), 'no object table');
+  assert.strictEqual(rt.hooks.length, 1);
+});
+
 test('waits until enough calls were sampled', () => {
   const rt = startedProbe();
   playCalls(rt, 100);
@@ -361,10 +438,11 @@ test('watch() adds a name, and stop() takes the hook out', () => {
   assert.strictEqual(rt.logs.length, 0);
 });
 
-test('without either table of natives it says so and stops', () => {
-  const rt = makeRuntime({ withNatives: false });
-  assert.throws(() => rt.run(), /no execVirtualFunction/);
+test('without either table of natives it watches no calls, and quests() still works', () => {
+  const rt = startedProbe({ withNatives: false });
   assert.match(rt.logs.join('\n'), /could not find the table of natives by opcode either/);
+  assert.strictEqual(rt.hooks.length, 0);
+  assert.strictEqual(rt.context.quests(), '2 listed');
 });
 
 test('without natives by name, it takes execVirtualFunction from the table by opcode', () => {
