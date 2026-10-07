@@ -324,8 +324,13 @@ function makeRuntime({
       return index;
     };
     name('None');
+    const all = runtime.object(0x10000); // the table of all objects
+    let objectCount = 0;
+    poke(BASE + 0x139042C, all);
     const make = (text, cls, size = 0x200) => {
-      const at = runtime.object(size); poke(at + 0x28, name(text)); poke(at + 0x30, cls); return at;
+      const at = runtime.object(size); poke(at + 0x28, name(text)); poke(at + 0x30, cls);
+      poke(all + 4 * objectCount, at); objectCount++; poke(BASE + 0x1390430, objectCount);
+      return at;
     };
     const classClass = make('Class', 0); poke(classClass + 0x30, classClass);
     const cls = (text, extendsFrom) => { const at = make(text, classClass); poke(at + 0x40, extendsFrom); return at; };
@@ -348,7 +353,13 @@ function makeRuntime({
       ['bIsGathering', boolProperty, 0x1038]]);
     const spawned = cls('SpawnedGatherer', gatherer);
     const splicer = cls('Splicer', actor);
-    return { spawned, splicer, make };
+    const questClass = cls('Quest', objectClass);
+    fields(questClass, [['NumberOfObjectivesToComplete', intProperty, 0x90],
+      ['HasSeenCurrentHint', boolProperty, 0xA8], ['Completed', boolProperty, 0xA8], ['Hidden', boolProperty, 0xB0]]);
+    const quest = (text, completed = false) => {
+      const at = make(text, questClass); poke(at + 0xA8, completed ? 0x3 : 0x1); return at;
+    };
+    return { spawned, splicer, make, quest };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1139,6 +1150,32 @@ const tests = {
     const sister = r.sister(game.level, model); r.poke(sister + 0x1038, 0x2);
     r.load(); r.frames(3);
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+  },
+  // ---- quests ----
+  'state() lists the completed quests, read from the table of all objects': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true); model.quest('ResearchSplicers'); model.quest('GoToDeck', true);
+    const later = model.quest('GatherChloro');
+    r.load();
+    assert.strictEqual(state(r).completedQuests, null, 'not looked up yet');
+    r.frames(3);
+    assert.ok(r.logged('watching 4 quests: Completed at +0xa8, bit 0x2'));
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["GoToDeck","QuarantineKey"]');
+    r.poke(later + 0xA8, 0x2);
+    r.frames(6);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["GatherChloro","GoToDeck","QuarantineKey"]');
+    void game;
+  },
+  'a new map has the quests looked up again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    r.load(); r.frames(3);
+    assert.strictEqual(state(r).questsWatched, 1);
+    model.quest('ResearchSplicers', true); // made by loading a save
+    r.string(game.level + 0x7C, '2-fisheries');
+    r.frames(10);
+    assert.strictEqual(state(r).questsWatched, 2);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey","ResearchSplicers"]');
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

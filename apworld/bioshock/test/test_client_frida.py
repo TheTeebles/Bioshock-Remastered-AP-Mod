@@ -958,6 +958,14 @@ class TestTranslation(unittest.TestCase):
         self.assertTrue(state_from_agent(dict(base, map="9-newlevel")).ready, "an unknown name is not held against it")
         self.assertIsNone(state_from_agent(dict(base, map=None)).map)
 
+    def test_completed_quests_become_story_milestones(self) -> None:
+        base = {"execAvailable": True, "hookInstalled": True, "engineReady": True, "map": "1-medical"}
+        self.assertIsNone(state_from_agent(base).milestones, "an agent that does not look at quests")
+        self.assertIsNone(state_from_agent(dict(base, completedQuests=None)).milestones, "not looked up yet")
+        self.assertEqual(state_from_agent(dict(base, completedQuests=[
+            "GoToMedical", "QuarantineKey", "DestroySteinmanDebris", "GatherChloroUpdateA"])).milestones,
+            frozenset({"steinman", "surgery_wreckage", "chlorophyll"}))
+
     def test_message_translation(self) -> None:
         def sent(payload: dict[str, Any]) -> Any:
             return event_from_message({"type": "send", "payload": payload})

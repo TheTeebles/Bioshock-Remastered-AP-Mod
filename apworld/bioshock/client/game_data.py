@@ -355,6 +355,59 @@ MILESTONE_LOCATION: dict[str, int] = {
 }
 
 
+# Which of the game's quests (its objectives, by object name) completes which story milestone. Read from the running
+# game on 2026-10-07 with each quest's on-screen text. Some objectives exist twice, an original and an "Update" that
+# replaces it, and either one being completed counts. Milestones with no quest of their own are left out for now:
+# electro_bolt, ryans_ambush, ice_wall, peach_wilkins and self_destruct.
+QUEST_MILESTONES: dict[str, str] = {
+    "DestroySteinmanDebris": "surgery_wreckage",  # "Destroy the debris."
+    "QuarantineKey": "steinman",  # "Get the key from Steinman."
+    "ResearchSplicers": "spider_photos",  # "Photograph 3 spider splicers."
+    "OpenSubDoors": "submarine_bay",  # "Open the hatch."
+    "BringRoseToLangford": "rosa_gallica",  # "Bring the rose specimen to Langford."
+    "BringRoseToLangfordUpdateA": "rosa_gallica",  # "Put the rose in the Pneumo."
+    "FindMPRFormula": "langfords_safe",  # "Search Langford's office."
+    "GatherChloro": "chlorophyll",  # "Obtain 7 Chlorophyll Solution."
+    "GatherChloroUpdateA": "chlorophyll",
+    "ReleaseMPR": "lazarus_vector",  # "Deploy the Lazarus Vector."
+    "ReleaseMPRUpdateC": "lazarus_vector",
+    "DefendMPRAmbush": "defend_lab",  # "Hold off Ryan's forces."
+    "GatherWater": "distilled_water",  # "Obtain 7 Distilled Water."
+    "GatherWaterUpdateA": "distilled_water",
+    "GatherEnzymes": "enzyme_samples",  # "Obtain 7 Enzyme Samples."
+    "GatherEnzymesUpdateA": "enzyme_samples",
+    "TakeFirstPhoto": "fitzpatrick",  # "Photograph the dead pianist."
+    "KillFinneganUpdateA": "finnegan",  # "Photograph Finnegan's corpse."
+    "KillCobbUpdateA": "cobb",  # "Photograph Cobb's corpse."
+    "KillRodriguezUpdateA": "rodriguez",  # "Photograph Rodriguez's corpse."
+    "ReplaceThreeMorePhotos": "masterpiece",  # "Finish Cohen's Masterpiece."
+    "FindNitroglycerin": "nitroglycerin",  # "Find one Nitroglycerin Charge."
+    "AssembleBomb": "emp_bomb",  # "Finish Kyburz's EMP Bomb"
+    "OverloadGenerator": "core_overload",  # "Overload the Core."
+    "KillRyan": "andrew_ryan",  # "Kill Andrew Ryan."
+    "Get1stDose": "lot_192_first",  # "Get the Lot 192 remedy."
+    "Get1stDoseUpdated": "lot_192_first",
+    "Get2ndDoseAtTen": "lot_192_second",  # "Get a second dose of Lot 192."
+    "Get2ndDoseAtTenUpdated": "lot_192_second",
+    "Get2ndDoseAtLab": "lot_192_second",
+    "UseVoiceboxMachine": "voice_box",  # "Sound: Use the Larynx Modification Machine."
+    "FindPheremoneSamples": "pheromones",  # "Smell: Find 3 Big Daddy Pheromone Samples."
+    "GetBodysuit": "bodysuit",  # "Look: Find a Big Daddy Bodysuit."
+    "GetHelmet": "helmet",  # "Look: Find a Big Daddy Helmet."
+    "GetBoots": "boots",  # "Look: Find Big Daddy Boots."
+    "EscortGathererToEnd": "escort",  # "Escort the Little Sister"
+}
+assert set(QUEST_MILESTONES.values()) <= set(MILESTONE_LOCATION), "every quest leads to a real milestone"
+
+
+def milestones_of(completed_quests: object) -> frozenset[str] | None:
+    """The story milestones reached, from the names of the quests the agent saw completed. None while it cannot
+    tell (it has not looked the quests up yet, or it has no way to)."""
+    if not isinstance(completed_quests, (list, tuple)):
+        return None
+    return frozenset(QUEST_MILESTONES[name] for name in completed_quests if name in QUEST_MILESTONES)
+
+
 def diary_location(number: int) -> int | None:
     return 1000 + number if 1 <= number <= DIARY_COUNT else None
 

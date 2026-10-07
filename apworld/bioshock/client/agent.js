@@ -6,6 +6,7 @@
  *   - passes on what the game prints in answer to a command, and which exceptions it raises while the command runs
  *   - reports the map the player is in, the loading flag and the phase of the Fontaine fight
  *   - reports each Little Sister rescued or harvested, as a `little_sister` message naming the map
+ *   - lists the quests (the game's objectives) completed in the loaded game, in state()
  *
  * Seen working on the real game (Steam build 1.0.127355, by hand, 2026-10-06 and 2026-10-07):
  *   - attaching, build detection and the game-thread hook
@@ -97,6 +98,7 @@ const PAWN_STATS = [
 // keeps its name's index and its class; a class keeps the class it extends and its first field; a field keeps the
 // next one; a property keeps its offset into an object. All of it is checked against names before it is used.
 const STEAM_OBJECTS = {
+  objects: 0x139042C,
   names: 0x13904EC,
   nameText: 0x10,
   objectName: 0x28,
@@ -563,6 +565,10 @@ function readState() {
     // Little Sisters this agent saw rescued or harvested, by map. The client counts them as they are reported.
     littleSistersSeen: Object.fromEntries(sistersResolved),
     sisterTrouble,
+    // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
+    completedQuests: quests.flag === null ? null : quests.completed,
+    questsWatched: quests.list.length,
+    questTrouble: quests.trouble,
   };
 }
 
@@ -1322,6 +1328,93 @@ function watchSisters(level, map, now) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Quests
+// ---------------------------------------------------------------------------------------------------------------
+
+// The game's objectives are Quest objects, every level's at once, and each keeps a Completed flag that is saved
+// with the game. They are found by going through the engine's table of all objects, a slice on every tick so that
+// no frame is held up, again whenever the map changes (loading a save makes new ones). Their flags are read a few
+// times a second, and state() lists the names of the completed ones. Which quest is which check is the client's
+// business.
+const QUEST_SCAN_SLICE = 4000; // objects looked at per tick
+const QUEST_READ_INTERVAL_MS = 500;
+const quests = { list: [], next: 0, scanning: [], map: null, flag: null, completed: [], readAt: 0, trouble: null };
+const classNames = new Map(); // class address -> its name
+
+function classNameOf(object) {
+  const cls = carefulPtr(object.add(objectModel.objectClass));
+  if (cls === null || cls.isNull()) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!classNames.has(key)) {
+    if (classNames.size > 20000) {
+      classNames.clear();
+    }
+    classNames.set(key, nameOfObject(cls));
+  }
+  return classNames.get(key);
+}
+
+function watchQuests(map, now) {
+  if (objectModel === null || virtualQuery === null) {
+    return;
+  }
+  if (map !== quests.map) {
+    quests.map = map; // a new map, or a save loaded: look through the objects again
+    quests.next = 0;
+    quests.scanning = [];
+  }
+  const table = carefulPtr(base.add(objectModel.objects));
+  const count = carefulS32(base.add(objectModel.objects + 4));
+  if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
+    return;
+  }
+  if (quests.next !== null) {
+    const end = Math.min(count, quests.next + QUEST_SCAN_SLICE);
+    for (let i = quests.next; i < end; i++) {
+      const object = carefulPtr(table.add(i * 4));
+      if (object !== null && !object.isNull() && classNameOf(object) === 'Quest') {
+        quests.scanning.push(object);
+      }
+    }
+    quests.next = end >= count ? null : end;
+    if (quests.next === null) {
+      quests.list = quests.scanning;
+      quests.scanning = [];
+      if (quests.flag === null && quests.list.length > 0) {
+        quests.flag = findBoolProperty(carefulPtr(quests.list[0].add(objectModel.objectClass)), 'Completed');
+        if (quests.flag === null) {
+          quests.trouble = 'could not find where a quest keeps Completed';
+          log(`quests cannot be watched: ${quests.trouble}`);
+        } else {
+          log(`watching ${quests.list.length} quests: Completed at +0x${quests.flag.offset.toString(16)}, ` +
+            `bit 0x${quests.flag.mask.toString(16)}`);
+        }
+      }
+    }
+  }
+  if (quests.flag === null || now - quests.readAt < QUEST_READ_INTERVAL_MS) {
+    return;
+  }
+  quests.readAt = now;
+  const completed = new Set();
+  for (const quest of quests.list) {
+    if (classNameOf(quest) !== 'Quest') {
+      continue; // gone since the scan
+    }
+    const word = carefulS32(quest.add(quests.flag.offset));
+    if (word !== null && ((word >>> 0) & quests.flag.mask) !== 0) {
+      const name = nameOfObject(quest);
+      if (name !== null) {
+        completed.add(name);
+      }
+    }
+  }
+  quests.completed = [...completed].sort();
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // The hook
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -1340,6 +1433,7 @@ function onLevelTick(level) {
       const seen = levelsSeen.get(level.toString());
       if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
         watchSisters(level, seen.map, now);
+        watchQuests(seen.map, now);
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';

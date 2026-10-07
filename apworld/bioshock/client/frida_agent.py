@@ -25,7 +25,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, normalize_map
+from .game_data import delivers_in, milestones_of, normalize_map
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
     LittleSisterResolved,
@@ -122,6 +122,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         level_value=None if names_maps else (raw.get("levelValue") or None),  # 0 while a level is loading
         in_level=False if loading is True or in_game is False else None,
         fontaine_phase=raw.get("fontainePhase"),
+        milestones=milestones_of(raw.get("completedQuests")),
     )
 
 
