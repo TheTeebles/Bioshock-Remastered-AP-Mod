@@ -238,6 +238,7 @@ class TestTrapPlaythrough(PlaythroughBase):
         self.assertEqual(set(harness.game.actions), {"eve_drain", "pickpocket"})
         self.assertGreater(harness.game.alarms, 20, "the alarm trap is a console command of the game's own")
         self.assertEqual(harness.game.commands.count("StartSecurityAlarm"), harness.game.alarms)
+        self.assertEqual(len(harness.game.summoned), harness.game.alarms, "a security bot with every alarm")
 
 
 class TestAudioDiariesOnlyPlaythrough(PlaythroughBase):

@@ -534,22 +534,51 @@ class TestItemDelivery(unittest.TestCase):
         """Otherwise a command the real game would not know could pass every test."""
         game = SimulatedGame()
         commands = ("GiveItem 2 ShockGame.ADAM", "GiveWeapon ShockGame.Pistol", "AddWeaponStatUpgrade Pistol Damage",
-                    "StartSecurityAlarm", "GiveItem ShockGame.ADAM", "GiveItem two ShockGame.ADAM", "GiveWeapon",
-                    "AddWeaponStatUpgrade Pistol", "StartSecurityAlarm now", "Dance", "")
+                    "StartSecurityAlarm", "summon ShockAI.SecurityBot",
+                    "GiveItem ShockGame.ADAM", "GiveItem two ShockGame.ADAM", "GiveWeapon",
+                    "AddWeaponStatUpgrade Pistol", "StartSecurityAlarm now", "summon", "Dance", "")
         for number, command in enumerate(commands):
             game.run_command(number, command)
-        self.assertEqual([event.handled for event in game.poll_events()], [True] * 4 + [False] * 7)
+        self.assertEqual([event.handled for event in game.poll_events()], [True] * 5 + [False] * 8)
         self.assertEqual(game.inventory, {"ShockGame.ADAM": 2, "ShockGame.Pistol": 1, "Pistol Damage upgrade": 1})
         self.assertEqual(game.alarms, 1)
+        self.assertEqual(game.summoned, ["ShockAI.SecurityBot"])
 
     def test_the_alarm_trap_is_a_console_command_and_the_others_are_agent_actions(self) -> None:
         h = Harness().connect().attach()
         h.receive("Security Alarm Trap", "EVE Drain Trap", "Pickpocket Trap")
         h.settle()
-        self.assertEqual(h.game.commands, ["StartSecurityAlarm"])
+        self.assertEqual(h.game.commands, ["StartSecurityAlarm", f"summon {game_data.SECURITY_BOT}"],
+                         "the alarm first: a bot summoned while it rings is hostile, one summoned after is friendly")
         self.assertEqual(h.game.alarms, 1)
+        self.assertEqual(h.game.summoned, [game_data.SECURITY_BOT])
         self.assertEqual(h.game.actions, ["eve_drain", "pickpocket"])
         self.assertEqual(h.core.delivered, 3)
+
+    def test_an_alarm_without_a_bot_is_still_a_trap(self) -> None:
+        """The bot's class is not loaded in every level; the alarm has rung by then, and must not ring twice."""
+        h = Harness().connect().attach()
+        h.game.refuse.add("summon")
+        h.receive("Security Alarm Trap", "Health Upgrade")
+        h.settle()
+        self.assertEqual(h.game.commands, ["StartSecurityAlarm"]
+                         + [f"summon {game_data.SECURITY_BOT}"] * core_module.MAX_ATTEMPTS
+                         + ["GiveItem 1 ShockGame.HealthUpgrade"])
+        self.assertEqual(h.game.alarms, 1)
+        self.assertEqual(h.core.delivered, 2)
+        self.assertEqual(h.core.skipped, {})
+        texts = [notice.text for notice in h.notices]
+        self.assertIn("Delivered Security Alarm Trap.", texts)
+        self.assertTrue(any(text.startswith("While delivering Security Alarm Trap, \"summon ") for text in texts))
+
+    def test_a_refused_command_before_the_optional_ones_still_sets_the_item_aside(self) -> None:
+        h = Harness().connect().attach()
+        h.game.refuse.add("StartSecurityAlarm")
+        h.receive("Security Alarm Trap")
+        h.settle()
+        self.assertEqual(h.game.commands, ["StartSecurityAlarm"] * core_module.MAX_ATTEMPTS)
+        self.assertEqual(h.game.summoned, [])
+        self.assertEqual(h.core.skipped, {0: REFUSED})
 
     def test_every_class_the_client_names_is_one_the_running_game_listed(self) -> None:
         """Held against what the game itself printed for `obj list` (Steam build, 2026-10-07)."""
