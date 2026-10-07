@@ -29,8 +29,15 @@ const NAME_TEXT = 0xC;
 const OBJECT_NAME = 0x20;
 const FRAME_OBJECT = 0x8;
 const FRAME_CODE = 0xC;
+// Script functions the fake game calls, so that a hook sees many different names.
+const FUNCTIONS = ['PostBeginPlay', 'Touch', 'Bump', 'Landed', 'Destroyed', 'Trigger', 'UnTrigger', 'BeginState',
+  'EndState', 'Died', 'TakeDamage', 'HitWall', 'Falling', 'ZoneChange', 'PlayerTick', 'UpdateHud', 'Use', 'Fire'];
+const CALLED = ['Tick', 'Timer', ...FUNCTIONS];
+const GNATIVES = BASE + 0x181000;
+const UNDEFINED_NATIVE = BASE + 0x1F00;
+const nativeAt = (opcode) => BASE + 0x2000 + opcode * 0x10;
 
-function makeRuntime({ withNatives = true, cmodule = true } = {}) {
+function makeRuntime({ withNatives = true, cmodule = true, gnatives = null } = {}) {
   const pages = new Map();
   const page = (address, create) => {
     const key = address >>> 12;
@@ -107,7 +114,7 @@ function makeRuntime({ withNatives = true, cmodule = true } = {}) {
   // The game: a name table, objects, frames.
   const names = ['None', 'ByteProperty', 'IntProperty', 'BoolProperty', 'Tick', 'CompleteQuest',
     'InteractedWithGatherer', 'PlayerPickedUpLog', 'QuestManager0', 'ActionCompleteQuest3', 'ShockPlayer0',
-    'AwardAchievementsManager0', 'Timer', 'AQuestName'];
+    'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -130,6 +137,13 @@ function makeRuntime({ withNatives = true, cmodule = true } = {}) {
     writeAnsi(BASE + 0x100200, 'intAActorexecVirtualFunctionality'); // a longer name that must not match
     writeU32(BASE + 0x100800, BASE + 0x100100);
     writeU32(BASE + 0x100804, NATIVE_FUNCTION);
+  }
+  if (gnatives !== null) {
+    // The table of natives by opcode: the first 0xD0 in use, the rest execUndefined.
+    for (let opcode = 0; opcode < 4096; opcode++) {
+      const value = opcode === gnatives.virtualAt ? NATIVE_FUNCTION : opcode < 0xD0 ? nativeAt(opcode) : UNDEFINED_NATIVE;
+      writeU32(GNATIVES + 4 * opcode, value);
+    }
   }
   // Code and data pages exist in full, as in the real module.
   for (const range of RANGES) {
@@ -160,10 +174,18 @@ function makeRuntime({ withNatives = true, cmodule = true } = {}) {
     return new Ptr(at);
   };
 
-  const runtime = { logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, index, writeU32 };
+  const constantFrame = (caller, value) => {
+    const at = frame(caller, 'None');
+    writeU32(readU32(at.value + FRAME_CODE), value);
+    return at;
+  };
+  const runtime = {
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, time: 1000,
+  };
 
   const context = {
     console: { log: (text) => runtime.logs.push(String(text)) },
+    Date: { now: () => runtime.time },
     Map, Set, Math, JSON, Array, Uint8Array, Uint32Array, Error, parseInt, String, Number,
     globalThis: null,
     ptr,
@@ -223,9 +245,9 @@ function makeRuntime({ withNatives = true, cmodule = true } = {}) {
   context.globalThis = context;
 
   // One script call: through the JS listener, or what the C filter does.
-  runtime.call = (self, frameAt) => {
+  runtime.call = (self, frameAt, target = NATIVE_FUNCTION) => {
     for (const hook of runtime.hooks) {
-      if (hook.detached || hook.target.value !== NATIVE_FUNCTION) { continue; }
+      if (hook.detached || hook.target.value !== target) { continue; }
       if (typeof hook.callbacks.onEnter === 'function') {
         hook.callbacks.onEnter.call({ context: { ecx: self } }, [frameAt, ptr(0)]);
       } else {
@@ -244,7 +266,11 @@ function makeRuntime({ withNatives = true, cmodule = true } = {}) {
       }
     }
   };
-  runtime.flush = () => { const timers = runtime.timers.splice(0); timers.forEach((fn) => fn()); };
+  runtime.flush = (ms = 0) => {
+    runtime.time += ms;
+    const timers = runtime.timers.splice(0);
+    timers.forEach((fn) => fn());
+  };
   runtime.run = () => vm.runInNewContext(source, context, { filename: probePath });
   runtime.context = context;
   return runtime;
@@ -262,7 +288,7 @@ function startedProbe(options) {
 function playCalls(rt, count) {
   const player = rt.object('ShockPlayer0');
   for (let i = 0; i < count; i++) {
-    rt.call(player, rt.frame(player, i % 2 ? 'Tick' : 'Timer'));
+    rt.call(player, rt.frame(player, CALLED[i % CALLED.length]));
   }
 }
 
@@ -280,8 +306,8 @@ test('learns the layout from sampled calls, then hands over to the native filter
   playCalls(rt, 400);
   rt.flush();
   const text = rt.logs.join('\n');
-  assert.match(text, /bytecode at frame\+0xc \(400\), object name at object\+0x20 \(400\)/);
-  assert.match(text, /calling object at frame\+0x8 \(400\)/);
+  assert.match(text, /named native at module\+0x100800 \(module\+0x1234\): 400 calls, bytecode at frame\+0xc \(400\), 20 different names/);
+  assert.match(text, /execVirtualFunction is module\+0x1234: bytecode at frame\+0xc, object name at object\+0x20, calling object at frame\+0x8/);
   assert.ok(rt.hooks[0].detached);
   assert.strictEqual(rt.hooks.length, 2);
   assert.strictEqual(typeof rt.hooks[1].callbacks.onEnter, 'string', 'the filter is native code');
@@ -313,10 +339,10 @@ test('a watched call prints its name, object, caller and the bytecode after it',
   assert.strictEqual(rt.logs.length, 1, rt.logs.join('\n'));
   assert.match(rt.logs[0], /^\[probe\] CompleteQuest on QuestManager0, called from ActionCompleteQuest3; bytecode after the name: 21 0d 00 00 00/);
   // Every 64th of the other calls is counted, so the total is right and the split is only a sample.
-  const top = rt.context.top(5);
+  const top = rt.context.top(50);
   const total = top.map((line) => Number(line.split(': ')[1])).reduce((a, b) => a + b, 0);
   assert.strictEqual(total, 640);
-  assert.ok(top.every((line) => /^(Tick|Timer): /.test(line)), top.join(', '));
+  assert.ok(top.every((line) => CALLED.includes(line.split(': ')[0])), top.join(', '));
 });
 
 test('watch() adds a name, and stop() takes the hook out', () => {
@@ -326,8 +352,8 @@ test('watch() adds a name, and stop() takes the hook out', () => {
   assert.strictEqual(rt.context.watch('Tick'), 'watching Tick');
   assert.strictEqual(rt.context.watch('NoSuchFunction'), 'NoSuchFunction not found');
   rt.logs.length = 0;
-  playCalls(rt, 4);
-  assert.strictEqual(rt.logs.filter((l) => l.includes('Tick on ShockPlayer0')).length, 2);
+  playCalls(rt, CALLED.length);
+  assert.strictEqual(rt.logs.filter((l) => l.includes('Tick on ShockPlayer0')).length, 1);
   assert.strictEqual(rt.context.stop(), 'hook removed');
   assert.ok(rt.hooks.every((h) => h.detached));
   rt.logs.length = 0;
@@ -335,10 +361,49 @@ test('watch() adds a name, and stop() takes the hook out', () => {
   assert.strictEqual(rt.logs.length, 0);
 });
 
-test('without a table of natives it says so and stops', () => {
+test('without either table of natives it says so and stops', () => {
   const rt = makeRuntime({ withNatives: false });
   assert.throws(() => rt.run(), /no execVirtualFunction/);
-  assert.match(rt.logs.join('\n'), /could not find "intUObjectexecVirtualFunction"/);
+  assert.match(rt.logs.join('\n'), /could not find the table of natives by opcode either/);
+});
+
+test('without natives by name, it takes execVirtualFunction from the table by opcode', () => {
+  const rt = startedProbe({ withNatives: false, gnatives: { virtualAt: 0x1B } });
+  playCalls(rt, 400);
+  rt.flush();
+  const text = rt.logs.join('\n');
+  assert.match(text, /natives by opcode at module\+0x181000: 208 in use, the rest module\+0x1f00/);
+  assert.match(text, /GNatives\[0x1b\], execVirtualFunction in the stock engine: module\+0x1234/);
+  assert.match(text, /execVirtualFunction is module\+0x1234: bytecode at frame\+0xc/);
+  assert.strictEqual(typeof rt.hooks[rt.hooks.length - 1].callbacks.onEnter, 'string');
+});
+
+test('when opcode 0x1b is something else, it tries the others and picks the one that names functions', () => {
+  const rt = startedProbe({ withNatives: false, gnatives: { virtualAt: 0x1C } });
+  const player = rt.object('ShockPlayer0');
+  // GNatives[0x1b] reads a small constant from the bytecode, which looks like a name index too.
+  for (let i = 0; i < 400; i++) { rt.call(player, rt.constantFrame(player, 1 + (i % 3)), nativeAt(0x1B)); }
+  rt.flush(16000);
+  let text = rt.logs.join('\n');
+  assert.match(text, /GNatives\[0x1b\] \(module\+0x21b0\): 400 calls, .*3 different names.* - not it/);
+  assert.match(text, /trying \d+ more natives at once/);
+  for (let i = 0; i < 400; i++) { rt.call(player, rt.constantFrame(player, 1 + (i % 3)), nativeAt(0x1D)); }
+  playCalls(rt, 400);
+  rt.flush(16000);
+  text = rt.logs.join('\n');
+  assert.match(text, /execVirtualFunction is module\+0x1234/);
+  assert.ok(rt.hooks.filter((h) => !h.detached).length === 1, 'only the filter is left');
+});
+
+test('use() hooks a native by opcode when asked', () => {
+  const rt = startedProbe({ withNatives: false, gnatives: { virtualAt: 0x1C } });
+  rt.flush(16000); // nothing called: 0x1b fails, and so does the broad round
+  rt.flush(16000);
+  assert.match(rt.logs.join('\n'), /could not tell which native/);
+  assert.strictEqual(rt.context.use(0x1C), 'sampling');
+  playCalls(rt, 400);
+  rt.flush();
+  assert.match(rt.logs.join('\n'), /execVirtualFunction is module\+0x1234/);
 });
 
 test('a filter that does not compile leaves no hook behind', () => {

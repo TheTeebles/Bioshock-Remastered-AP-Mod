@@ -19,11 +19,12 @@
  *   watch('Name')     also print calls of another function name
  *   top(20)           the 20 most frequent function names so far (to see what the hook can see at all)
  *   stop()            take the hook out
+ *   use(0x1b)         if it could not decide which native is execVirtualFunction: hook GNatives[0x1b]
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.1';
+const PROBE_VERSION = '2026-10-07.2';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -239,20 +240,79 @@ function findNative(nativeName) {
   return found;
 }
 
+// The natives by opcode (GNatives): 4096 code pointers in the module's data. Most opcodes are unused and all point at
+// the same function (execUndefined), which also fills the end of the table, so the table ends where that run does.
+const NATIVE_SLOTS = 4096;
+const EX_VIRTUAL_FUNCTION = 0x1B;
+
+function findGNatives() {
+  const code = mod.enumerateRanges('r-x').map((r) => [r.base.toUInt32(), r.base.toUInt32() + r.size]);
+  const isCode = (value) => code.some(([from, to]) => value >= from && value < to);
+  const found = [];
+  for (const range of mod.enumerateRanges('rw-')) {
+    let words;
+    try {
+      words = new Uint32Array(range.base.readByteArray(range.size & ~3));
+    } catch (e) {
+      continue;
+    }
+    let run = 0;
+    for (let i = 1; i <= words.length; i++) {
+      if (i < words.length && words[i] === words[i - 1] && isCode(words[i])) {
+        run++;
+        continue;
+      }
+      // words[i - 1] ends a run of run + 1 equal code pointers
+      const end = i - 1;
+      const start = end - (NATIVE_SLOTS - 1);
+      if (run + 1 >= 256 && start >= 0) {
+        const undefinedNative = words[end];
+        let defined = 0;
+        let pointers = 0;
+        for (let k = start; k <= end; k++) {
+          if (isCode(words[k])) {
+            pointers++;
+            if (words[k] !== undefinedNative) {
+              defined++;
+            }
+          }
+        }
+        const head = Array.from(words.subarray(start, start + 0x40));
+        if (pointers === NATIVE_SLOTS && defined >= 100 && head.filter((w) => w !== undefinedNative).length >= 0x30) {
+          found.push({ table: range.base.add(start * 4), words: Array.from(words.subarray(start, end + 1)),
+            undefinedNative, defined });
+        }
+      }
+      run = 0;
+    }
+  }
+  return found;
+}
+
+const candidates = []; // {label, target}, in order of preference
 const natives = findNative('intUObjectexecVirtualFunction');
 for (const native of natives) {
   log(`"${native.name}" at ${rel(native.string)}, named at ${rel(native.entry)}, ` +
       `function ${native.offset > 0 ? 'after' : 'before'} it: ${rel(native.target)}`);
+  candidates.push({ label: `named native at ${rel(native.entry)}`, target: native.target });
 }
+let gnatives = null;
 if (natives.length === 0) {
-  log('could not find "intUObjectexecVirtualFunction" in a table of natives. Please send the log as it is.');
-  throw new Error('no execVirtualFunction');
+  log('no table of natives by name; looking for the table of natives by opcode instead');
+  const tables = findGNatives();
+  for (const table of tables) {
+    log(`natives by opcode at ${rel(table.table)}: ${table.defined} in use, the rest ${rel(ptr(table.undefinedNative))}`);
+  }
+  if (tables.length === 0) {
+    log('could not find the table of natives by opcode either. Please send the log as it is.');
+    throw new Error('no execVirtualFunction');
+  }
+  gnatives = tables[0];
+  const target = ptr(gnatives.words[EX_VIRTUAL_FUNCTION]);
+  log(`GNatives[${hex(EX_VIRTUAL_FUNCTION)}], execVirtualFunction in the stock engine: ${rel(target)}`);
+  candidates.push({ label: `GNatives[${hex(EX_VIRTUAL_FUNCTION)}]`, target });
 }
-const preferred = natives.filter((native) => native.offset === 4);
-const virtualFunction = (preferred.length > 0 ? preferred : natives)[0].target;
-if (new Set(natives.map((native) => native.target.toString())).size > 1) {
-  log(`more than one candidate; using ${rel(virtualFunction)}`);
-}
+let virtualFunction = null;
 
 // ---------------------------------------------------------------------------------------------------------------
 // Calibration, in JavaScript and read-only: where in the FFrame the bytecode pointer is, and where an object keeps
@@ -299,49 +359,151 @@ function calibrate(samples) {
       }
     }
   }
-  return { frame: best(frameVotes), object, caller: best(callerVotes), total: samples.length };
+  const frame = best(frameVotes);
+  const seenNames = new Map();
+  for (const sample of samples) {
+    const code = pointerAt(sample.frame.add(frame[0]));
+    const text = code === null ? null : nameOf(u32(code));
+    if (text !== null) {
+      seenNames.set(text, (seenNames.get(text) || 0) + 1);
+    }
+  }
+  const common = [...seenNames.entries()].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([text]) => text);
+  return { frame, object, caller: best(callerVotes), total: samples.length, distinct: seenNames.size, common };
 }
 
 let codeOffset = null;
 let objectNameOffset = null;
 let callerOffset = null;
 const SAMPLE_COUNT = 400;
-const samples = [];
-let sampler = null;
+const SAMPLE_WAIT_MS = 15000;
+const MIN_DISTINCT = 15; // a call per function name: many different names, unlike a native that reads a constant
+let samplers = []; // {label, target, samples, listener}
 
-function startSampling() {
-  sampler = Interceptor.attach(virtualFunction, {
-    onEnter(args) {
-      if (samples.length < SAMPLE_COUNT) {
-        samples.push({ self: this.context.ecx, frame: args[0] });
-      }
-    },
+function sample(list) {
+  samplers = list.map(({ label, target }) => {
+    const entry = { label, target, samples: [], listener: null };
+    entry.listener = Interceptor.attach(target, {
+      onEnter(args) {
+        if (entry.samples.length < SAMPLE_COUNT) {
+          entry.samples.push({ self: this.context.ecx, frame: args[0] });
+        }
+      },
+    });
+    return entry;
   });
-  log(`sampling script calls at ${rel(virtualFunction)} to learn the layout (stand in a level, unpaused)`);
-  waitForSamples();
 }
 
-function waitForSamples() {
-  if (samples.length < SAMPLE_COUNT) {
-    setTimeout(waitForSamples, 200);
+function stopSampling() {
+  for (const entry of samplers) {
+    if (entry.listener !== null) {
+      entry.listener.detach();
+      entry.listener = null;
+    }
+  }
+}
+
+function judge(entry) {
+  const result = calibrate(entry.samples);
+  result.ok = result.total >= 100 && result.frame[1] >= result.total * 0.9 && result.distinct >= MIN_DISTINCT;
+  log(`${entry.label} (${rel(entry.target)}): ${result.total} calls, bytecode at frame+${hex(result.frame[0])} ` +
+      `(${result.frame[1]}), ${result.distinct} different names, e.g. ${result.common.join(', ') || 'none'}` +
+      (result.ok ? '' : ' - not it'));
+  return result;
+}
+
+function startSampling() {
+  log('sampling script calls to learn the layout (stand in a level, unpaused)');
+  sample(candidates);
+  waitForSamples(Date.now(), false);
+}
+
+function waitForSamples(started, broad) {
+  for (const entry of samplers) {
+    if (entry.listener !== null && entry.samples.length >= SAMPLE_COUNT) {
+      entry.listener.detach(); // a busy native costs the game time on every call while it is hooked
+      entry.listener = null;
+    }
+  }
+  const full = samplers.every((entry) => entry.samples.length >= SAMPLE_COUNT);
+  if (!full && Date.now() - started < SAMPLE_WAIT_MS) {
+    setTimeout(() => waitForSamples(started, broad), 200);
     return;
   }
-  sampler.detach();
-  sampler = null;
-  const result = calibrate(samples);
-  log(`layout votes from ${result.total} calls: bytecode at frame+${hex(result.frame[0])} (${result.frame[1]}), ` +
-      `object name at object+${hex(result.object[0])} (${result.object[1]})`);
-  if (result.frame[1] < result.total * 0.9) {
-    log('the bytecode pointer is not clear enough to filter on safely; stopping here. Please send the log.');
+  stopSampling();
+  const judged = samplers.map((entry) => ({ entry, result: judge(entry) }));
+  const good = judged.filter(({ result }) => result.ok);
+  if (good.length > 0 && !broad) {
+    choose(good[0].entry.target, good[0].result);
     return;
   }
+  if (broad) {
+    good.sort((a, b) => b.result.distinct - a.result.distinct);
+    if (good.length === 1 || (good.length > 1 && good[0].result.distinct >= 2 * good[1].result.distinct)) {
+      choose(good[0].entry.target, good[0].result);
+    } else {
+      log('could not tell which native is execVirtualFunction. Send the log; use(0xNN) hooks one by its opcode.');
+    }
+    return;
+  }
+  if (gnatives === null) {
+    log('the named native does not behave like execVirtualFunction; stopping here. Please send the log.');
+    return;
+  }
+  // The engine may number its opcodes differently: try every native in use among the first ones.
+  const seen = new Set(candidates.map((c) => c.target.toString()));
+  const broadList = [];
+  for (let opcode = 0; opcode < 0x60; opcode++) {
+    const value = gnatives.words[opcode];
+    const target = ptr(value);
+    if (value !== gnatives.undefinedNative && !seen.has(target.toString())) {
+      seen.add(target.toString());
+      broadList.push({ label: `GNatives[${hex(opcode)}]`, target });
+    }
+  }
+  log(`trying ${broadList.length} more natives at once for a few seconds; the game may stutter meanwhile`);
+  sample(broadList);
+  waitForSamples(Date.now(), true);
+}
+
+function choose(target, result) {
+  virtualFunction = target;
   codeOffset = result.frame[0];
   objectNameOffset = result.object[1] >= result.total * 0.5 ? result.object[0] : null;
   callerOffset = objectNameOffset !== null && result.caller[1] >= result.total * 0.5 ? result.caller[0] : null;
-  log(`calling object at frame+${hex(result.caller[0])} (${result.caller[1]})` +
-      (callerOffset === null ? ', too unclear to use' : ''));
+  log(`execVirtualFunction is ${rel(target)}: bytecode at frame+${hex(codeOffset)}, object name at ` +
+      `${objectNameOffset === null ? 'unknown' : `object+${hex(objectNameOffset)}`}, calling object at ` +
+      `${callerOffset === null ? 'unknown' : `frame+${hex(callerOffset)}`}`);
   installFilter();
 }
+
+globalThis.use = function (opcode) {
+  if (gnatives === null) {
+    return 'no table of natives by opcode was found';
+  }
+  if (listener !== null) {
+    return 'already hooked; stop() first';
+  }
+  const target = ptr(gnatives.words[opcode]);
+  log(`sampling GNatives[${hex(opcode)}] at ${rel(target)}`);
+  sample([{ label: `GNatives[${hex(opcode)}]`, target }]);
+  const started = Date.now();
+  const wait = () => {
+    if (samplers[0].samples.length < SAMPLE_COUNT && Date.now() - started < SAMPLE_WAIT_MS) {
+      setTimeout(wait, 200);
+      return;
+    }
+    stopSampling();
+    const result = judge(samplers[0]);
+    if (result.frame[1] < result.total * 0.9) {
+      log('its bytecode does not hold names; not hooking it');
+      return;
+    }
+    choose(target, result);
+  };
+  wait();
+  return 'sampling';
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // The filter: native code on every call, JavaScript only for a watched name (and a sampled count of the rest)
@@ -465,7 +627,7 @@ globalThis.status = function () {
   return {
     probe: PROBE_VERSION,
     names: `${nameCount()} at ${rel(names.array)}`,
-    virtualFunction: rel(virtualFunction),
+    virtualFunction: virtualFunction === null ? null : rel(virtualFunction),
     codeOffset: codeOffset === null ? null : hex(codeOffset),
     objectNameOffset: objectNameOffset === null ? null : hex(objectNameOffset),
     callerOffset: callerOffset === null ? null : hex(callerOffset),
@@ -493,10 +655,7 @@ globalThis.stop = function () {
     listener.detach();
     listener = null;
   }
-  if (sampler !== null) {
-    sampler.detach();
-    sampler = null;
-  }
+  stopSampling();
   return 'hook removed';
 };
 
