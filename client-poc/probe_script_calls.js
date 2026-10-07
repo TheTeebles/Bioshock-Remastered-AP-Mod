@@ -22,11 +22,14 @@
  *   use(0x1b)         if it could not decide which native is execVirtualFunction: hook GNatives[0x1b]
  *   quests()          the game's quests as they are now: name, completed, objectives done (read from memory)
  *   managers()        the counters AwardAchievementsManager keeps (sisters harvested and so on)
+ *   classes('sister') every class whose name has "sister" in it, with how many objects each has
+ *   snap('Sister')    remember the objects of those classes; do one thing in the game, then
+ *   diff()            print which words of them changed since (and remember the new values)
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.3';
+const PROBE_VERSION = '2026-10-07.4';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -412,17 +415,15 @@ function learnClass(className, cls) {
   for (const field of layout.chain) {
     const kind = classNameOf(field) || '';
     if (/Property$/.test(kind)) {
-      // A bool keeps its bit mask right after the offset, more or less: the first power of two after it.
+      // Bools declared one after another share a word, one bit each in declaration order (seen in the game: a
+      // quest's Completed reads 2 where HasSeenCurrentHint, declared just before it, is the 1).
       let mask = null;
+      const at = u32(field.add(offset.at));
       if (kind === 'BoolProperty') {
-        for (let at = offset.at + 4; at <= offset.at + 0x20 && mask === null; at += 4) {
-          const value = u32(field.add(at));
-          if (value !== null && value !== 0 && (value & (value - 1)) === 0) {
-            mask = value;
-          }
-        }
+        const sharing = [...properties.values()].filter((p) => p.kind === 'BoolProperty' && p.offset === at).length;
+        mask = 1 << sharing;
       }
-      properties.set(nameOfObject(field), { offset: u32(field.add(offset.at)), kind, mask });
+      properties.set(nameOfObject(field), { offset: at, kind, mask });
     }
   }
   layouts.set(className, properties);
@@ -444,6 +445,13 @@ function readProperty(object, property) {
   if (property.kind === 'NameProperty') {
     return nameOf(value) || `#${value}`;
   }
+  if (property.kind === 'StrProperty') {
+    const count = u32(at.add(4));
+    if (value === 0 || count === null || count < 1 || count > 300 || !readable(ptr(value), count * 2)) {
+      return '""';
+    }
+    return JSON.stringify(ptr(value).readUtf16String(count - 1));
+  }
   if (property.kind === 'FloatProperty') {
     return at.readFloat().toFixed(1);
   }
@@ -452,7 +460,33 @@ function readProperty(object, property) {
 
 let found = null;
 
-function describeQuests(limit) {
+// The object that holds this one (its package or level), a few words before the name. Which word is voted on
+// across the quests: the one that most often points at an object that has a class.
+let outerOffset;
+
+function outerNameOf(object) {
+  if (outerOffset === undefined) {
+    const quests = found === null ? [] : (found.instances.get('Quest') || []);
+    let best = { at: null, votes: 0 };
+    for (const at of [objects.nameOffset - 4, objects.nameOffset - 8, objects.nameOffset - 12]) {
+      const votes = quests.slice(0, 50).filter((q) => {
+        const outer = pointerAt(q.add(at));
+        return outer !== null && !outer.isNull() && readable(outer, 0x40) && classNameOf(outer) !== null;
+      }).length;
+      if (votes > best.votes) {
+        best = { at, votes };
+      }
+    }
+    outerOffset = best.votes >= Math.min(3, quests.length) ? best.at : null;
+  }
+  if (outerOffset === null) {
+    return '?';
+  }
+  const outer = pointerAt(object.add(outerOffset));
+  return outer !== null && !outer.isNull() && readable(outer, 0x40) ? (nameOfObject(outer) || '?') : '?';
+}
+
+function describeQuests(limit, withText) {
   const quests = found === null ? [] : (found.instances.get('Quest') || []);
   const properties = layouts.get('Quest');
   const lines = [`${quests.length} quests`];
@@ -461,10 +495,15 @@ function describeQuests(limit) {
       lines.push(`  ${nameOfObject(quest)}`);
       continue;
     }
-    lines.push(`  ${nameOfObject(quest)}: completed ${readProperty(quest, properties.get('Completed'))}, ` +
-      `active ${readProperty(quest, properties.get('Active'))}, objectives ` +
-      `${readProperty(quest, properties.get('NumberOfObjectivesCompleted'))}/` +
-      `${readProperty(quest, properties.get('NumberOfObjectivesToComplete'))}`);
+    const field = (name) => readProperty(quest, properties.get(name));
+    let line = `  ${nameOfObject(quest)} in ${outerNameOf(quest)}: ` +
+      `completed ${field('Completed')}, active ${field('Active')}, hidden ${field('Hidden')}, ` +
+      `objectives ${field('NumberOfObjectivesCompleted')}/${field('NumberOfObjectivesToComplete')}`;
+    if (withText) {
+      line += `, parent ${field('ParentName')}, level ${field('LevelFriendlyName')}, ` +
+        `name ${field('FriendlyName')}, objective ${field('ObjectiveDescription')}`;
+    }
+    lines.push(line);
   }
   return lines;
 }
@@ -503,7 +542,7 @@ if (objectTable === null) {
       learnClass(className, found.classes.get(className));
     }
   }
-  for (const line of describeQuests(40)) {
+  for (const line of describeQuests(1000, true)) {
     log(line);
   }
   for (const line of describeManagers()) {
@@ -516,7 +555,7 @@ globalThis.quests = function (limit) {
     return 'no object table';
   }
   rescan();
-  const lines = describeQuests(limit || 200);
+  const lines = describeQuests(limit || 1000, false);
   lines.forEach((line) => log(line));
   return `${lines.length - 1} listed`;
 };
@@ -529,6 +568,116 @@ globalThis.managers = function () {
   const lines = describeManagers();
   lines.forEach((line) => log(line));
   return 'listed';
+};
+
+// Any class, by part of its name: classes('sister') lists the classes and how many objects each has.
+// snap('LittleSister') remembers the first 0x800 bytes of every object of the matching classes, and diff() later
+// says which words changed, so one rescue or harvest between the two shows where the game keeps it.
+function matchingObjects(pattern) {
+  const regex = new RegExp(pattern, 'i');
+  const byClass = new Map();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === null || className === 'Class' || !regex.test(className)) {
+      continue;
+    }
+    if (!byClass.has(className)) {
+      byClass.set(className, []);
+    }
+    byClass.get(className).push(object);
+  }
+  return byClass;
+}
+
+globalThis.classes = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern || '.', 'i');
+  const counts = new Map();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const className = classNameOf(object);
+    if (className === null) {
+      continue;
+    }
+    if (className === 'Class') {
+      const name = nameOfObject(object);
+      if (name !== null && regex.test(name) && !counts.has(name)) {
+        counts.set(name, 0);
+      }
+    } else if (regex.test(className)) {
+      counts.set(className, (counts.get(className) || 0) + 1);
+    }
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [name, count] of sorted.slice(0, 200)) {
+    log(`  ${name}: ${count} objects`);
+  }
+  return `${counts.size} classes`;
+};
+
+const SNAP_BYTES = 0x800;
+let snapshot = null;
+
+globalThis.snap = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  snapshot = { pattern, objects: new Map() };
+  let count = 0;
+  for (const [className, list] of matchingObjects(pattern)) {
+    for (const object of list.slice(0, 300)) {
+      let length = SNAP_BYTES;
+      while (length > 0x40 && !readable(object, length)) {
+        length >>= 1;
+      }
+      if (!readable(object, length)) {
+        continue;
+      }
+      snapshot.objects.set(object.toString(), { object, className, words: new Uint32Array(object.readByteArray(length)) });
+      count++;
+    }
+    log(`  ${className}: ${list.length} objects`);
+  }
+  return `${count} objects remembered; do the thing, then diff()`;
+};
+
+globalThis.diff = function () {
+  if (snapshot === null) {
+    return 'snap(pattern) first';
+  }
+  let changed = 0;
+  for (const { object, className, words } of snapshot.objects.values()) {
+    if (!readable(object, words.length * 4)) {
+      log(`  ${nameOfObject(object) || object} (${className}): gone`);
+      continue;
+    }
+    const now = new Uint32Array(object.readByteArray(words.length * 4));
+    const lines = [];
+    for (let i = 0; i < words.length; i++) {
+      if (now[i] !== words[i]) {
+        const known = layouts.has(className) ? [...layouts.get(className).entries()].find(([, p]) => p.offset === i * 4) : undefined;
+        lines.push(`+${hex(i * 4)}${known ? ` (${known[0]})` : ''}: ${words[i].toString(16)} -> ${now[i].toString(16)}`);
+      }
+    }
+    if (lines.length > 0 && lines.length <= 40) {
+      changed++;
+      log(`  ${nameOfObject(object) || object} (${className}): ${lines.join(', ')}`);
+    } else if (lines.length > 40) {
+      changed++;
+      log(`  ${nameOfObject(object) || object} (${className}): ${lines.length} words changed (moving, probably); ` +
+          `first: ${lines.slice(0, 8).join(', ')}`);
+    }
+    snapshot.objects.get(object.toString()).words = now;
+  }
+  return `${changed} of ${snapshot.objects.size} objects changed (diff() again compares with now)`;
 };
 
 // ---------------------------------------------------------------------------------------------------------------

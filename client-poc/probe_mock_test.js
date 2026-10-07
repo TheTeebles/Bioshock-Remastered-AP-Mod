@@ -118,7 +118,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
     'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
     'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
-    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core'];
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -149,6 +149,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
       writeU32(GNATIVES + 4 * opcode, value);
     }
   }
+  let sisterAt = null;
   if (gobjects) {
     // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
     // a property's offset at +0x48 and a bool's mask at +0x4C.
@@ -184,16 +185,23 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
       }
     };
     const quest = cls('Quest');
-    fields(quest, [['DumpQuest', functionClass, 0], ['Active', boolProperty, 0x60, 2], ['Completed', boolProperty, 0x60, 1],
+    fields(quest, [['DumpQuest', functionClass, 0], ['Active', boolProperty, 0x60, 1], ['Completed', boolProperty, 0x60, 2],
       ['NumberOfObjectivesCompleted', intProperty, 0x5C], ['NumberOfObjectivesToComplete', intProperty, 0x58],
       ['Description', nameProperty, 0x54], ['FriendlyName', nameProperty, 0x50], ['HintName', nameProperty, 0x4C]]);
     const manager = cls('AwardAchievementsManager');
-    fields(manager, [['SavedGatherer', functionClass, 0], ['PlayerRespawned', boolProperty, 0x48, 4],
+    fields(manager, [['SavedGatherer', functionClass, 0], ['PlayerRespawned', boolProperty, 0x48, 1],
       ['NumGatherersInteracted', intProperty, 0x44], ['NumGatherersHarvested', intProperty, 0x40]]);
+    const level = make('Medical', packageClass);
     const q1 = make('Medical_FindRyan', quest);
+    writeU32(q1 + 0x18, level);
     writeU32(q1 + 0x60, 3); writeU32(q1 + 0x5C, 2); writeU32(q1 + 0x58, 2);
     const q2 = make('Medical_GetKey', quest);
-    writeU32(q2 + 0x60, 2); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
+    writeU32(q2 + 0x18, level);
+    const sisterClass = cls('LittleSisterHarvestable');
+    const sister = make('LittleSister0', sisterClass);
+    writeU32(sister + 0x80, 0);
+    sisterAt = sister;
+    writeU32(q2 + 0x60, 1); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
     const m = make('AwardAchievementsManager0', manager);
     writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
     writeU32(TABLE, DATA);
@@ -236,7 +244,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, time: 1000,
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, time: 1000,
   };
 
   const context = {
@@ -382,11 +390,23 @@ test('reads quests and the achievements manager straight from the object table',
   assert.match(text, /Quest: class found, 2 objects/);
   assert.match(text, /Quest: fields from class\+0x40, next at field\+0x30: DumpQuest, Active, Completed/);
   assert.match(text, /Quest: property offsets at property\+0x48/);
-  assert.match(text, /Medical_FindRyan: completed true, active true, objectives 2\/2/);
-  assert.match(text, /Medical_GetKey: completed false, active true, objectives 0\/1/);
+  assert.match(text, /Medical_FindRyan in Medical: completed true, active true, hidden \?, objectives 2\/2/);
+  assert.match(text, /Medical_GetKey in Medical: completed false, active true, hidden \?, objectives 0\/1/);
   assert.match(text, /AwardAchievementsManager0: PlayerRespawned false, NumGatherersInteracted 3, NumGatherersHarvested 1/);
   rt.writeU32(0x13000000, 0); // no effect on what follows: quests() scans again
   assert.strictEqual(rt.context.quests(), '2 listed');
+});
+
+test('classes() finds a class by part of its name, and snap()/diff() show what changed in its objects', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.classes('sister'), '1 classes');
+  assert.match(rt.logs.join('\n'), /LittleSisterHarvestable: 1 objects/);
+  assert.match(rt.context.snap('sister'), /^1 objects remembered/);
+  rt.logs.length = 0;
+  rt.writeU32(rt.sisterAt + 0x80, 5);
+  assert.strictEqual(rt.context.diff(), '1 of 1 objects changed (diff() again compares with now)');
+  assert.match(rt.logs.join('\n'), /LittleSister0 \(LittleSisterHarvestable\): \+0x80: 0 -> 5/);
+  assert.strictEqual(rt.context.diff(), '0 of 1 objects changed (diff() again compares with now)');
 });
 
 test('without an object table it says so and goes on to the script calls', () => {
