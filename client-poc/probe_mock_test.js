@@ -118,7 +118,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
     'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
     'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
-    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0'];
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -151,6 +151,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
   }
   let sisterAt = null;
   let questAt = null;
+  let gathererAt = null;
   if (gobjects) {
     // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
     // a property's offset at +0x48 and a bool's mask at +0x4C.
@@ -203,6 +204,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     const sister = make('LittleSister0', sisterClass);
     writeU32(sister + 0x80, 0);
     sisterAt = sister;
+    gathererAt = make('SpawnedGatherer', cls('SpawnedGatherer'));
     writeU32(q2 + 0x60, 1); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
     const m = make('AwardAchievementsManager0', manager);
     writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
@@ -246,7 +248,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, time: 1000,
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, time: 1000,
   };
 
   const context = {
@@ -409,6 +411,17 @@ test('classes() finds a class by part of its name, and snap()/diff() show what c
   assert.strictEqual(rt.context.diff(), '1 of 1 objects changed (diff() again compares with now)');
   assert.match(rt.logs.join('\n'), /LittleSisterHarvestable at 0x[0-9a-f]+: \+0x80: 0 -> 5/);
   assert.strictEqual(rt.context.diff(), '0 of 1 objects changed (diff() again compares with now)');
+});
+
+test('sisters() finds the sisters, and says when one goes away', () => {
+  const rt = startedProbe();
+  const r = rt.context.sisters();
+  assert.strictEqual(r, 'watching 1 sisters; sisters() again stops');
+  assert.match(rt.logs.join('\n'), /sister SpawnedGatherer at 0x[0-9a-f]+ appeared: HasBeenSavedOrPacified \?/);
+  rt.writeU32(rt.gathererAt, 0x00600000); // deleted: the vtable changes
+  rt.flush();
+  assert.match(rt.logs.join('\n'), /sister at 0x[0-9a-f]+ is gone \(last seen: HasBeenSavedOrPacified \?/);
+  assert.strictEqual(rt.context.sisters(), 'stopped watching sisters');
 });
 
 test('fields() lists a class\'s properties, and diff() names the ones that changed', () => {

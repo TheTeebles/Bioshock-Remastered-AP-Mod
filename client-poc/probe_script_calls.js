@@ -26,11 +26,12 @@
  *   snap('Sister')    remember the objects of those classes; do one thing in the game, then
  *   diff()            print which words of them changed since (and remember the new values)
  *   fields('SpawnedGatherer')  every property of a class (and the classes it extends) and where it sits
+ *   sisters()         print each Little Sister's flags whenever one changes (sisters() again stops)
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.5';
+const PROBE_VERSION = '2026-10-07.6';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -756,6 +757,85 @@ function labelOf(className, offset, before, after) {
   return names.length === 0 ? '' : ` (${names.join(', ')})`;
 }
 
+// Little Sisters as the client would see them: every 100 ms read the flags of each sister known so far, every
+// 2 s look for new ones, and print whenever a flag changes or a sister appears or goes away.
+const SISTER_CLASSES = '^(Spawned|PlayerEscorted)?Gatherer$';
+const SISTER_FLAGS = ['HasBeenSavedOrPacified', 'bIsSaved', 'IntentionallyPacified', 'bIsUnconscious', 'bDeleteMe',
+  'CurrentVent', 'VulnerableState'];
+let sisterWatch = null;
+
+function sisterState(object, className) {
+  const properties = layouts.get(className);
+  const end = properties === undefined ? 0 : Math.max(0x40, ...SISTER_FLAGS.map((name) =>
+    (properties.has(name) ? properties.get(name).offset + 4 : 0)));
+  if (properties === undefined || !readable(object, end)) {
+    return null;
+  }
+  return SISTER_FLAGS.map((name) => {
+    const p = properties.get(name);
+    if (p === undefined) {
+      return `${name} ?`;
+    }
+    if (p.kind === 'ObjectProperty') {
+      const value = u32(object.add(p.offset));
+      return `${name} ${value ? (nameOfObject(ptr(value)) || 'set') : 'none'}`;
+    }
+    if (p.kind === 'ByteProperty') {
+      return `${name} ${object.add(p.offset).readU8()}`;
+    }
+    return `${name} ${readProperty(object, p)}`;
+  }).join(', ');
+}
+
+globalThis.sisters = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (sisterWatch !== null) {
+    sisterWatch.stopped = true;
+    sisterWatch = null;
+    return 'stopped watching sisters';
+  }
+  const watch = { stopped: false, known: new Map(), lastScan: null };
+  sisterWatch = watch;
+  const tick = () => {
+    if (watch.stopped) {
+      return;
+    }
+    const now = Date.now();
+    if (watch.lastScan === null || now - watch.lastScan >= 2000) {
+      watch.lastScan = now;
+      for (const [className, list] of matchingObjects(SISTER_CLASSES)) {
+        if (!layouts.has(className)) {
+          learnAnyClass(className);
+        }
+        for (const object of list) {
+          const key = object.toString();
+          if (!watch.known.has(key)) {
+            const state = sisterState(object, className);
+            watch.known.set(key, { object, className, state, vtable: u32(object) });
+            log(`sister ${className} at ${object} appeared: ${state}`);
+          }
+        }
+      }
+    }
+    for (const [key, sister] of watch.known) {
+      const vtable = u32(sister.object);
+      const state = vtable === sister.vtable ? sisterState(sister.object, sister.className) : null;
+      if (state === null) {
+        log(`sister at ${key} is gone (last seen: ${sister.state})`);
+        watch.known.delete(key);
+      } else if (state !== sister.state) {
+        log(`sister at ${key}: ${state}`);
+        sister.state = state;
+      }
+    }
+    setTimeout(tick, 100);
+  };
+  tick();
+  return `watching ${watch.known.size} sisters; sisters() again stops`;
+};
+
 const SNAP_BYTES = 0x800;
 let snapshot = null;
 
@@ -770,7 +850,9 @@ globalThis.snap = function (pattern) {
       learnAnyClass(className);
     }
     for (const object of list.slice(0, 300)) {
-      let length = SNAP_BYTES;
+      // Enough to cover every property the class has (a Little Sister's own flags sit past +0x1000).
+      const known = layouts.has(className) ? [...layouts.get(className).values()].map((p) => p.offset + 0x10) : [];
+      let length = Math.min(0x4000, Math.max(SNAP_BYTES, ...known.map((end) => (end + 0xFF) & ~0xFF)));
       while (length > 0x40 && !readable(object, length)) {
         length >>= 1;
       }
