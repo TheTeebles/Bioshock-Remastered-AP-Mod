@@ -188,9 +188,20 @@ BUNDLES: dict[str, tuple[tuple[int, str], ...]] = {
     )),
 }
 
-# Traps the game has a console command for.
-TRAP_COMMANDS: dict[str, str] = {
-    "Security Alarm Trap": "StartSecurityAlarm",
+# Traps the game has console commands for.
+# `StartSecurityAlarm` alone rings the alarm and starts its timer, but the bots come from the level's own spawners,
+# and none came when it was given from the console (2026-10-07). `summon` puts a bot right in front of the player,
+# and one summoned while the alarm rings is hostile; summoned after the alarm has stopped it arrives already hacked
+# and friendly, so the alarm goes first. Of the bot classes tried in Fisheries, only the Deck2 one was found
+# (2026-10-07); the classes of ShockAIClasses are not all loaded in every level.
+SECURITY_BOT = "ShockAIClasses.SpawnedDeck2MediumSecurityBot"
+TRAP_COMMANDS: dict[str, tuple[str, ...]] = {
+    "Security Alarm Trap": ("StartSecurityAlarm", f"summon {SECURITY_BOT}"),
+}
+# How many of a trap's last commands may fail without the trap failing: an alarm with no bot is still a trap, and
+# setting it aside would ring the alarm a second time on /retry.
+TRAP_OPTIONAL: dict[str, int] = {
+    "Security Alarm Trap": 1,
 }
 
 # The other traps are not console commands. The agent implements them by name.
@@ -211,6 +222,7 @@ class Delivery:
     """How to hand one received item to the game."""
     description: str  # what the player is getting, e.g. "Winter Blast 2"
     commands: tuple[str, ...] = ()  # console commands, run in order
+    optional: int = 0  # how many of the last commands may fail without the item failing
     action: str | None = None  # named agent action instead of commands (traps)
 
     @property
@@ -258,7 +270,7 @@ def plan_delivery(item_name: str, copy_number: int, world_items_shuffled: bool =
 
     if kind == ItemKind.TRAP:
         if item_name in TRAP_COMMANDS:
-            return Delivery(item_name, (TRAP_COMMANDS[item_name],))
+            return Delivery(item_name, TRAP_COMMANDS[item_name], optional=TRAP_OPTIONAL.get(item_name, 0))
         return Delivery(item_name, action=TRAP_ACTIONS[item_name])
 
     if kind == ItemKind.WEAPON:

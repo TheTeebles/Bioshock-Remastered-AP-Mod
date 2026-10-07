@@ -19,6 +19,7 @@ from .protocol import ActionResult, AgentEvent, CommandResult, GameState, Player
 _GIVE_ITEM = re.compile(r"^GiveItem (\d+) ([A-Za-z_][\w.]*)$")
 _GIVE_WEAPON = re.compile(r"^GiveWeapon ([A-Za-z_][\w.]*)$")
 _WEAPON_UPGRADE = re.compile(r"^AddWeaponStatUpgrade ([A-Za-z]+) ([A-Za-z]+)$")
+_SUMMON = re.compile(r"^summon ([A-Za-z_][\w.]*)$")
 
 
 def resolve_level(text: str) -> str:
@@ -47,6 +48,7 @@ class SimulatedGame:
         self.fontaine_defeated = False
         self.inventory: Counter[str] = Counter()
         self.alarms = 0
+        self.summoned: list[str] = []  # classes put into the level with `summon`
         self.deaths = 0
         self.closed = False
 
@@ -125,6 +127,8 @@ class SimulatedGame:
             self.inventory[f"{match[1]} {match[2]} upgrade"] += 1
         elif text == "StartSecurityAlarm":
             self.alarms += 1
+        elif match := _SUMMON.match(text):
+            self.summoned.append(match[1])
         else:
             return False
         return True

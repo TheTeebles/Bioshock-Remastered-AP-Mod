@@ -582,13 +582,18 @@ class BridgeCore:
         flight.started = False  # answered: whatever happens to the game now, this command is not what did it
         if not ok:
             flight.attempts += 1
-            if not retry or flight.attempts >= MAX_ATTEMPTS:
+            if retry and flight.attempts < MAX_ATTEMPTS:
+                flight.retry_at = now + RETRY_DELAY
+                return
+            commands = flight.delivery.commands
+            if flight.delivery.action is not None or flight.step < len(commands) - flight.delivery.optional:
                 self._notice(f"Could not deliver {flight.delivery.description}: {failure}. "
                              "It is set aside; /retry tries it again.", warning=True)
                 self._finish(flight, given=False)
-            else:
-                flight.retry_at = now + RETRY_DELAY
-            return
+                return
+            # An optional command at the end: what came before it did its part, so the item still counts.
+            self._notice(f"While delivering {flight.delivery.description}, \"{commands[flight.step]}\" did not work: "
+                         f"{failure}.", warning=True)
         flight.step += 1
         flight.attempts = 0
         if flight.delivery.action is not None or flight.step >= len(flight.delivery.commands):

@@ -55,16 +55,17 @@ If the game was started as administrator, Archipelago has to be started as admin
 
 ### What to expect from the real game today
 
-- **Steam, build 1.0.127355.** Everything in the real game was done by hand so far, one command at a time; the
-  client doing it by itself has not been run against the game yet.
-  - *Seen arriving in the real game:* ADAM, gene tonics of the first and second level, a second-level plasmid
-    and a plasmid slot. All but the ADAM come with the game's own window for equipping or swapping, as if you
-    had picked them up.
-  - *Taken by the game without complaint, not yet confirmed in the inventory:* a weapon, a weapon upgrade and an
-    EVE hypo. The Security Alarm trap rings for a minute; whether it brings security bots is not settled.
-  - *Should work, not tried yet:* every other item. Each class the client names is one the running game listed
-    when asked. Also following which level you are in, sending "Level Complete" checks when you reach the next
-    level, and reporting the goal when Fontaine is defeated.
+- **Steam, build 1.0.127355.** The client has been run against the game with a real seed (2026-10-07): it finds
+  the game, follows which level you are in, sends "Level Complete" checks when you reach the next level, and holds
+  items while the game is paused or at the main menu.
+  - *Seen arriving in the real game:* ADAM, gene tonics of the first and second level, a second-level plasmid, a
+    plasmid slot, a Health Upgrade, a weapon, weapon upgrades, an EVE hypo, an Ammo Bundle, film, pistol rounds
+    and a U-Invent battery. Tonics, plasmids and slots come with the game's own window for equipping or swapping,
+    as if you had picked them up.
+  - *Security Alarm trap:* rings the alarm for a minute and summons a security bot in front of you, hostile while
+    the alarm rings. The bot's class is not loaded in every level; where it is missing, you only get the alarm.
+  - *Should work, not tried yet:* every other item, and reporting the goal when Fontaine is defeated. Each class
+    the client names is one the running game listed when asked.
   - If the game has no class of the name the client gives it, the client notices and says so ("Could not
     deliver ...: the game has no class ..."), and sets the item aside. If the client says "Delivered" and you got
     nothing, that is worth reporting, with the item's name.
