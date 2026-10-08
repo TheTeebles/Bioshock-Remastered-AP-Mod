@@ -1,7 +1,7 @@
 # BioShock Remastered Randomizer Setup Guide
 
 > **Early development.** Seeds generate, the client talks to Archipelago, and items can be put into the real game on
-> the Steam version. Most of what you do in the game is not noticed by the client yet, so a whole seed can only be
+> the Steam version. Some of what you do in the game is not noticed by the client yet, so a whole seed can only be
 > played end to end with the client's simulated game for now (see "Trying it without the game"). "What to expect
 > from the real game today" below says exactly where things stand.
 
@@ -70,8 +70,15 @@ If the game was started as administrator, Archipelago has to be started as admin
     deliver ...: the game has no class ..."), and sets the item aside. If the client says "Delivered" and you got
     nothing, that is worth reporting, with the item's name.
 - **GOG and Epic:** not supported yet. The client's game side was made for the Steam version.
-- **Not yet, on any version:** noticing story objectives, Little Sisters, Power to the People stations, audio
-  diaries and film reels; the EVE Drain and Pickpocket traps; and DeathLink. The client names every item it could
+- **Checks noticed in the game (Steam):**
+  - *Story objectives:* 28 of the 33, read from the game's own quest list, and seen working in the real game. Not
+    yet: Electro Bolt, Ryan's ambush, the ice wall, Peach Wilkins and the self-destruct.
+  - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. A fix for one
+    the client missed is waiting to be tried.
+  - *Audio diaries:* all 122, noticed when you pick one up. Not tried in the real game yet. A diary picked up
+    while the client was not watching is not noticed once a save has been loaded since.
+- **Not yet, on any version:** noticing Power to the People stations and film reels; the EVE Drain and Pickpocket
+  traps; and DeathLink. The client names every item it could
   not give you and keeps it for later.
 
 ## Client commands
