@@ -28,11 +28,12 @@
  *   fields('SpawnedGatherer')  every property of a class (and the classes it extends) and where it sits
  *   sisters()         print each Little Sister's flags whenever one changes (sisters() again stops)
  *   diaries()         every audio diary object (the ones picked up) and every diary class the game has loaded
+ *   diaryTable()      every audio diary the game knows, with its title, creator and level (after one pickup)
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-08.7';
+const PROBE_VERSION = '2026-10-08.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -918,6 +919,85 @@ globalThis.diaries = function () {
         `date ${text('CreatedDate')}, type ${nameField('LogType')}, entry ${entry}`);
   }
   return `${classes.length} classes, ${instances.length} objects`;
+};
+
+// Every diary at once, from the classes' default values (each class keeps a block of them, laid out like an
+// object of the class). Where that block is, is found from one diary object: the word in its class that points at
+// a block holding the same creator text. Needs one diary or radio message to have been received in this game.
+globalThis.diaryTable = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  const cache = new Map();
+  const classes = [];
+  let sample = null;
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = classOf(object);
+    if (object === null || cls === null || cls.isNull()) {
+      continue;
+    }
+    if (nameOfObject(cls) === 'Class') {
+      if (extendsClass(object, 'QuestLog', cache)) {
+        classes.push(object);
+      }
+    } else if (sample === null && extendsClass(cls, 'QuestLog', cache)) {
+      sample = object;
+    }
+  }
+  if (sample === null) {
+    return 'no diary or radio message received yet in this game; pick one up and try again';
+  }
+  const sampleClass = classOf(sample);
+  learnAnyClass(classNameOf(sample));
+  const p = layouts.get(classNameOf(sample));
+  const creator = p.get('CreatorFriendlyName');
+  const wanted = stringAt(sample.add(creator.offset));
+  let defaultsAt = null;
+  for (let d = 0x30; d <= 0x400 && defaultsAt === null; d += 4) {
+    const data = u32(sampleClass.add(d));
+    const count = u32(sampleClass.add(d + 4));
+    if (data && count && count > creator.offset && count < 0x10000 && readable(ptr(data), creator.offset + 12) &&
+        stringAt(ptr(data).add(creator.offset)) === wanted) {
+      defaultsAt = d;
+    }
+  }
+  if (defaultsAt === null) {
+    return `could not find where a class keeps its default values (looked for ${JSON.stringify(wanted)})`;
+  }
+  log(`default values at class+${hex(defaultsAt)}, ${classes.length} QuestLog classes`);
+  const strings = [...p.entries()].filter(([, q]) => q.kind === 'StrProperty');
+  const kinds = new Map();
+  const rows = [];
+  for (const cls of classes) {
+    const data = u32(cls.add(defaultsAt));
+    const count = u32(cls.add(defaultsAt + 4));
+    if (!data || !count || count < creator.offset + 12 || !readable(ptr(data), count)) {
+      continue;
+    }
+    const defaults = ptr(data);
+    const type = p.has('LogType') ? (nameOf(u32(defaults.add(p.get('LogType').offset))) || '?') : '?';
+    kinds.set(type, (kinds.get(type) || 0) + 1);
+    if (type !== 'Log') {
+      continue;
+    }
+    const texts = strings.map(([name, q]) => `${name} ${JSON.stringify(stringAt(defaults.add(q.offset)))}`);
+    let entry = '';
+    if (p.has('Entry')) {
+      const array = defaults.add(p.get('Entry').offset);
+      if (u32(array.add(4))) {
+        entry = stringAt(ptr(u32(array))).slice(0, 60);
+      }
+    }
+    rows.push(`  ${nameOfObject(cls)}: ${texts.join(', ')}, entry ${JSON.stringify(entry)}`);
+  }
+  rows.sort().forEach((row) => log(row));
+  log(`types: ${[...kinds.entries()].map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  return `${rows.length} diaries listed`;
 };
 
 const SNAP_BYTES = 0x800;
