@@ -1141,11 +1141,37 @@ const tests = {
     r.poke(again + 0x1038, 0x2); r.frames(2);
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
   },
-  'sisters are only looked for in the level the player is in': () => {
+  'the actors of levels the player is not in are not looked through': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const elsewhere = r.sister(game.entry, model); r.poke(elsewhere + 0x1038, 0x2);
     r.load(); r.frames(3);
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+  },
+  'a sister in the table of all objects is followed even when the player level does not list her': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = model.make('SpawnedGatherer0', model.spawned, 0x1100);
+    r.load(); r.frames(5);
+    assert.strictEqual(state(r).sistersWatched, 1);
+    r.poke(sister + 0x1038, 0x2); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical']);
+  },
+  'a deleted sister stops being followed, and a new one at her address starts afresh': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.removeActor(game.level, sister); r.poke(sister, 0x1234); r.frames(3); // deleted: its vtable changed
+    assert.strictEqual(state(r).sistersWatched, 0);
+    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(3);
+    assert.strictEqual(state(r).sistersWatched, 1);
+    r.poke(sister + 0x1038, 0x2); r.frames(3);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+  },
+  'radio messages and diaries are listed in state() without a line each in the log': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.diary('Med_At_PickUpRadio');
+    r.load(); r.frames(5);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["Med_At_PickUpRadio"]');
+    assert.ok(!r.logged('received Med_At_PickUpRadio'));
   },
   'a build without the object layout watches no sisters': () => {
     const r = makeRuntime({ moduleSize: EPIC_SIZE }); const game = r.game(); const model = r.objectModel();
@@ -1187,7 +1213,6 @@ const tests = {
     model.diary('vo_ducky_fleespang');
     r.frames(3);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
-    assert.ok(r.logged('received vo_ducky_fleespang'));
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

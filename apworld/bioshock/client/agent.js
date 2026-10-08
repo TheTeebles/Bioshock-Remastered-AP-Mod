@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-07.2';
+const AGENT_VERSION = '2026-10-08.1';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -565,6 +565,7 @@ function readState() {
     exceptionsSeen,
     // Little Sisters this agent saw rescued or harvested, by map. The client counts them as they are reported.
     littleSistersSeen: Object.fromEntries(sistersResolved),
+    sistersWatched: sistersKnown.size,
     sisterTrouble,
     // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
     completedQuests: quests.flag === null ? null : quests.completed,
@@ -1264,10 +1265,13 @@ function findBoolProperty(cls, wanted) {
 // A Little Sister is an actor whose class extends Gatherer. Her HasBeenSavedOrPacified turns true when she is
 // rescued or harvested, and she is deleted a little later. She is also deleted whenever she climbs into a vent,
 // and a new one comes out of it later, but then the flag stays false. Both seen in Medical Pavilion, 2026-10-07.
+// She is found two ways: among the actors of the level the player is in, and in the table of all objects (a level
+// can be made of several, and a sister need not be listed in the player's). Once found she is followed by her
+// address, as the probe that confirmed all this did, until her vtable changes, which is when she is deleted.
 const SISTER_INTERVAL_MS = 100;
 const SISTER_FLAG = 'HasBeenSavedOrPacified';
 const sisterClasses = new Map(); // class address -> where its flag is, or null for classes that are not sisters
-const sistersSeen = new Map(); // actor address -> whether her flag was already true when last looked at
+const sistersKnown = new Map(); // actor address -> { object, vtable, cls, flag, resolved }
 const sistersResolved = new Map(); // map -> sisters this agent saw rescued or harvested there
 let lastSisterLook = 0;
 let sisterTrouble = null;
@@ -1295,38 +1299,45 @@ function sisterFlagOf(cls) {
   return flag;
 }
 
+// Starts following an object if it is a sister not followed yet. Its class must already have been read from it.
+function noteSister(object, cls) {
+  const key = object.toString();
+  if (sistersKnown.has(key)) {
+    return;
+  }
+  const flag = sisterFlagOf(cls);
+  const vtable = flag === null ? null : carefulPtr(object);
+  if (vtable !== null) {
+    sistersKnown.set(key, { object, vtable, cls, flag, resolved: false });
+  }
+}
+
 // Runs on the game thread for the level the player is in, a few times a second.
 function watchSisters(level, map, now) {
   if (objectModel === null || virtualQuery === null || now - lastSisterLook < SISTER_INTERVAL_MS) {
     return;
   }
   lastSisterLook = now;
-  const present = new Set();
   for (const actor of actorsOf(level).actors) {
     const cls = ptrAt(actor.add(objectModel.objectClass)); // a listed actor is a real object: plain reads will do
-    if (cls === null || cls.isNull()) {
+    if (cls !== null && !cls.isNull()) {
+      noteSister(actor, cls);
+    }
+  }
+  for (const [key, sister] of [...sistersKnown]) {
+    if (!same(carefulPtr(sister.object), sister.vtable) || !same(classOfObject(sister.object), sister.cls)) {
+      sistersKnown.delete(key); // deleted: rescued, harvested or gone into a vent. Its address may be used again
       continue;
     }
-    const flag = sisterFlagOf(cls);
-    if (flag === null) {
-      continue;
-    }
-    const key = actor.toString();
-    present.add(key);
-    const word = s32At(actor.add(flag.offset));
-    const resolved = word !== null && ((word >>> 0) & flag.mask) !== 0;
-    if (resolved && sistersSeen.get(key) !== true) {
+    const word = carefulS32(sister.object.add(sister.flag.offset));
+    const resolved = word !== null && ((word >>> 0) & sister.flag.mask) !== 0;
+    if (resolved && !sister.resolved) {
       const count = (sistersResolved.get(map) || 0) + 1;
       sistersResolved.set(map, count);
       log(`a Little Sister was rescued or harvested in ${map} (${count} seen there by this agent)`);
       send({ type: 'little_sister', map });
     }
-    sistersSeen.set(key, resolved);
-  }
-  for (const key of [...sistersSeen.keys()]) {
-    if (!present.has(key)) {
-      sistersSeen.delete(key); // deleted: rescued, harvested or gone into a vent. Its address may be used again
-    }
+    sister.resolved = resolved;
   }
 }
 
@@ -1345,7 +1356,7 @@ const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = { next: 0, quests: [], map: null };
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
-const classKinds = new Map(); // class address -> 'quest', 'log' or null
+const classKinds = new Map(); // class address -> 'quest', 'log', 'sister' or null
 
 function kindOf(cls) {
   const key = cls.toString();
@@ -1354,8 +1365,13 @@ function kindOf(cls) {
     const name = nameOfObject(cls);
     if (name === 'Quest') {
       kind = 'quest';
-    } else if (name !== null && name !== 'Class' && lineageOf(cls).some((c) => nameOfObject(c) === 'QuestLog')) {
-      kind = 'log';
+    } else if (name !== null && name !== 'Class') {
+      const lineage = lineageOf(cls).map((c) => nameOfObject(c));
+      if (lineage.includes('QuestLog')) {
+        kind = 'log';
+      } else if (lineage.includes('Gatherer')) {
+        kind = 'sister';
+      }
     }
     if (classKinds.size > 20000) {
       classKinds.clear();
@@ -1392,11 +1408,9 @@ function watchObjects(map, now) {
     if (kind === 'quest') {
       scan.quests.push(object);
     } else if (kind === 'log') {
-      const name = nameOfObject(cls);
-      if (!logClassesSeen.has(name)) {
-        logClassesSeen.add(name);
-        log(`received ${name}`);
-      }
+      logClassesSeen.add(nameOfObject(cls)); // not logged: radio messages are QuestLogs too, and come often
+    } else if (kind === 'sister') {
+      noteSister(object, cls);
     }
   }
   scan.next = end;
