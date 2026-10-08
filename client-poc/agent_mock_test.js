@@ -359,7 +359,9 @@ function makeRuntime({
     const quest = (text, completed = false) => {
       const at = make(text, questClass); poke(at + 0xA8, completed ? 0x3 : 0x1); return at;
     };
-    return { spawned, splicer, make, quest };
+    const questLog = cls('QuestLog', objectClass);
+    const diary = (className) => make(className, cls(className, questLog));
+    return { spawned, splicer, make, quest, diary };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1176,6 +1178,16 @@ const tests = {
     r.frames(10);
     assert.strictEqual(state(r).questsWatched, 2);
     assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey","ResearchSplicers"]');
+  },
+  'state() lists the diaries received while it watches': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    r.load(); r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
+    model.diary('vo_ducky_fleespang');
+    r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+    assert.ok(r.logged('received vo_ducky_fleespang'));
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

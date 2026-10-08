@@ -966,6 +966,12 @@ class TestTranslation(unittest.TestCase):
             "GoToMedical", "QuarantineKey", "DestroySteinmanDebris", "GatherChloroUpdateA"])).milestones,
             frozenset({"steinman", "surgery_wreckage", "chlorophyll"}))
 
+    def test_received_logs_become_diaries(self) -> None:
+        base = {"execAvailable": True, "hookInstalled": True, "engineReady": True, "map": "2-fisheries"}
+        self.assertIsNone(state_from_agent(base).diaries)
+        self.assertEqual(state_from_agent(dict(base, logsReceived=["Fis_At_ReachedFisheries", "Med_St_RantA"])).diaries,
+                         frozenset({4}), "a radio message is no diary")
+
     def test_message_translation(self) -> None:
         def sent(payload: dict[str, Any]) -> Any:
             return event_from_message({"type": "send", "payload": payload})

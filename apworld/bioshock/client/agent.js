@@ -7,6 +7,7 @@
  *   - reports the map the player is in, the loading flag and the phase of the Fontaine fight
  *   - reports each Little Sister rescued or harvested, as a `little_sister` message naming the map
  *   - lists the quests (the game's objectives) completed in the loaded game, in state()
+ *   - lists the audio diaries (and radio messages) received while it watches, in state()
  *
  * Seen working on the real game (Steam build 1.0.127355, by hand, 2026-10-06 and 2026-10-07):
  *   - attaching, build detection and the game-thread hook
@@ -569,6 +570,8 @@ function readState() {
     completedQuests: quests.flag === null ? null : quests.completed,
     questsWatched: quests.list.length,
     questTrouble: quests.trouble,
+    // Classes of the audio diaries and radio messages received since the agent started watching.
+    logsReceived: [...logClassesSeen].sort(),
   };
 }
 
@@ -1332,65 +1335,83 @@ function watchSisters(level, map, now) {
 // ---------------------------------------------------------------------------------------------------------------
 
 // The game's objectives are Quest objects, every level's at once, and each keeps a Completed flag that is saved
-// with the game. They are found by going through the engine's table of all objects, a slice on every tick so that
-// no frame is held up, again whenever the map changes (loading a save makes new ones). Their flags are read a few
-// times a second, and state() lists the names of the completed ones. Which quest is which check is the client's
-// business.
-const QUEST_SCAN_SLICE = 4000; // objects looked at per tick
+// with the game. An audio diary or radio message is an object of a class of its own that extends QuestLog, made
+// when the player receives it; the ones received before a save was loaded do not come back as objects. Both are
+// found by going through the engine's table of all objects, a slice on every tick so that no frame is held up,
+// over and over. Quest flags are read a few times a second. state() lists the names of the completed quests and
+// the classes of the diaries and messages seen; which is which check is the client's business.
+const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
 const QUEST_READ_INTERVAL_MS = 500;
-const quests = { list: [], next: 0, scanning: [], map: null, flag: null, completed: [], readAt: 0, trouble: null };
-const classNames = new Map(); // class address -> its name
+const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
+const scan = { next: 0, quests: [], map: null };
+const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
+const classKinds = new Map(); // class address -> 'quest', 'log' or null
 
-function classNameOf(object) {
-  const cls = carefulPtr(object.add(objectModel.objectClass));
-  if (cls === null || cls.isNull()) {
-    return null;
-  }
+function kindOf(cls) {
   const key = cls.toString();
-  if (!classNames.has(key)) {
-    if (classNames.size > 20000) {
-      classNames.clear();
+  if (!classKinds.has(key)) {
+    let kind = null;
+    const name = nameOfObject(cls);
+    if (name === 'Quest') {
+      kind = 'quest';
+    } else if (name !== null && name !== 'Class' && lineageOf(cls).some((c) => nameOfObject(c) === 'QuestLog')) {
+      kind = 'log';
     }
-    classNames.set(key, nameOfObject(cls));
+    if (classKinds.size > 20000) {
+      classKinds.clear();
+    }
+    classKinds.set(key, kind);
   }
-  return classNames.get(key);
+  return classKinds.get(key);
 }
 
-function watchQuests(map, now) {
+function classOfObject(object) {
+  const cls = carefulPtr(object.add(objectModel.objectClass));
+  return cls === null || cls.isNull() ? null : cls;
+}
+
+function watchObjects(map, now) {
   if (objectModel === null || virtualQuery === null) {
     return;
   }
-  if (map !== quests.map) {
-    quests.map = map; // a new map, or a save loaded: look through the objects again
-    quests.next = 0;
-    quests.scanning = [];
+  if (map !== scan.map) {
+    scan.map = map; // a new map, or a save loaded: start the pass again
+    scan.next = 0;
+    scan.quests = [];
   }
   const table = carefulPtr(base.add(objectModel.objects));
   const count = carefulS32(base.add(objectModel.objects + 4));
   if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
     return;
   }
-  if (quests.next !== null) {
-    const end = Math.min(count, quests.next + QUEST_SCAN_SLICE);
-    for (let i = quests.next; i < end; i++) {
-      const object = carefulPtr(table.add(i * 4));
-      if (object !== null && !object.isNull() && classNameOf(object) === 'Quest') {
-        quests.scanning.push(object);
+  const end = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
+  for (let i = scan.next; i < end; i++) {
+    const object = carefulPtr(table.add(i * 4));
+    const cls = object === null || object.isNull() ? null : classOfObject(object);
+    const kind = cls === null ? null : kindOf(cls);
+    if (kind === 'quest') {
+      scan.quests.push(object);
+    } else if (kind === 'log') {
+      const name = nameOfObject(cls);
+      if (!logClassesSeen.has(name)) {
+        logClassesSeen.add(name);
+        log(`received ${name}`);
       }
     }
-    quests.next = end >= count ? null : end;
-    if (quests.next === null) {
-      quests.list = quests.scanning;
-      quests.scanning = [];
-      if (quests.flag === null && quests.list.length > 0) {
-        quests.flag = findBoolProperty(carefulPtr(quests.list[0].add(objectModel.objectClass)), 'Completed');
-        if (quests.flag === null) {
-          quests.trouble = 'could not find where a quest keeps Completed';
-          log(`quests cannot be watched: ${quests.trouble}`);
-        } else {
-          log(`watching ${quests.list.length} quests: Completed at +0x${quests.flag.offset.toString(16)}, ` +
-            `bit 0x${quests.flag.mask.toString(16)}`);
-        }
+  }
+  scan.next = end;
+  if (end >= count) { // a pass is complete
+    scan.next = 0;
+    quests.list = scan.quests;
+    scan.quests = [];
+    if (quests.flag === null && quests.trouble === null && quests.list.length > 0) {
+      quests.flag = findBoolProperty(classOfObject(quests.list[0]), 'Completed');
+      if (quests.flag === null) {
+        quests.trouble = 'could not find where a quest keeps Completed';
+        log(`quests cannot be watched: ${quests.trouble}`);
+      } else {
+        log(`watching ${quests.list.length} quests: Completed at +0x${quests.flag.offset.toString(16)}, ` +
+          `bit 0x${quests.flag.mask.toString(16)}`);
       }
     }
   }
@@ -1400,7 +1421,8 @@ function watchQuests(map, now) {
   quests.readAt = now;
   const completed = new Set();
   for (const quest of quests.list) {
-    if (classNameOf(quest) !== 'Quest') {
+    const cls = classOfObject(quest);
+    if (cls === null || kindOf(cls) !== 'quest') {
       continue; // gone since the scan
     }
     const word = carefulS32(quest.add(quests.flag.offset));
@@ -1433,7 +1455,7 @@ function onLevelTick(level) {
       const seen = levelsSeen.get(level.toString());
       if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
         watchSisters(level, seen.map, now);
-        watchQuests(seen.map, now);
+        watchObjects(seen.map, now);
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';

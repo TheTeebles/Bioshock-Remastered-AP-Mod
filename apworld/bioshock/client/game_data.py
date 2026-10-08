@@ -408,6 +408,143 @@ def milestones_of(completed_quests: object) -> frozenset[str] | None:
     return frozenset(QUEST_MILESTONES[name] for name in completed_quests if name in QUEST_MILESTONES)
 
 
+# Which class of the game's is which audio diary (the number in AUDIO_DIARIES). Each diary is an item class of its
+# own; the game's title for each (read from the running game on 2026-10-08) matched exactly one diary here. The game
+# has eight more logs that are not checks, and files diary 60 under Neptune's Bounty in its log screen.
+DIARY_CLASSES: dict[str, int] = {
+    "Med_Cf_WishUWereHere": 1,  # New Year's Eve Alone
+    "Med_Sb_BathroomWall": 2,  # Hole in Bathroom Wall
+    "Med_Cf_ReleasedToday": 3,  # Released Today
+    "Med_St_RantA": 4,  # ADAM's Changes
+    "Med_St_RantB": 5,  # Higher Standards
+    "Med_Ry_ProwlStreets": 6,  # Parasite Expectations
+    "Med_Tn_Properly": 7,  # Love for Science
+    "Med_St_RantC": 8,  # Limits of Imagination
+    "Med_Ry_Vandalism": 9,  # Vandalism
+    "Med_St_RantD": 10,  # Surgery's Picasso
+    "Med_Md_FrozenPipes": 11,  # Freezing Pipes
+    "Med_Sg_ClinicalTrail": 12,  # Enrage Trial
+    "Med_Tn_Wunderkind": 13,  # Useless Experiments
+    "Med_Sg_TelekinesisProgress": 14,  # Testing Telekinesis
+    "Med_Sg_PityFreak": 15,  # Plasmids Are the Paint
+    "Med_St_Symmetry": 16,  # Symmetry
+    "Med_St_Aphrodite": 17,  # Aphrodite Walking
+    "Med_St_NotWhatSheWanted": 18,  # Not What She Wanted
+    "Med_St_AdamFactories": 19,  # Gatherer Vulnerability
+    "Fis_Ry_FontaineMustGo": 20,  # Fontaine Must Go
+    "Fis_Pd_BathyLockdown": 21,  # Bathysphere Keys
+    "Fis_Tn_TenSawSmugglers": 22,  # Finding the Sea Slug
+    "Fis_Pd_SuvsInteroLog": 23,  # Picked Up Timmy H.
+    "Fis_Ml_ComeTo": 24,  # Masha Come Home
+    "Fis_Ry_MenaceFontaine": 25,  # Watch Fontaine
+    "Fis_Pd_HaveMyBadge": 26,  # Have My Badge
+    "Fis_Tn_TenCrazySlug": 27,  # ADAM Discovery
+    "Fis_Md_LeakyEden": 28,  # Eden Leaking
+    "Fis_Tn_TenPigMen": 29,  # Fontaine's Smugglers
+    "Fis_Ry_CityInUproar": 30,  # Death Penalty in Rapture
+    "Fis_Pd_SmugglingRing": 31,  # Smuggling Ring
+    "Fis_Ry_WorkingLate": 32,  # Working Late Again
+    "Fis_Md_FontaineFuturisticsLog": 33,  # Arresting Fontaine
+    "Fis_Ml_BarelyRecognized": 34,  # Saw Masha Today
+    "Fis_Md_WoodWolves": 35,  # Rapture Changing
+    "Fis_Md_RyanPlumbing": 36,  # Meeting Ryan
+    "Fis_Pd_RyanDoesWorse": 37,  # Timmy H. Interrogation
+    "Fis_Pc_PuttingTheScrewsOn": 38,  # Putting the Screws On
+    "Fis_Pc_RyanLikeUs": 39,  # Meeting with Fontaine
+    "Fis_Ft_FonMadScience": 40,  # Kraut Scientist
+    "Fis_Pc_OfferedADeal": 41,  # Offered a Deal
+    "Hyd_Md_SeeingGhosts": 42,  # Seeing Ghosts
+    "Hyd_Gm_Tryst": 43,  # Big Night Out
+    "Hyd_Tn_TenStoryA": 44,  # Mass Producing ADAM
+    "Hyd_Pf_LanBioA": 45,  # Arcadia Closed
+    "Hyd_Ml_FlavorF": 46,  # Shouldn't Have Come
+    "Hyd_Pf_Cultists": 47,  # The Saturnine
+    "Hyd_Ry_FlavorB": 48,  # The Market Is Patient
+    "Hyd_Cf_FlavorA": 49,  # Heroes and Criminals
+    "Hyd_Pf_Roses": 50,  # Early Tests Promising
+    "Hyd_Ry_FlavorE": 51,  # Offer a Better Product
+    "Hyd_Pf_RecipeHintA": 52,  # What Won't They Steal?
+    "Hyd_Pf_LanBioC": 53,  # Teaching an Old Hound
+    "Hyd_Pf_LVIntroA": 54,  # The Lazarus Vector
+    "Hyd_Pf_Recipe": 55,  # Lazarus Vector Formula
+    "Hyd_Pf_LanBioB": 56,  # Arcadia and Oxygen
+    "Hyd_Tn_TenStoryB": 57,  # Maternal Instinct
+    "Hyd_Td_RecipeHintB": 58,  # Bee Enzyme
+    "Hyd_Ry_FlavorD": 59,  # Pulling Together
+    "Fis_Ry_BouncerAndGatherer": 60,  # First Encounter
+    "Hyd_Tn_TenStoryC": 61,  # Hatred
+    "Hyd_Ry_MindControlBadGood": 62,  # Desperate Times
+    "Hyd_Pb_RecipeHintC": 63,  # Water in Wine
+    "Hyd_Tn_TenStoryD": 64,  # Functional Children
+    "Hyd_Tn_AdamExplanation": 65,  # ADAM Explained
+    "Hyd_Ry_FlavorC": 66,  # The Great Chain
+    "Rec_Cf_StoodUp": 67,  # Stood Up Again
+    "Rec_Co_MusicalInsult": 68,  # Musical Insult
+    "Rec_Pr_GoRecordStore": 69,  # Come to the Record Store
+    "Rec_Co_TakeTheEarsOff": 70,  # The Wild Bunny
+    "Rec_Pd_MeatballBeat": 71,  # Artists' Feud
+    "Rec_Al_FancyCiggies": 72,  # Fancy Cigarettes
+    "Rec_Co_GoingToHell": 73,  # The Doubters
+    "Rec_Po_Hallucination": 74,  # The Iceman Cometh
+    "Rec_Md_DoneOver": 75,  # Fontaine's Army
+    "Rec_Md_GunsBlazing": 76,  # Guns Blazing
+    "Rec_Pq_Art": 77,  # It's All Grift
+    "Rec_Jj_Pregnancy": 78,  # Pregnancy
+    "Rec_Ac_StableBoy": 79,  # Ryan's Stableboy
+    "Rec_Pd_BumpCulpepper": 80,  # Bump Culpepper?
+    "Rec_Co_CohenToastBroadway": 81,  # Requiem for Andrew Ryan
+    "Eng_Md_FlavourA": 82,  # Ryan Takes F Futuristics
+    "Eng_Pv_ScopeGate": 83,  # Scoping the Gate
+    "Eng_Md_FlavourD": 84,  # Stopping Ryan
+    "Eng_Pt_GoToHeatLoss": 85,  # Going to Heat Loss
+    "Eng_Ry_Difference": 86,  # A Man or a Parasite
+    "Eng_Md_FlavourB": 87,  # Fontaine's Legacy
+    "Eng_Pu_RecipeHint": 88,  # Running Short on R-34s
+    "Eng_Pt_Assassin": 89,  # Assassin
+    "Eng_Ry_WhereElse": 90,  # Impossible Anywhere Else
+    "Eng_Pu_KyburzCodeHint": 91,  # Kyburz Door Code
+    "Eng_Md_FlavourC": 92,  # Genetic Arms Race
+    "Eng_Pu_BombLocation": 93,  # Getting a Break
+    "Eng_Pv_AlmostFinished": 94,  # Device Almost Finished
+    "Eng_Pu_MarketCode": 95,  # Market Maintenance Code
+    "Eng_Ry_OnRaptureA": 96,  # Great Chain Moves Slowly
+    "Eng_Pv_Dream": 97,  # The Dream
+    "Eng_Pv_BombRecipe": 98,  # Assembling the Bomb
+    "Eng_Sg_VitaChamber": 99,  # The Vita-Chamber
+    "Eng_Sg_PuppyScene": 100,  # Mind Control Test
+    "Eng_Sg_FlavourBaby": 101,  # Baby Status
+    "Res_Sg_AboutTenenbaum": 102,  # Mozart of Genetics
+    "Res_Pd_ArtistWoman": 103,  # Artist Woman
+    "Res_Sg_AboutChild": 104,  # Fontaine's Human Jukebox
+    "Res_Sg_FirstQuestTarget": 105,  # Mind Control Antidote
+    "Res_Zi_FontCode": 106,  # Fontaine's Breakup
+    "Res_Ft_SadSaps": 107,  # Sad Saps
+    "Res_Cf_SoAngry": 108,  # What's Happening Here?
+    "Res_Cf_Lives": 109,  # Atlas Lives
+    "Res_Cf_TheyTrustMe": 110,  # Meeting Atlas
+    "Res_Ft_LongCon": 111,  # The Longest Con
+    "Res_Cf_Raid": 112,  # Today's Raid
+    "Res_Sg_ProtectionBond": 113,  # Protection Bond
+    "Sci_Sg_GoodForSuchong": 114,  # Changing Employers
+    "Sci_Tn_WhyGirls": 115,  # Why Just Girls?
+    "Sci_Sg_OneUseSuits": 116,  # Cheap Son of a Bitch
+    "Sci_Sg_Stink": 117,  # Protector Smell
+    "Sci_Ry_Mistakes": 118,  # Mistakes
+    "Sci_Sg_Opium": 119,  # Protecting Little Ones
+    "Sci_Sg_BootsMissingLog": 120,  # Missing Boots
+    "Sci_Ry_LittleGirls": 121,  # Marketing Gold
+    "Sci_Sg_ExtraMunitions": 122,  # Extra Munitions
+}
+assert sorted(DIARY_CLASSES.values()) == list(range(1, DIARY_COUNT + 1)), "every diary has exactly one class"
+
+
+def diaries_of(received: object) -> frozenset[int] | None:
+    """The diaries received, from the classes of the logs the agent saw. None while it cannot tell."""
+    if not isinstance(received, (list, tuple)):
+        return None
+    return frozenset(DIARY_CLASSES[name] for name in received if name in DIARY_CLASSES)
+
+
 def diary_location(number: int) -> int | None:
     return 1000 + number if 1 <= number <= DIARY_COUNT else None
 
