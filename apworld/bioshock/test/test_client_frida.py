@@ -22,7 +22,9 @@ from ..client.frida_agent import (
     event_from_message, missing_class, python_candidates, raised_from_message, raised_summary, routine_lookup,
     state_from_agent,
 )
-from ..client.protocol import ActionResult, AgentError, AgentMessage, CommandResult, CommandStarted, GameState
+from ..client.protocol import (
+    ActionResult, AgentError, AgentMessage, CommandResult, CommandStarted, GameState, LittleSisterResolved,
+)
 from .frida_harness import PYTHON, PYTHON_WITHOUT_FRIDA, FakeFrida, RawHelper, wait_for
 
 GAME_IN_MEDICAL = GameState(ready=True, map="1-medical")
@@ -956,6 +958,20 @@ class TestTranslation(unittest.TestCase):
         self.assertTrue(state_from_agent(dict(base, map="9-newlevel")).ready, "an unknown name is not held against it")
         self.assertIsNone(state_from_agent(dict(base, map=None)).map)
 
+    def test_completed_quests_become_story_milestones(self) -> None:
+        base = {"execAvailable": True, "hookInstalled": True, "engineReady": True, "map": "1-medical"}
+        self.assertIsNone(state_from_agent(base).milestones, "an agent that does not look at quests")
+        self.assertIsNone(state_from_agent(dict(base, completedQuests=None)).milestones, "not looked up yet")
+        self.assertEqual(state_from_agent(dict(base, completedQuests=[
+            "GoToMedical", "QuarantineKey", "DestroySteinmanDebris", "GatherChloroUpdateA"])).milestones,
+            frozenset({"steinman", "surgery_wreckage", "chlorophyll"}))
+
+    def test_received_logs_become_diaries(self) -> None:
+        base = {"execAvailable": True, "hookInstalled": True, "engineReady": True, "map": "2-fisheries"}
+        self.assertIsNone(state_from_agent(base).diaries)
+        self.assertEqual(state_from_agent(dict(base, logsReceived=["Fis_At_ReachedFisheries", "Med_St_RantA"])).diaries,
+                         frozenset({4}), "a radio message is no diary")
+
     def test_message_translation(self) -> None:
         def sent(payload: dict[str, Any]) -> Any:
             return event_from_message({"type": "send", "payload": payload})
@@ -972,6 +988,7 @@ class TestTranslation(unittest.TestCase):
                           "kept for the line that sums the command up; not an event of its own")
         self.assertEqual(sent({"type": "action_result", "id": 4, "ok": True}), ActionResult(4, True))
         self.assertIsInstance(sent({"type": "exec_disabled", "reason": "different build"}), AgentMessage)
+        self.assertEqual(sent({"type": "little_sister", "map": "1-Medical.bsm"}), LittleSisterResolved("1-medical"))
         self.assertIsNone(sent({"type": "something new"}))
         self.assertIsNone(event_from_message({"type": "send", "payload": "text"}))
         self.assertEqual(event_from_message({"type": "error", "description": "ReferenceError", "lineNumber": 7}),

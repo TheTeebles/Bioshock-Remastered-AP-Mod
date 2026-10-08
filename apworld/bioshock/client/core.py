@@ -24,8 +24,8 @@ from ..data import GOAL_LEVEL, ItemKind
 from . import game_data
 from .game_data import Delivery
 from .protocol import (
-    Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer, Notice,
-    PlayerDied, RunAction, RunCommand, SaveState, SendChecks, SendDeath, SendGoal,
+    Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer,
+    LittleSisterResolved, Notice, PlayerDied, RunAction, RunCommand, SaveState, SendChecks, SendDeath, SendGoal,
 )
 
 SAVE_VERSION = 1
@@ -251,6 +251,8 @@ class BridgeCore:
             self._on_player_died(now)
         elif isinstance(event, AgentMessage):
             self._notice(event.text)
+        elif isinstance(event, LittleSisterResolved):
+            self._on_little_sister(event.map)
 
     def tick(self, now: float) -> None:
         """Advance everything that depends on time or on a combination of both sides. Call a few times a second."""
@@ -419,6 +421,24 @@ class BridgeCore:
         if (state.goal or defeated) and not self.goal_reached:
             self.goal_reached = True
             self._dirty = True
+
+    def _on_little_sister(self, map_name: str | None) -> None:
+        """One more sister dealt with: she becomes the first sister of her level that has not been collected yet.
+        Which sister of the level she was cannot be told, so the order is the order they are dealt with."""
+        level = game_data.level_of(map_name, None) if map_name is not None else self.level
+        if level is None:
+            self._notice(f"A Little Sister was rescued or harvested in {map_name or 'a map the client does not know'}, "
+                         "which is not one of the levels, so no check goes with it.", warning=True)
+            return
+        index = 1
+        while (level, index) in game_data.LITTLE_SISTER_LOCATION:
+            location = game_data.LITTLE_SISTER_LOCATION[level, index]
+            if location not in self.collected:
+                self.collected.add(location)
+                self._dirty = True
+                return
+            index += 1
+        # Every sister of this level is collected already: a save loaded from before an earlier rescue, say.
 
     @staticmethod
     def _locations_in(state: GameState) -> set[int]:

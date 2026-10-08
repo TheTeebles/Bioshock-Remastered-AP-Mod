@@ -1,4 +1,4 @@
-# BioShock APWorld source (v0.1.4)
+# BioShock APWorld source (v0.1.5)
 
 This folder mirrors `worlds/bioshock/` from an Archipelago source checkout: the world, and the client that ships with
 it. The design and rationale live in `claude/bioshock-ap-design.md`.

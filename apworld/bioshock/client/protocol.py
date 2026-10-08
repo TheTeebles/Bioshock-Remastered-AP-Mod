@@ -63,7 +63,13 @@ class AgentMessage:
     text: str
 
 
-AgentEvent = CommandStarted | CommandResult | ActionResult | PlayerDied | AgentMessage
+@dataclass(frozen=True)
+class LittleSisterResolved:
+    """The agent saw a Little Sister rescued or harvested, in this map (None if it could not tell)."""
+    map: str | None
+
+
+AgentEvent = CommandStarted | CommandResult | ActionResult | PlayerDied | AgentMessage | LittleSisterResolved
 
 
 class AgentError(Exception):

@@ -301,6 +301,75 @@ function makeRuntime({
     poke(level + 0x48, entry.actors.length);
     if (runtime.memory.get(level + 0x4C) < entry.actors.length) { poke(level + 0x4C, entry.actors.length); }
   };
+  runtime.removeActor = (level, actor) => {
+    const entry = runtime.levelData.get(level);
+    entry.actors = entry.actors.filter((a) => a !== actor);
+    entry.actors.forEach((a, i) => poke(entry.data + 4 * i, a));
+    poke(level + 0x48, entry.actors.length);
+  };
+  // The engine's names and classes, as on the Steam build: a name table, and class objects with their name at
+  // +0x28, class at +0x30, the class they extend at +0x40 and first field at +0x5C; a field's next at +0x44 and a
+  // property's offset at +0x74.
+  runtime.objectModel = () => {
+    const names = [];
+    const table = runtime.object(0x4000);
+    poke(BASE + 0x13904EC, table);
+    const name = (text) => {
+      let index = names.indexOf(text);
+      if (index < 0) {
+        index = names.length; names.push(text);
+        const entry = runtime.object(0x1000); runtime.text.set(entry + 0x10, text);
+        poke(table + 4 * index, entry); poke(BASE + 0x13904F0, names.length);
+      }
+      return index;
+    };
+    name('None');
+    const all = runtime.object(0x10000); // the table of all objects
+    let objectCount = 0;
+    poke(BASE + 0x139042C, all);
+    const make = (text, cls, size = 0x200) => {
+      const at = runtime.object(size); poke(at + 0x28, name(text)); poke(at + 0x30, cls);
+      poke(all + 4 * objectCount, at); objectCount++; poke(BASE + 0x1390430, objectCount);
+      return at;
+    };
+    const classClass = make('Class', 0); poke(classClass + 0x30, classClass);
+    const cls = (text, extendsFrom) => { const at = make(text, classClass); poke(at + 0x40, extendsFrom); return at; };
+    const objectClass = cls('Object', 0);
+    const boolProperty = cls('BoolProperty', objectClass);
+    const intProperty = cls('IntProperty', objectClass);
+    const fields = (owner, list) => {
+      let previous = null;
+      for (const [text, kind, offset] of list) {
+        const field = make(text, kind); poke(field + 0x74, offset);
+        if (previous === null) { poke(owner + 0x5C, field); } else { poke(previous + 0x44, field); }
+        previous = field;
+      }
+    };
+    const actor = cls('Actor', objectClass);
+    fields(actor, [['bHidden', boolProperty, 0xCC], ['bDeleteMe', boolProperty, 0xCC]]);
+    const gatherer = cls('Gatherer', actor);
+    fields(gatherer, [['bIsSaved', boolProperty, 0xFA8], ['VulnerableState', intProperty, 0xFFC],
+      ['bCannotBecomeUnconscious', boolProperty, 0x1038], ['HasBeenSavedOrPacified', boolProperty, 0x1038],
+      ['bIsGathering', boolProperty, 0x1038]]);
+    const spawned = cls('SpawnedGatherer', gatherer);
+    const splicer = cls('Splicer', actor);
+    const questClass = cls('Quest', objectClass);
+    fields(questClass, [['NumberOfObjectivesToComplete', intProperty, 0x90],
+      ['HasSeenCurrentHint', boolProperty, 0xA8], ['Completed', boolProperty, 0xA8], ['Hidden', boolProperty, 0xB0]]);
+    const quest = (text, completed = false) => {
+      const at = make(text, questClass); poke(at + 0xA8, completed ? 0x3 : 0x1); return at;
+    };
+    const questLog = cls('QuestLog', objectClass);
+    const diary = (className) => make(className, cls(className, questLog));
+    return { spawned, splicer, make, quest, diary };
+  };
+  // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
+  runtime.sister = (level, model) => {
+    const at = runtime.object(0x1100); poke(at + 0x30, model.spawned); poke(at + 0x1038, 0);
+    runtime.addActor(level, at);
+    return at;
+  };
+
   // The local player in a level: controller, pawn, HUD and the player object (viewport), all pointing at each other.
   runtime.player = (level, { viewport = null } = {}) => {
     const controller = runtime.object(); const pawn = runtime.object(); const hud = runtime.object();
@@ -1042,6 +1111,108 @@ const tests = {
     assert.strictEqual(state(bad).execAvailable, false, 'unreadable engine pointer');
     assert.strictEqual(state(bad).levelValue, null);
     assert.strictEqual(state(bad).inGame, null, 'no path for this build: cannot tell');
+  },
+  // ---- Little Sisters ----
+  'a Little Sister rescued or harvested is reported once, with the map': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const other = r.object(0x1100); r.poke(other + 0x30, model.splicer); r.addActor(game.level, other);
+    const sister = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+    assert.ok(r.logged('watching Little Sisters of class SpawnedGatherer: HasBeenSavedOrPacified at +0x1038, bit 0x2'));
+    r.poke(sister + 0x1038, 0x9); // other bits of the same word: not resolved
+    r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+    r.poke(sister + 0x1038, 0xB);
+    r.frames(5);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical']);
+    r.removeActor(game.level, sister); r.frames(3); // deleted after the rescue
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+    assert.strictEqual(JSON.stringify(state(r).littleSistersSeen), '{"1-medical":1}');
+  },
+  'a Little Sister going into a vent is not reported': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.removeActor(game.level, sister); r.frames(3);
+    const again = r.sister(game.level, model); // out of another vent, as a new object
+    r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+    r.poke(again + 0x1038, 0x2); r.frames(2);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+  },
+  'the actors of levels the player is not in are not looked through': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const elsewhere = r.sister(game.entry, model); r.poke(elsewhere + 0x1038, 0x2);
+    r.load(); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+  },
+  'a sister in the table of all objects is followed even when the player level does not list her': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = model.make('SpawnedGatherer0', model.spawned, 0x1100);
+    r.load(); r.frames(5);
+    assert.strictEqual(state(r).sistersWatched, 1);
+    r.poke(sister + 0x1038, 0x2); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical']);
+  },
+  'a deleted sister stops being followed, and a new one at her address starts afresh': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.removeActor(game.level, sister); r.poke(sister, 0x1234); r.frames(3); // deleted: its vtable changed
+    assert.strictEqual(state(r).sistersWatched, 0);
+    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(3);
+    assert.strictEqual(state(r).sistersWatched, 1);
+    r.poke(sister + 0x1038, 0x2); r.frames(3);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+  },
+  'radio messages and diaries are listed in state() without a line each in the log': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.diary('Med_At_PickUpRadio');
+    r.load(); r.frames(5);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["Med_At_PickUpRadio"]');
+    assert.ok(!r.logged('received Med_At_PickUpRadio'));
+  },
+  'a build without the object layout watches no sisters': () => {
+    const r = makeRuntime({ moduleSize: EPIC_SIZE }); const game = r.game(); const model = r.objectModel();
+    const sister = r.sister(game.level, model); r.poke(sister + 0x1038, 0x2);
+    r.load(); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
+  },
+  // ---- quests ----
+  'state() lists the completed quests, read from the table of all objects': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true); model.quest('ResearchSplicers'); model.quest('GoToDeck', true);
+    const later = model.quest('GatherChloro');
+    r.load();
+    assert.strictEqual(state(r).completedQuests, null, 'not looked up yet');
+    r.frames(3);
+    assert.ok(r.logged('watching 4 quests: Completed at +0xa8, bit 0x2'));
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["GoToDeck","QuarantineKey"]');
+    r.poke(later + 0xA8, 0x2);
+    r.frames(6);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["GatherChloro","GoToDeck","QuarantineKey"]');
+    void game;
+  },
+  'a new map has the quests looked up again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    r.load(); r.frames(3);
+    assert.strictEqual(state(r).questsWatched, 1);
+    model.quest('ResearchSplicers', true); // made by loading a save
+    r.string(game.level + 0x7C, '2-fisheries');
+    r.frames(10);
+    assert.strictEqual(state(r).questsWatched, 2);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey","ResearchSplicers"]');
+  },
+  'state() lists the diaries received while it watches': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    r.load(); r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
+    model.diary('vo_ducky_fleespang');
+    r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

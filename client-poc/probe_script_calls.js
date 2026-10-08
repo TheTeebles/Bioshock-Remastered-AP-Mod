@@ -20,11 +20,24 @@
  *   top(20)           the 20 most frequent function names so far (to see what the hook can see at all)
  *   stop()            take the hook out
  *   use(0x1b)         if it could not decide which native is execVirtualFunction: hook GNatives[0x1b]
+ *   quests()          the game's quests as they are now: name, completed, objectives done (read from memory)
+ *   managers()        the counters AwardAchievementsManager keeps (sisters harvested and so on)
+ *   classes('sister') every class whose name has "sister" in it, with how many objects each has
+ *   snap('Sister')    remember the objects of those classes; do one thing in the game, then
+ *   diff()            print which words of them changed since (and remember the new values)
+ *   fields('SpawnedGatherer')  every property of a class (and the classes it extends) and where it sits
+ *   sisters()         print each Little Sister's flags whenever one changes (sisters() again stops)
+ *   diaries()         every audio diary object (the ones picked up) and every diary class the game has loaded
+ *   diaryTable()      every audio diary the game knows, with its title, creator and level (after one pickup)
+ *   where('PlaceableWeaponUpgradeStation')  each object of the matching classes, where it is and how far away
+ *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
+ *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
+ *                     off its front instead of 80; a negative distance stands behind it
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.2';
+const PROBE_VERSION = '2026-10-08.10';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -209,6 +222,963 @@ function indexOfName(wanted) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// The object table (GObjects), read-only: a TArray of UObject pointers. Each object keeps its name (an FName index)
+// and its class (a pointer to another object) at offsets learned here. From a class, its properties: the class's
+// first child, each child's next, and each property's offset into an instance. Names of the declared properties
+// (from the UE Explorer export) tell which pointers are which.
+// ---------------------------------------------------------------------------------------------------------------
+
+const DECLARED = {
+  Quest: ['HintName', 'Text', 'FriendlyName', 'Description', 'ObjectiveDescription', 'CompletedDescription',
+    'CompletedObjectiveDescription', 'LevelFriendlyName', 'CompleteMessage', 'ObjectiveMessage', 'ParentName',
+    'MapUIRegion', 'ArrowActor', 'ArrowActorLevelLabel', 'ReleventLevelLabel', 'TimeToComplete', 'FailureTime',
+    'NumberOfObjectivesToComplete', 'NumberOfObjectivesCompleted', 'CompleteWhenAllChildrenAreCompleted',
+    'QuestHints', 'CurrentHintName', 'HintReminderTime', 'HasSeenCurrentHint', 'Completed', 'ADAMAward', 'Hidden',
+    'Active', 'Parent', 'Children', 'ReplacedBy', 'ObjectiveIcon', 'DumpQuest'],
+  AwardAchievementsManager: ['NumMachinesHacked', 'NumItemsCrafted', 'WasSecurityEverTriggered',
+    'DidDamageUsingNonWrenchWeapon', 'AmmoCrafted', 'NumGatherersHarvested', 'NumGatherersInteracted',
+    'NumTracksMaxed', 'PlayerOwner', 'DifficultyChanged', 'PlayerRespawned', 'JustCraftedAnItem',
+    'NumGatherersInGame', 'MachinesHackedForAward', 'TotalLogsInGame', 'TotalPassivePlasmidsInGame',
+    'ItemsCraftedForAward', 'CraftableAmmoTypes', 'SavedGatherer', 'CollectedGatherer', 'GameFinished',
+    'AwardAchievement', 'PlayerPickedUpLog', 'WeaponUpgraded'],
+};
+
+const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null, propertyOffset: null,
+  superOffset: undefined };
+
+function objectAt(index) {
+  const data = pointerAt(objects.table);
+  const object = data === null ? null : pointerAt(data.add(index * 4));
+  return object === null || object.isNull() ? null : object;
+}
+
+function nameOfObject(object) {
+  return object === null ? null : nameOf(u32(object.add(objects.nameOffset)));
+}
+
+function classOf(object) {
+  return object === null ? null : pointerAt(object.add(objects.classOffset));
+}
+
+function classNameOf(object) {
+  return nameOfObject(classOf(object));
+}
+
+function findObjects() {
+  for (const range of mod.enumerateRanges('rw-')) {
+    let words;
+    try {
+      words = new Uint32Array(range.base.readByteArray(range.size & ~3));
+    } catch (e) {
+      continue;
+    }
+    for (let i = 0; i + 2 < words.length; i++) {
+      const count = words[i + 1];
+      const max = words[i + 2];
+      const array = range.base.add(i * 4);
+      if (count < 5000 || count > 2000000 || max < count || max > 4000000 || array.equals(names.array)) {
+        continue;
+      }
+      const data = ptr(words[i]);
+      const sampled = [];
+      for (let k = 0; k < 400 && sampled.length < 64; k++) {
+        const object = pointerAt(data.add(k * 4));
+        if (object === null) {
+          break;
+        }
+        if (!object.isNull() && readable(object, 0x60)) {
+          sampled.push(object);
+        }
+      }
+      if (sampled.length < 32) {
+        continue;
+      }
+      for (let nameOffset = 0x8; nameOffset <= 0x40; nameOffset += 4) {
+        const named = sampled.filter((o) => {
+          const index = u32(o.add(nameOffset));
+          return index !== 0 && nameOf(index) !== null;
+        }).length;
+        if (named < sampled.length * 0.9) {
+          continue;
+        }
+        for (let classOffset = 0x8; classOffset <= 0x48; classOffset += 4) {
+          if (classOffset === nameOffset) {
+            continue;
+          }
+          const classed = sampled.filter((o) => {
+            const cls = pointerAt(o.add(classOffset));
+            const meta = cls === null ? null : pointerAt(cls.add(classOffset));
+            return meta !== null && nameOf(u32(meta.add(nameOffset))) === 'Class';
+          }).length;
+          if (classed >= sampled.length * 0.9) {
+            return { table: array, count, nameOffset, classOffset };
+          }
+        }
+      }
+    }
+  }
+  return null;
+}
+
+// Every object of the given class names, and the classes of those names, in one pass over the table.
+function scanObjects(classNames) {
+  const wanted = new Set(classNames);
+  const found = { instances: new Map(), classes: new Map() };
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === 'Class') {
+      const name = nameOfObject(object);
+      if (wanted.has(name)) {
+        found.classes.set(name, object);
+      }
+    } else if (wanted.has(className)) {
+      if (!found.instances.has(className)) {
+        found.instances.set(className, []);
+      }
+      found.instances.get(className).push(object);
+    }
+  }
+  return found;
+}
+
+// Children and Next: pointers that lead from the class to its declared fields and from field to field.
+function findLayout(cls, declared) {
+  const known = new Set(declared);
+  for (let childrenOffset = 0x20; childrenOffset <= 0x100; childrenOffset += 4) {
+    const first = pointerAt(cls.add(childrenOffset));
+    if (first === null || !readable(first, 0x80) || !known.has(nameOfObject(first))) {
+      continue;
+    }
+    for (let nextOffset = 0x20; nextOffset <= 0x60; nextOffset += 4) {
+      const chain = [];
+      let field = first;
+      while (field !== null && !field.isNull() && chain.length < 300 && readable(field, 0x80)) {
+        chain.push(field);
+        field = pointerAt(field.add(nextOffset));
+      }
+      const hits = chain.filter((f) => known.has(nameOfObject(f))).length;
+      if (hits >= Math.min(4, declared.length) && hits >= chain.length * 0.6) {
+        return { childrenOffset, nextOffset, chain };
+      }
+    }
+  }
+  return null;
+}
+
+// The property's offset into an instance: the field offset, the same for every property, where the numbers are
+// distinct (bools aside), plausible and in step with the declaration order.
+function findPropertyOffset(chain) {
+  const properties = chain.filter((f) => /Property$/.test(classNameOf(f) || ''));
+  let best = null;
+  for (let at = 0x24; at <= 0x80; at += 4) {
+    const values = properties.map((p) => u32(p.add(at)));
+    if (values.some((v) => v === null || v < 0x20 || v > 0x4000)) {
+      continue;
+    }
+    const distinct = new Set(values).size;
+    if (best === null || distinct > best.distinct) {
+      best = { at, distinct, of: properties.length };
+    }
+  }
+  return best;
+}
+
+function hexWords(object, from, to) {
+  const out = [];
+  for (let at = from; at < to; at += 4) {
+    const value = u32(object.add(at));
+    out.push(value === null ? '????????' : value.toString(16).padStart(8, '0'));
+  }
+  return out.join(' ');
+}
+
+const layouts = new Map(); // class name -> {properties: Map name -> {offset, kind, mask}}
+
+function learnClass(className, cls) {
+  const layout = findLayout(cls, DECLARED[className]);
+  if (layout === null) {
+    log(`${className}: could not find its fields. Its first 0x100 bytes: ${hexWords(cls, 0, 0x100)}`);
+    return null;
+  }
+  const chainNames = layout.chain.map((f) => nameOfObject(f) || '?');
+  log(`${className}: fields from class+${hex(layout.childrenOffset)}, next at field+${hex(layout.nextOffset)}: ` +
+      chainNames.join(', '));
+  if (objects.layout === null) {
+    objects.layout = layout;
+  }
+  const offset = findPropertyOffset(layout.chain);
+  for (const field of layout.chain.slice(0, 4)) {
+    log(`  ${nameOfObject(field)} (${classNameOf(field)}): ${hexWords(field, 0x20, 0x70)}`);
+  }
+  if (offset === null) {
+    log(`${className}: could not tell where a property keeps its offset`);
+    return null;
+  }
+  log(`${className}: property offsets at property+${hex(offset.at)} (${offset.distinct} distinct of ${offset.of})`);
+  if (objects.propertyOffset === null) {
+    objects.propertyOffset = offset.at;
+  }
+  const properties = new Map();
+  for (const field of layout.chain) {
+    const kind = classNameOf(field) || '';
+    if (/Property$/.test(kind)) {
+      // Bools declared one after another share a word, one bit each in declaration order (seen in the game: a
+      // quest's Completed reads 2 where HasSeenCurrentHint, declared just before it, is the 1).
+      let mask = null;
+      const at = u32(field.add(offset.at));
+      if (kind === 'BoolProperty') {
+        const sharing = [...properties.values()].filter((p) => p.kind === 'BoolProperty' && p.offset === at).length;
+        mask = 1 << sharing;
+      }
+      properties.set(nameOfObject(field), { offset: at, kind, mask });
+    }
+  }
+  layouts.set(className, properties);
+  return properties;
+}
+
+function readProperty(object, property) {
+  if (property === undefined || property.offset === null) {
+    return '?';
+  }
+  const at = object.add(property.offset);
+  const value = u32(at);
+  if (value === null) {
+    return '?';
+  }
+  if (property.kind === 'BoolProperty') {
+    return property.mask === null ? `0x${value.toString(16)}` : String((value & property.mask) !== 0);
+  }
+  if (property.kind === 'NameProperty') {
+    return nameOf(value) || `#${value}`;
+  }
+  if (property.kind === 'StrProperty') {
+    const count = u32(at.add(4));
+    if (value === 0 || count === null || count < 1 || count > 300 || !readable(ptr(value), count * 2)) {
+      return '""';
+    }
+    return JSON.stringify(ptr(value).readUtf16String(count - 1));
+  }
+  if (property.kind === 'FloatProperty') {
+    return at.readFloat().toFixed(1);
+  }
+  return String(value | 0);
+}
+
+let found = null;
+
+// The object that holds this one (its package or level), a few words before the name. Which word is voted on
+// across the quests: the one that most often points at an object that has a class.
+let outerOffset;
+
+function outerNameOf(object) {
+  if (outerOffset === undefined) {
+    const quests = found === null ? [] : (found.instances.get('Quest') || []);
+    let best = { at: null, votes: 0 };
+    for (const at of [objects.nameOffset - 4, objects.nameOffset - 8, objects.nameOffset - 12]) {
+      const votes = quests.slice(0, 50).filter((q) => {
+        const outer = pointerAt(q.add(at));
+        return outer !== null && !outer.isNull() && readable(outer, 0x40) && classNameOf(outer) !== null;
+      }).length;
+      if (votes > best.votes) {
+        best = { at, votes };
+      }
+    }
+    outerOffset = best.votes >= Math.min(3, quests.length) ? best.at : null;
+  }
+  if (outerOffset === null) {
+    return '?';
+  }
+  const outer = pointerAt(object.add(outerOffset));
+  return outer !== null && !outer.isNull() && readable(outer, 0x40) ? (nameOfObject(outer) || '?') : '?';
+}
+
+function describeQuests(limit, withText) {
+  const quests = found === null ? [] : (found.instances.get('Quest') || []);
+  const properties = layouts.get('Quest');
+  const lines = [`${quests.length} quests`];
+  for (const quest of quests.slice(0, limit)) {
+    if (properties === undefined) {
+      lines.push(`  ${nameOfObject(quest)}`);
+      continue;
+    }
+    const field = (name) => readProperty(quest, properties.get(name));
+    let line = `  ${nameOfObject(quest)} in ${outerNameOf(quest)}: ` +
+      `completed ${field('Completed')}, active ${field('Active')}, hidden ${field('Hidden')}, ` +
+      `objectives ${field('NumberOfObjectivesCompleted')}/${field('NumberOfObjectivesToComplete')}`;
+    if (withText) {
+      line += `, parent ${field('ParentName')}, level ${field('LevelFriendlyName')}, ` +
+        `name ${field('FriendlyName')}, objective ${field('ObjectiveDescription')}`;
+    }
+    lines.push(line);
+  }
+  return lines;
+}
+
+function describeManagers() {
+  const managers = found === null ? [] : (found.instances.get('AwardAchievementsManager') || []);
+  const properties = layouts.get('AwardAchievementsManager');
+  const lines = [`${managers.length} AwardAchievementsManager`];
+  for (const manager of managers) {
+    const values = properties === undefined ? 'fields unknown'
+      : [...properties.entries()].filter(([, p]) => p.kind !== 'ArrayProperty' && p.kind !== 'ObjectProperty')
+        .map(([name, p]) => `${name} ${readProperty(manager, p)}`).join(', ');
+    lines.push(`  ${nameOfObject(manager)}: ${values}`);
+  }
+  return lines;
+}
+
+function rescan() {
+  found = scanObjects(Object.keys(DECLARED));
+  for (const className of Object.keys(DECLARED)) {
+    const count = (found.instances.get(className) || []).length;
+    log(`${className}: class ${found.classes.has(className) ? 'found' : 'not found'}, ${count} objects`);
+  }
+}
+
+const objectTable = findObjects();
+if (objectTable === null) {
+  log('could not find the object table; quests() and managers() are not available');
+} else {
+  Object.assign(objects, objectTable);
+  log(`object table at ${rel(objects.table)}: ${objects.count} objects, name at object+${hex(objects.nameOffset)}, ` +
+      `class at object+${hex(objects.classOffset)}`);
+  rescan();
+  for (const className of Object.keys(DECLARED)) {
+    if (found.classes.has(className)) {
+      learnClass(className, found.classes.get(className));
+    }
+  }
+  for (const line of describeQuests(1000, true)) {
+    log(line);
+  }
+  for (const line of describeManagers()) {
+    log(line);
+  }
+}
+
+globalThis.quests = function (limit) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  rescan();
+  const lines = describeQuests(limit || 1000, false);
+  lines.forEach((line) => log(line));
+  return `${lines.length - 1} listed`;
+};
+
+globalThis.managers = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  rescan();
+  const lines = describeManagers();
+  lines.forEach((line) => log(line));
+  return 'listed';
+};
+
+// Any class, by part of its name: classes('sister') lists the classes and how many objects each has.
+// snap('LittleSister') remembers the first 0x800 bytes of every object of the matching classes, and diff() later
+// says which words changed, so one rescue or harvest between the two shows where the game keeps it.
+function matchingObjects(pattern) {
+  const regex = new RegExp(pattern, 'i');
+  const byClass = new Map();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === null || className === 'Class' || !regex.test(className)) {
+      continue;
+    }
+    if (!byClass.has(className)) {
+      byClass.set(className, []);
+    }
+    byClass.get(className).push(object);
+  }
+  return byClass;
+}
+
+globalThis.classes = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern || '.', 'i');
+  const counts = new Map();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const className = classNameOf(object);
+    if (className === null) {
+      continue;
+    }
+    if (className === 'Class') {
+      const name = nameOfObject(object);
+      if (name !== null && regex.test(name) && !counts.has(name)) {
+        counts.set(name, 0);
+      }
+    } else if (regex.test(className)) {
+      counts.set(className, (counts.get(className) || 0) + 1);
+    }
+  }
+  const sorted = [...counts.entries()].sort((a, b) => b[1] - a[1]);
+  for (const [name, count] of sorted.slice(0, 200)) {
+    log(`  ${name}: ${count} objects`);
+  }
+  return `${counts.size} classes`;
+};
+
+// The class a class extends: the word in a class that points at another class, the same word in every class,
+// leading up to Object. Voted on across the classes already learned.
+function findSuperOffset() {
+  const known = [...found.classes.values()];
+  for (let at = 0x20; at <= 0x100; at += 4) {
+    if (at === objects.classOffset) {
+      continue;
+    }
+    const reachesObject = known.filter((cls) => {
+      let current = cls;
+      for (let step = 0; step < 30 && current !== null && !current.isNull(); step++) {
+        if (nameOfObject(current) === 'Object') {
+          return step > 0;
+        }
+        const next = pointerAt(current.add(at));
+        if (next === null || next.isNull() || classNameOf(next) !== 'Class') {
+          return false;
+        }
+        current = next;
+      }
+      return false;
+    }).length;
+    if (known.length > 0 && reachesObject === known.length) {
+      return at;
+    }
+  }
+  return null;
+}
+
+function findClass(className) {
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && nameOfObject(object) === className && classNameOf(object) === 'Class') {
+      return object;
+    }
+  }
+  return null;
+}
+
+// Every property of a class and the classes above it, with where it sits in an object, using the layout learned
+// from Quest. Also kept so diff() can name the words that change.
+function learnAnyClass(className) {
+  if (objects.layout === null || objects.propertyOffset === null) {
+    return { error: 'the layout of classes is not known (Quest was not learned)' };
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+    log(`classes extend the class at class+${objects.superOffset === null ? '?' : hex(objects.superOffset)}`);
+  }
+  let cls = findClass(className);
+  if (cls === null) {
+    return { error: `no class named ${className}` };
+  }
+  const lineage = [];
+  const properties = new Map();
+  while (cls !== null && !cls.isNull() && lineage.length < 30) {
+    const name = nameOfObject(cls);
+    lineage.push(name);
+    if (name === 'Object') {
+      break;
+    }
+    let field = pointerAt(cls.add(objects.layout.childrenOffset));
+    const bools = new Map();
+    for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
+      const kind = classNameOf(field) || '';
+      if (/Property$/.test(kind)) {
+        const at = u32(field.add(objects.propertyOffset));
+        let mask = null;
+        if (kind === 'BoolProperty') {
+          const sharing = bools.get(at) || 0;
+          bools.set(at, sharing + 1);
+          mask = 1 << sharing;
+        }
+        const fieldName = nameOfObject(field);
+        if (!properties.has(fieldName)) {
+          properties.set(fieldName, { offset: at, kind, mask, owner: name });
+        }
+      }
+      field = pointerAt(field.add(objects.layout.nextOffset));
+    }
+    if (objects.superOffset === null) {
+      break;
+    }
+    cls = pointerAt(cls.add(objects.superOffset));
+  }
+  if (!layouts.has(className)) {
+    layouts.set(className, properties);
+  }
+  return { lineage, properties };
+}
+
+globalThis.fields = function (className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return learned.error;
+  }
+  log(`${className}: ${learned.lineage.join(' < ')}`);
+  const sorted = [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted) {
+    log(`  +${hex(p.offset)}${p.mask === null ? '' : ` bit ${hex(p.mask)}`} ${name} (${p.kind}, ${p.owner})`);
+  }
+  return `${learned.properties.size} properties`;
+};
+
+// ---- moving the player, for testing ----
+
+const PLAYER_CLASS = 'ShockPlayer';
+const UNREAL_ROTATION = 65536; // a full turn
+
+function actorPlace(object) {
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor;
+  }
+  const location = actor.properties.get('Location');
+  const rotation = actor.properties.get('Rotation');
+  if (location === undefined || rotation === undefined) {
+    return { error: 'Actor has no Location or Rotation property here' };
+  }
+  const at = object.add(location.offset);
+  return {
+    at,
+    x: at.readFloat(), y: at.add(4).readFloat(), z: at.add(8).readFloat(),
+    yaw: object.add(rotation.offset + 4).readS32(),
+    velocity: actor.properties.get('Velocity'),
+  };
+}
+
+function thePlayer() {
+  const players = matchingObjects(`^${PLAYER_CLASS}$`).get(PLAYER_CLASS) || [];
+  if (players.length !== 1) {
+    log(`found ${players.length} ${PLAYER_CLASS} objects, where one was expected`);
+  }
+  return players.length === 1 ? players[0] : null;
+}
+
+function placeText(place) {
+  return `(${place.x.toFixed(0)}, ${place.y.toFixed(0)}, ${place.z.toFixed(0)})`;
+}
+
+globalThis.where = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  if (from !== null && from.error) {
+    return from.error;
+  }
+  let n = 0;
+  for (const [className, list] of matchingObjects(pattern)) {
+    for (const object of list) {
+      const place = actorPlace(object);
+      if (place.error) {
+        return place.error;
+      }
+      const away = from === null ? '' :
+        `, ${Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z).toFixed(0)} away`;
+      log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}${away}`);
+      n++;
+    }
+  }
+  return n === 0 ? `nothing matches ${pattern} here` : `${n} found; goto('${pattern}', n) goes to one`;
+};
+
+globalThis.goto = function (pattern, n = 0, distance = 80) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const targets = [...matchingObjects(pattern).values()].flat();
+  if (n < 0 || n >= targets.length) {
+    return targets.length === 0 ? `nothing matches ${pattern} here` : `pick n from 0 to ${targets.length - 1}`;
+  }
+  const target = actorPlace(targets[n]);
+  const from = actorPlace(player);
+  if (target.error || from.error) {
+    return target.error || from.error;
+  }
+  const angle = (target.yaw / UNREAL_ROTATION) * 2 * Math.PI;
+  const x = target.x + Math.cos(angle) * distance;
+  const y = target.y + Math.sin(angle) * distance;
+  const z = target.z + 40; // a little above, so as not to start in the floor
+  from.at.writeFloat(x);
+  from.at.add(4).writeFloat(y);
+  from.at.add(8).writeFloat(z);
+  if (from.velocity !== undefined) {
+    const velocity = player.add(from.velocity.offset);
+    [0, 4, 8].forEach((k) => velocity.add(k).writeFloat(0));
+  }
+  log(`moved the player from ${placeText(from)} to (${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)}), ` +
+    `next to ${nameOfObject(targets[n])} at ${placeText(target)}`);
+  return 'moved';
+};
+
+// What a changed word is, by the properties at that offset.
+function labelOf(className, offset, before, after) {
+  const properties = layouts.get(className);
+  if (properties === undefined) {
+    return '';
+  }
+  const names = [];
+  for (const [name, p] of properties) {
+    if (p.offset !== offset) {
+      continue;
+    }
+    if (p.mask === null) {
+      names.push(name);
+    } else if (((before ^ after) & p.mask) !== 0) {
+      names.push(`${name} ${(after & p.mask) !== 0}`);
+    }
+  }
+  return names.length === 0 ? '' : ` (${names.join(', ')})`;
+}
+
+// Little Sisters as the client would see them: every 100 ms read the flags of each sister known so far, every
+// 2 s look for new ones, and print whenever a flag changes or a sister appears or goes away.
+const SISTER_CLASSES = '^(Spawned|PlayerEscorted)?Gatherer$';
+const SISTER_FLAGS = ['HasBeenSavedOrPacified', 'bIsSaved', 'IntentionallyPacified', 'bIsUnconscious', 'bDeleteMe',
+  'CurrentVent', 'VulnerableState'];
+let sisterWatch = null;
+
+function sisterState(object, className) {
+  const properties = layouts.get(className);
+  const end = properties === undefined ? 0 : Math.max(0x40, ...SISTER_FLAGS.map((name) =>
+    (properties.has(name) ? properties.get(name).offset + 4 : 0)));
+  if (properties === undefined || !readable(object, end)) {
+    return null;
+  }
+  return SISTER_FLAGS.map((name) => {
+    const p = properties.get(name);
+    if (p === undefined) {
+      return `${name} ?`;
+    }
+    if (p.kind === 'ObjectProperty') {
+      const value = u32(object.add(p.offset));
+      return `${name} ${value ? (nameOfObject(ptr(value)) || 'set') : 'none'}`;
+    }
+    if (p.kind === 'ByteProperty') {
+      return `${name} ${object.add(p.offset).readU8()}`;
+    }
+    return `${name} ${readProperty(object, p)}`;
+  }).join(', ');
+}
+
+globalThis.sisters = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (sisterWatch !== null) {
+    sisterWatch.stopped = true;
+    sisterWatch = null;
+    return 'stopped watching sisters';
+  }
+  const watch = { stopped: false, known: new Map(), lastScan: null };
+  sisterWatch = watch;
+  const tick = () => {
+    if (watch.stopped) {
+      return;
+    }
+    const now = Date.now();
+    if (watch.lastScan === null || now - watch.lastScan >= 2000) {
+      watch.lastScan = now;
+      for (const [className, list] of matchingObjects(SISTER_CLASSES)) {
+        if (!layouts.has(className)) {
+          learnAnyClass(className);
+        }
+        for (const object of list) {
+          const key = object.toString();
+          if (!watch.known.has(key)) {
+            const state = sisterState(object, className);
+            watch.known.set(key, { object, className, state, vtable: u32(object) });
+            log(`sister ${className} at ${object} appeared: ${state}`);
+          }
+        }
+      }
+    }
+    for (const [key, sister] of watch.known) {
+      const vtable = u32(sister.object);
+      const state = vtable === sister.vtable ? sisterState(sister.object, sister.className) : null;
+      if (state === null) {
+        log(`sister at ${key} is gone (last seen: ${sister.state})`);
+        watch.known.delete(key);
+      } else if (state !== sister.state) {
+        log(`sister at ${key}: ${state}`);
+        sister.state = state;
+      }
+    }
+    setTimeout(tick, 100);
+  };
+  tick();
+  return `watching ${watch.known.size} sisters; sisters() again stops`;
+};
+
+// Audio diaries: each one is a class of its own that extends QuestLog, and the player is given an object of that
+// class when picking it up. diaries() lists the diary objects that exist (with what they say about themselves) and
+// every diary class the game has loaded.
+function extendsClass(cls, wanted, cache) {
+  const key = cls.toString();
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+  let found = false;
+  let current = cls;
+  for (let step = 0; step < 30 && current !== null && !current.isNull(); step++) {
+    const name = nameOfObject(current);
+    if (name === wanted) {
+      found = true;
+      break;
+    }
+    if (name === 'Object' || objects.superOffset === null) {
+      break;
+    }
+    current = pointerAt(current.add(objects.superOffset));
+  }
+  cache.set(key, found);
+  return found;
+}
+
+function stringAt(at) {
+  const data = u32(at);
+  const count = u32(at.add(4));
+  if (!data || count === null || count < 1 || count > 2000 || !readable(ptr(data), count * 2)) {
+    return '';
+  }
+  return ptr(data).readUtf16String(count - 1);
+}
+
+globalThis.diaries = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  const cache = new Map();
+  const classes = [];
+  const instances = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = classOf(object);
+    if (object === null || cls === null || cls.isNull()) {
+      continue;
+    }
+    if (nameOfObject(cls) === 'Class') {
+      if (nameOfObject(object) !== 'QuestLog' && extendsClass(object, 'QuestLog', cache)) {
+        classes.push(nameOfObject(object));
+      }
+    } else if (extendsClass(cls, 'QuestLog', cache)) {
+      instances.push(object);
+    }
+  }
+  log(`${classes.length} diary classes loaded: ${classes.sort().join(', ')}`);
+  log(`${instances.length} diary objects:`);
+  for (const object of instances) {
+    const className = classNameOf(object);
+    if (!layouts.has(className)) {
+      learnAnyClass(className);
+    }
+    const p = layouts.get(className) || new Map();
+    const text = (name) => (p.has(name) ? JSON.stringify(stringAt(object.add(p.get(name).offset))) : '?');
+    const nameField = (name) => (p.has(name) ? (nameOf(u32(object.add(p.get(name).offset))) || '?') : '?');
+    let entry = '?';
+    if (p.has('Entry')) {
+      const array = object.add(p.get('Entry').offset);
+      const data = u32(array);
+      const count = u32(array.add(4));
+      entry = count ? `${count} lines, first ${JSON.stringify(stringAt(ptr(data)).slice(0, 80))}` : 'none';
+    }
+    log(`  ${nameOfObject(object)} (${className}) owner ${nameOfObject(pointerAt(object.add(objects.nameOffset - 8))) || '?'}: ` +
+        `creator ${text('CreatorFriendlyName')} (${nameField('Creator')}), level ${text('RelevantLevel')}, ` +
+        `date ${text('CreatedDate')}, type ${nameField('LogType')}, entry ${entry}`);
+  }
+  return `${classes.length} classes, ${instances.length} objects`;
+};
+
+// Every diary at once, from the classes' default values (each class keeps a block of them, laid out like an
+// object of the class). Where that block is, is found from one diary object: the word in its class that points at
+// a block holding the same creator text. Needs one diary or radio message to have been received in this game.
+globalThis.diaryTable = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  const cache = new Map();
+  const classes = [];
+  let sample = null;
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = classOf(object);
+    if (object === null || cls === null || cls.isNull()) {
+      continue;
+    }
+    if (nameOfObject(cls) === 'Class') {
+      if (extendsClass(object, 'QuestLog', cache)) {
+        classes.push(object);
+      }
+    } else if (sample === null && extendsClass(cls, 'QuestLog', cache)) {
+      sample = object;
+    }
+  }
+  if (sample === null) {
+    return 'no diary or radio message received yet in this game; pick one up and try again';
+  }
+  const sampleClass = classOf(sample);
+  learnAnyClass(classNameOf(sample));
+  const p = layouts.get(classNameOf(sample));
+  const creator = p.get('CreatorFriendlyName');
+  const wanted = stringAt(sample.add(creator.offset));
+  // The block is either pointed at from the class (a list {data, count, max}) or lies inside the class itself.
+  let defaultsAt = null;
+  let inline = false;
+  for (let d = 0x30; d <= 0x1000 && defaultsAt === null; d += 4) {
+    if (!readable(sampleClass.add(d), 4)) {
+      break;
+    }
+    const data = u32(sampleClass.add(d));
+    if (data && readable(ptr(data), creator.offset + 12) && stringAt(ptr(data).add(creator.offset)) === wanted) {
+      defaultsAt = d;
+    }
+  }
+  if (defaultsAt === null) {
+    for (let d = 0; d <= 0x1000 && defaultsAt === null; d += 4) {
+      if (readable(sampleClass.add(d + creator.offset), 12) &&
+          stringAt(sampleClass.add(d + creator.offset)) === wanted) {
+        defaultsAt = d;
+        inline = true;
+      }
+    }
+  }
+  if (defaultsAt === null) {
+    return `could not find where a class keeps its default values (looked for ${JSON.stringify(wanted)} at ` +
+      `+${hex(creator.offset)} of a block, within class+0x1000). Class words: ${hexWords(sampleClass, 0x30, 0x130)}`;
+  }
+  log(`default values ${inline ? 'inside the class from' : 'pointed at from'} class+${hex(defaultsAt)}, ` +
+      `${classes.length} QuestLog classes`);
+  const strings = [...p.entries()].filter(([, q]) => q.kind === 'StrProperty');
+  const kinds = new Map();
+  const rows = [];
+  for (const cls of classes) {
+    const data = inline ? cls.add(defaultsAt) : ptr(u32(cls.add(defaultsAt)) || 0);
+    if (data.isNull() || !readable(data, creator.offset + 12)) {
+      continue;
+    }
+    const defaults = data;
+    const type = p.has('LogType') ? (nameOf(u32(defaults.add(p.get('LogType').offset))) || '?') : '?';
+    kinds.set(type, (kinds.get(type) || 0) + 1);
+    if (type !== 'Log') {
+      continue;
+    }
+    const texts = strings.map(([name, q]) => `${name} ${JSON.stringify(stringAt(defaults.add(q.offset)))}`);
+    let entry = '';
+    if (p.has('Entry')) {
+      const array = defaults.add(p.get('Entry').offset);
+      if (u32(array.add(4))) {
+        entry = stringAt(ptr(u32(array))).slice(0, 60);
+      }
+    }
+    rows.push(`  ${nameOfObject(cls)}: ${texts.join(', ')}, entry ${JSON.stringify(entry)}`);
+  }
+  rows.sort().forEach((row) => log(row));
+  log(`types: ${[...kinds.entries()].map(([k, n]) => `${k} ${n}`).join(', ')}`);
+  return `${rows.length} diaries listed`;
+};
+
+const SNAP_BYTES = 0x800;
+let snapshot = null;
+
+globalThis.snap = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  snapshot = { pattern, objects: new Map() };
+  let count = 0;
+  for (const [className, list] of matchingObjects(pattern)) {
+    if (!layouts.has(className)) {
+      learnAnyClass(className);
+    }
+    for (const object of list.slice(0, 300)) {
+      // Enough to cover every property the class has (a Little Sister's own flags sit past +0x1000).
+      const known = layouts.has(className) ? [...layouts.get(className).values()].map((p) => p.offset + 0x10) : [];
+      let length = Math.min(0x4000, Math.max(SNAP_BYTES, ...known.map((end) => (end + 0xFF) & ~0xFF)));
+      while (length > 0x40 && !readable(object, length)) {
+        length >>= 1;
+      }
+      if (!readable(object, length)) {
+        continue;
+      }
+      snapshot.objects.set(object.toString(), { object, className, words: new Uint32Array(object.readByteArray(length)) });
+      count++;
+    }
+    log(`  ${className}: ${list.length} objects`);
+  }
+  return `${count} objects remembered; do the thing, then diff()`;
+};
+
+globalThis.diff = function () {
+  if (snapshot === null) {
+    return 'snap(pattern) first';
+  }
+  let changed = 0;
+  for (const { object, className, words } of snapshot.objects.values()) {
+    if (!readable(object, words.length * 4)) {
+      log(`  ${className} at ${object}: gone`);
+      continue;
+    }
+    const now = new Uint32Array(object.readByteArray(words.length * 4));
+    const lines = [];
+    for (let i = 0; i < words.length; i++) {
+      if (now[i] !== words[i]) {
+        lines.push(`+${hex(i * 4)}${labelOf(className, i * 4, words[i], now[i])}: ` +
+          `${words[i].toString(16)} -> ${now[i].toString(16)}`);
+      }
+    }
+    // Words that name a property are printed in full; the rest (positions, timers) only when there are few.
+    const named = lines.filter((line) => line.includes(' ('));
+    const label = `${className} at ${object}`;
+    if (now[0] !== words[0]) {
+      changed++;
+      log(`  ${label}: deleted (its vtable changed)${named.length ? `; before that: ${named.join(', ')}` : ''}`);
+    } else if (lines.length > 0 && lines.length <= 40) {
+      changed++;
+      log(`  ${label}: ${lines.join(', ')}`);
+    } else if (lines.length > 40) {
+      changed++;
+      log(`  ${label}: ${lines.length} words changed; named: ${named.join(', ') || 'none'}`);
+    }
+    snapshot.objects.get(object.toString()).words = now;
+  }
+  return `${changed} of ${snapshot.objects.size} objects changed (diff() again compares with now)`;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
 // execVirtualFunction, from the table of natives by name ("intUObjectexecVirtualFunction" -> function)
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -304,13 +1274,14 @@ if (natives.length === 0) {
     log(`natives by opcode at ${rel(table.table)}: ${table.defined} in use, the rest ${rel(ptr(table.undefinedNative))}`);
   }
   if (tables.length === 0) {
-    log('could not find the table of natives by opcode either. Please send the log as it is.');
-    throw new Error('no execVirtualFunction');
+    log('could not find the table of natives by opcode either, so no script calls are watched. ' +
+        'quests() and managers() still work.');
+  } else {
+    gnatives = tables[0];
+    const target = ptr(gnatives.words[EX_VIRTUAL_FUNCTION]);
+    log(`GNatives[${hex(EX_VIRTUAL_FUNCTION)}], execVirtualFunction in the stock engine: ${rel(target)}`);
+    candidates.push({ label: `GNatives[${hex(EX_VIRTUAL_FUNCTION)}]`, target });
   }
-  gnatives = tables[0];
-  const target = ptr(gnatives.words[EX_VIRTUAL_FUNCTION]);
-  log(`GNatives[${hex(EX_VIRTUAL_FUNCTION)}], execVirtualFunction in the stock engine: ${rel(target)}`);
-  candidates.push({ label: `GNatives[${hex(EX_VIRTUAL_FUNCTION)}]`, target });
 }
 let virtualFunction = null;
 
@@ -659,4 +1630,6 @@ globalThis.stop = function () {
   return 'hook removed';
 };
 
-startSampling();
+if (candidates.length > 0) {
+  startSampling();
+}
