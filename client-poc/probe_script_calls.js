@@ -33,7 +33,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-08.8';
+const PROBE_VERSION = '2026-10-08.9';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -957,29 +957,42 @@ globalThis.diaryTable = function () {
   const p = layouts.get(classNameOf(sample));
   const creator = p.get('CreatorFriendlyName');
   const wanted = stringAt(sample.add(creator.offset));
+  // The block is either pointed at from the class (a list {data, count, max}) or lies inside the class itself.
   let defaultsAt = null;
-  for (let d = 0x30; d <= 0x400 && defaultsAt === null; d += 4) {
+  let inline = false;
+  for (let d = 0x30; d <= 0x1000 && defaultsAt === null; d += 4) {
+    if (!readable(sampleClass.add(d), 4)) {
+      break;
+    }
     const data = u32(sampleClass.add(d));
-    const count = u32(sampleClass.add(d + 4));
-    if (data && count && count > creator.offset && count < 0x10000 && readable(ptr(data), creator.offset + 12) &&
-        stringAt(ptr(data).add(creator.offset)) === wanted) {
+    if (data && readable(ptr(data), creator.offset + 12) && stringAt(ptr(data).add(creator.offset)) === wanted) {
       defaultsAt = d;
     }
   }
   if (defaultsAt === null) {
-    return `could not find where a class keeps its default values (looked for ${JSON.stringify(wanted)})`;
+    for (let d = 0; d <= 0x1000 && defaultsAt === null; d += 4) {
+      if (readable(sampleClass.add(d + creator.offset), 12) &&
+          stringAt(sampleClass.add(d + creator.offset)) === wanted) {
+        defaultsAt = d;
+        inline = true;
+      }
+    }
   }
-  log(`default values at class+${hex(defaultsAt)}, ${classes.length} QuestLog classes`);
+  if (defaultsAt === null) {
+    return `could not find where a class keeps its default values (looked for ${JSON.stringify(wanted)} at ` +
+      `+${hex(creator.offset)} of a block, within class+0x1000). Class words: ${hexWords(sampleClass, 0x30, 0x130)}`;
+  }
+  log(`default values ${inline ? 'inside the class from' : 'pointed at from'} class+${hex(defaultsAt)}, ` +
+      `${classes.length} QuestLog classes`);
   const strings = [...p.entries()].filter(([, q]) => q.kind === 'StrProperty');
   const kinds = new Map();
   const rows = [];
   for (const cls of classes) {
-    const data = u32(cls.add(defaultsAt));
-    const count = u32(cls.add(defaultsAt + 4));
-    if (!data || !count || count < creator.offset + 12 || !readable(ptr(data), count)) {
+    const data = inline ? cls.add(defaultsAt) : ptr(u32(cls.add(defaultsAt)) || 0);
+    if (data.isNull() || !readable(data, creator.offset + 12)) {
       continue;
     }
-    const defaults = ptr(data);
+    const defaults = data;
     const type = p.has('LogType') ? (nameOf(u32(defaults.add(p.get('LogType').offset))) || '?') : '?';
     kinds.set(type, (kinds.get(type) || 0) + 1);
     if (type !== 'Log') {
