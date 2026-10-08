@@ -29,11 +29,15 @@
  *   sisters()         print each Little Sister's flags whenever one changes (sisters() again stops)
  *   diaries()         every audio diary object (the ones picked up) and every diary class the game has loaded
  *   diaryTable()      every audio diary the game knows, with its title, creator and level (after one pickup)
+ *   where('PlaceableWeaponUpgradeStation')  each object of the matching classes, where it is and how far away
+ *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
+ *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
+ *                     off its front instead of 80; a negative distance stands behind it
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-08.9';
+const PROBE_VERSION = '2026-10-08.10';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -695,7 +699,7 @@ function learnAnyClass(className) {
     }
     let field = pointerAt(cls.add(objects.layout.childrenOffset));
     const bools = new Map();
-    for (let n = 0; field !== null && !field.isNull() && n < 500 && readable(field, 0x80); n++) {
+    for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
       const kind = classNameOf(field) || '';
       if (/Property$/.test(kind)) {
         const at = u32(field.add(objects.propertyOffset));
@@ -737,6 +741,100 @@ globalThis.fields = function (className) {
     log(`  +${hex(p.offset)}${p.mask === null ? '' : ` bit ${hex(p.mask)}`} ${name} (${p.kind}, ${p.owner})`);
   }
   return `${learned.properties.size} properties`;
+};
+
+// ---- moving the player, for testing ----
+
+const PLAYER_CLASS = 'ShockPlayer';
+const UNREAL_ROTATION = 65536; // a full turn
+
+function actorPlace(object) {
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor;
+  }
+  const location = actor.properties.get('Location');
+  const rotation = actor.properties.get('Rotation');
+  if (location === undefined || rotation === undefined) {
+    return { error: 'Actor has no Location or Rotation property here' };
+  }
+  const at = object.add(location.offset);
+  return {
+    at,
+    x: at.readFloat(), y: at.add(4).readFloat(), z: at.add(8).readFloat(),
+    yaw: object.add(rotation.offset + 4).readS32(),
+    velocity: actor.properties.get('Velocity'),
+  };
+}
+
+function thePlayer() {
+  const players = matchingObjects(`^${PLAYER_CLASS}$`).get(PLAYER_CLASS) || [];
+  if (players.length !== 1) {
+    log(`found ${players.length} ${PLAYER_CLASS} objects, where one was expected`);
+  }
+  return players.length === 1 ? players[0] : null;
+}
+
+function placeText(place) {
+  return `(${place.x.toFixed(0)}, ${place.y.toFixed(0)}, ${place.z.toFixed(0)})`;
+}
+
+globalThis.where = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  if (from !== null && from.error) {
+    return from.error;
+  }
+  let n = 0;
+  for (const [className, list] of matchingObjects(pattern)) {
+    for (const object of list) {
+      const place = actorPlace(object);
+      if (place.error) {
+        return place.error;
+      }
+      const away = from === null ? '' :
+        `, ${Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z).toFixed(0)} away`;
+      log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}${away}`);
+      n++;
+    }
+  }
+  return n === 0 ? `nothing matches ${pattern} here` : `${n} found; goto('${pattern}', n) goes to one`;
+};
+
+globalThis.goto = function (pattern, n = 0, distance = 80) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const targets = [...matchingObjects(pattern).values()].flat();
+  if (n < 0 || n >= targets.length) {
+    return targets.length === 0 ? `nothing matches ${pattern} here` : `pick n from 0 to ${targets.length - 1}`;
+  }
+  const target = actorPlace(targets[n]);
+  const from = actorPlace(player);
+  if (target.error || from.error) {
+    return target.error || from.error;
+  }
+  const angle = (target.yaw / UNREAL_ROTATION) * 2 * Math.PI;
+  const x = target.x + Math.cos(angle) * distance;
+  const y = target.y + Math.sin(angle) * distance;
+  const z = target.z + 40; // a little above, so as not to start in the floor
+  from.at.writeFloat(x);
+  from.at.add(4).writeFloat(y);
+  from.at.add(8).writeFloat(z);
+  if (from.velocity !== undefined) {
+    const velocity = player.add(from.velocity.offset);
+    [0, 4, 8].forEach((k) => velocity.add(k).writeFloat(0));
+  }
+  log(`moved the player from ${placeText(from)} to (${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)}), ` +
+    `next to ${nameOfObject(targets[n])} at ${placeText(target)}`);
+  return 'moved';
 };
 
 // What a changed word is, by the properties at that offset.

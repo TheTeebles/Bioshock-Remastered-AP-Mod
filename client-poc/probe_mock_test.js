@@ -86,6 +86,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     readFloat() { return new Float32Array(new Uint32Array([readU32(this.value)]).buffer)[0]; }
     readPointer() { return new Ptr(readU32(this.value)); }
     writeS32(v) { writeU32(this.value, v); return this; }
+    writeFloat(v) { writeU32(this.value, new Uint32Array(new Float32Array([v]).buffer)[0]); return this; }
     readByteArray(length) {
       const out = new Uint8Array(length);
       for (let i = 0; i < length; i++) { out[i] = getByte(this.value + i); }
@@ -118,7 +119,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
     'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
     'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
-    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer'];
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer', 'StructProperty', 'Actor', 'Location', 'Rotation', 'Velocity', 'ShockPlayer', 'PlaceableWeaponUpgradeStation', 'PlaceableWeaponUpgradeStation0'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -152,6 +153,8 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
   let sisterAt = null;
   let questAt = null;
   let gathererAt = null;
+  let playerAt = null;
+  let stationAt = null;
   if (gobjects) {
     // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
     // a property's offset at +0x48 and a bool's mask at +0x4C.
@@ -205,6 +208,15 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     writeU32(sister + 0x80, 0);
     sisterAt = sister;
     gathererAt = make('SpawnedGatherer', cls('SpawnedGatherer'));
+    const structProperty = cls('StructProperty');
+    const actor = cls('Actor');
+    fields(actor, [['Location', structProperty, 0x80], ['Rotation', structProperty, 0x8C], ['Velocity', structProperty, 0x98]]);
+    const float = (at, v) => writeU32(at, new Uint32Array(new Float32Array([v]).buffer)[0]);
+    playerAt = make('ShockPlayer0', cls('ShockPlayer'));
+    float(playerAt + 0x80, 0); float(playerAt + 0x84, 0); float(playerAt + 0x88, 0); float(playerAt + 0x98, 300);
+    stationAt = make('PlaceableWeaponUpgradeStation0', cls('PlaceableWeaponUpgradeStation'));
+    float(stationAt + 0x80, 1000); float(stationAt + 0x84, 2000); float(stationAt + 0x88, 100);
+    writeU32(stationAt + 0x90, 16384); // facing +y
     writeU32(q2 + 0x60, 1); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
     const m = make('AwardAchievementsManager0', manager);
     writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
@@ -248,7 +260,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, time: 1000,
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, playerAt: () => playerAt, stationAt: () => stationAt, time: 1000,
   };
 
   const context = {
@@ -440,6 +452,18 @@ test('fields() lists a class\'s properties, and diff() names the ones that chang
   rt.writeU32(rt.questAt + 0x60, 1);
   rt.context.diff();
   assert.match(rt.logs.join('\n'), /Quest at 0x[0-9a-f]+: \+0x60 \(Completed false\): 3 -> 1/);
+});
+
+test('where() lists the matching objects, and goto() moves the player in front of one', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.where('WeaponUpgradeStation'), "1 found; goto('WeaponUpgradeStation', n) goes to one");
+  assert.match(rt.logs.join('\n'), /0: PlaceableWeaponUpgradeStation PlaceableWeaponUpgradeStation0 at \(1000, 2000, 100\), 2238 away/);
+  assert.strictEqual(rt.context.goto('WeaponUpgradeStation', 1), 'pick n from 0 to 0');
+  assert.strictEqual(rt.context.goto('WeaponUpgradeStation'), 'moved');
+  const at = rt.ptr(rt.playerAt() + 0x80);
+  assert.deepStrictEqual([at.readFloat(), at.add(4).readFloat(), at.add(8).readFloat()].map(Math.round), [1000, 2080, 140]);
+  assert.strictEqual(rt.ptr(rt.playerAt() + 0x98).readFloat(), 0, 'standing still');
+  assert.strictEqual(rt.context.where('Nope'), 'nothing matches Nope here');
 });
 
 test('without an object table it says so and goes on to the script calls', () => {
