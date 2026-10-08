@@ -424,6 +424,11 @@ test('sisters() finds the sisters, and says when one goes away', () => {
   assert.strictEqual(rt.context.sisters(), 'stopped watching sisters');
 });
 
+test('diaries() runs through the table without trouble when there are none', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.diaries(), '0 classes, 0 objects');
+});
+
 test('fields() lists a class\'s properties, and diff() names the ones that changed', () => {
   const rt = startedProbe();
   assert.strictEqual(rt.context.fields('Quest'), '7 properties');

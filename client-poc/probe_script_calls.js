@@ -27,11 +27,12 @@
  *   diff()            print which words of them changed since (and remember the new values)
  *   fields('SpawnedGatherer')  every property of a class (and the classes it extends) and where it sits
  *   sisters()         print each Little Sister's flags whenever one changes (sisters() again stops)
+ *   diaries()         every audio diary object (the ones picked up) and every diary class the game has loaded
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-07.6';
+const PROBE_VERSION = '2026-10-08.7';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -834,6 +835,89 @@ globalThis.sisters = function () {
   };
   tick();
   return `watching ${watch.known.size} sisters; sisters() again stops`;
+};
+
+// Audio diaries: each one is a class of its own that extends QuestLog, and the player is given an object of that
+// class when picking it up. diaries() lists the diary objects that exist (with what they say about themselves) and
+// every diary class the game has loaded.
+function extendsClass(cls, wanted, cache) {
+  const key = cls.toString();
+  if (cache.has(key)) {
+    return cache.get(key);
+  }
+  let found = false;
+  let current = cls;
+  for (let step = 0; step < 30 && current !== null && !current.isNull(); step++) {
+    const name = nameOfObject(current);
+    if (name === wanted) {
+      found = true;
+      break;
+    }
+    if (name === 'Object' || objects.superOffset === null) {
+      break;
+    }
+    current = pointerAt(current.add(objects.superOffset));
+  }
+  cache.set(key, found);
+  return found;
+}
+
+function stringAt(at) {
+  const data = u32(at);
+  const count = u32(at.add(4));
+  if (!data || count === null || count < 1 || count > 2000 || !readable(ptr(data), count * 2)) {
+    return '';
+  }
+  return ptr(data).readUtf16String(count - 1);
+}
+
+globalThis.diaries = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  const cache = new Map();
+  const classes = [];
+  const instances = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = classOf(object);
+    if (object === null || cls === null || cls.isNull()) {
+      continue;
+    }
+    if (nameOfObject(cls) === 'Class') {
+      if (nameOfObject(object) !== 'QuestLog' && extendsClass(object, 'QuestLog', cache)) {
+        classes.push(nameOfObject(object));
+      }
+    } else if (extendsClass(cls, 'QuestLog', cache)) {
+      instances.push(object);
+    }
+  }
+  log(`${classes.length} diary classes loaded: ${classes.sort().join(', ')}`);
+  log(`${instances.length} diary objects:`);
+  for (const object of instances) {
+    const className = classNameOf(object);
+    if (!layouts.has(className)) {
+      learnAnyClass(className);
+    }
+    const p = layouts.get(className) || new Map();
+    const text = (name) => (p.has(name) ? JSON.stringify(stringAt(object.add(p.get(name).offset))) : '?');
+    const nameField = (name) => (p.has(name) ? (nameOf(u32(object.add(p.get(name).offset))) || '?') : '?');
+    let entry = '?';
+    if (p.has('Entry')) {
+      const array = object.add(p.get('Entry').offset);
+      const data = u32(array);
+      const count = u32(array.add(4));
+      entry = count ? `${count} lines, first ${JSON.stringify(stringAt(ptr(data)).slice(0, 80))}` : 'none';
+    }
+    log(`  ${nameOfObject(object)} (${className}) owner ${nameOfObject(pointerAt(object.add(objects.nameOffset - 8))) || '?'}: ` +
+        `creator ${text('CreatorFriendlyName')} (${nameField('Creator')}), level ${text('RelevantLevel')}, ` +
+        `date ${text('CreatedDate')}, type ${nameField('LogType')}, entry ${entry}`);
+  }
+  return `${classes.length} classes, ${instances.length} objects`;
 };
 
 const SNAP_BYTES = 0x800;
