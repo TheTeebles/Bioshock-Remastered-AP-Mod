@@ -9,8 +9,8 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.5"
-SLOT_DATA_VERSION = 2  # 2: story checks; audio_diary_checks and directors_commentary_checks are 0/1/2
+WORLD_VERSION = "0.1.7"
+SLOT_DATA_VERSION = 3  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks
 
 
 class BioShockWorld(World):
@@ -44,7 +44,7 @@ class BioShockWorld(World):
             raise OptionError(
                 f"{self.player_name}: Level Access needs {needed} checks that may hold an access item, but these "
                 f"options leave only {len(open_checks)}. {does_not_count} Turn on story, Little Sister, Power to "
-                "the People or level completion checks, exclude fewer locations, set audio diaries or film reels "
+                "the People or level completion checks, exclude fewer locations, set audio diaries "
                 "to 'all', or set Level Access to 'vanilla'.")
         if needed and not self._open_from_the_start(open_checks):
             # Without this the fill fails whenever no other player has room for the first access item either.
@@ -89,7 +89,6 @@ class BioShockWorld(World):
                 "power_to_the_people_checks",
                 "level_completion_checks",
                 "audio_diary_checks",
-                "directors_commentary_checks",
                 "trap_chance",
                 "death_link",
             ),

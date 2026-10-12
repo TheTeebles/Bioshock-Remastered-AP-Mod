@@ -28,7 +28,7 @@ class CollectibleChecks(Choice):
     option_off = 0
     option_filler_only = 1
     option_all = 2
-    alias_false = 0  # the film reels were an on/off switch before 0.1.2, so the old spellings keep working
+    alias_false = 0  # on/off spellings, for YAMLs written for an on/off switch
     alias_no = 0
     alias_true = 2
     alias_yes = 2
@@ -38,7 +38,7 @@ class CollectibleChecks(Choice):
 
 class StoryChecks(DefaultOnToggle):
     """
-    Bosses and main story objectives send checks (33 checks), for example defeating Dr. Steinman, photographing
+    Bosses and main story objectives send checks (28 checks), for example defeating Dr. Steinman, photographing
     the Spider Splicers or completing Cohen's masterpiece. You cannot miss them.
     """
     display_name = "Story Checks"
@@ -62,19 +62,6 @@ class LittleSisterChecks(DefaultOnToggle):
     display_name = "Little Sister Checks"
 
 
-class DirectorsCommentaryChecks(CollectibleChecks):
-    """
-    Whether picking up the Remastered Director's Commentary film reels sends checks (10 checks). They are hidden.
-
-    Off: film reels are not checks.
-    Filler Only: they are checks, but only ever hold filler such as ADAM and dollars, or traps. Nobody needs one
-    to progress.
-    All: they can hold anything, including the items you or other players need to progress. The one in Welcome to
-    Rapture stays filler only, because that level cannot be revisited.
-    """
-    display_name = "Director's Commentary Checks"
-
-
 class PowerToThePeopleChecks(DefaultOnToggle):
     """
     Using each Power to the People weapon upgrade station sends a check (12 checks).
@@ -92,8 +79,8 @@ class TrapChance(Range):
     """
     Percentage chance that each filler item is replaced with a trap.
     Traps: EVE Drain (EVE drops to zero), Pickpocket (lose half your dollars), Security Alarm (sets off an alarm).
-    Your item pool only has filler when you have more checks than important items, so with audio diary and film
-    reel checks both off there is little or nothing to replace.
+    Your item pool only has filler when you have more checks than important items, so with audio diary checks
+    off there is little or nothing to replace.
     """
     display_name = "Trap Chance"
     range_start = 0
@@ -109,7 +96,6 @@ class BioShockOptions(PerGameCommonOptions):
     power_to_the_people_checks: PowerToThePeopleChecks
     level_completion_checks: LevelCompletionChecks
     audio_diary_checks: AudioDiaryChecks
-    directors_commentary_checks: DirectorsCommentaryChecks
     trap_chance: TrapChance
     death_link: DeathLink
     start_inventory_from_pool: StartInventoryPool
@@ -118,23 +104,20 @@ class BioShockOptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
-                           AudioDiaryChecks, DirectorsCommentaryChecks]),
+                           AudioDiaryChecks]),
     OptionGroup("Item Pool", [TrapChance]),
 ]
 
 option_presets = {
     "No Collectibles": {
         "audio_diary_checks": AudioDiaryChecks.option_off,
-        "directors_commentary_checks": DirectorsCommentaryChecks.option_off,
     },
     "Collectible Hunt": {
         "audio_diary_checks": AudioDiaryChecks.option_all,
-        "directors_commentary_checks": DirectorsCommentaryChecks.option_all,
     },
     "Audio Diaries Only": {
         "level_access": LevelAccess.option_access_items,
         "audio_diary_checks": AudioDiaryChecks.option_all,
-        "directors_commentary_checks": DirectorsCommentaryChecks.option_off,
         "story_checks": False,
         "little_sister_checks": False,
         "power_to_the_people_checks": False,

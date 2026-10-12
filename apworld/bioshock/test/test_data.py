@@ -6,7 +6,7 @@ from collections import Counter
 from .. import world
 from ..client import game_data
 from ..data import (
-    ACCESS_ITEMS, AUDIO_DIARIES, DIRECTORS_COMMENTARY_LEVELS, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
+    ACCESS_ITEMS, AUDIO_DIARIES, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
     LOCATION_TABLE, PLASMIDS, POWER_TO_THE_PEOPLE_PER_LEVEL, STORY_MILESTONES, TONICS, LocationCategory,
 )
 
@@ -25,19 +25,17 @@ class TestGameData(unittest.TestCase):
 
     def test_collectible_totals(self) -> None:
         self.assertEqual(sum(LITTLE_SISTERS_PER_LEVEL.values()), 21)
-        self.assertEqual(len(DIRECTORS_COMMENTARY_LEVELS), 10)
         self.assertEqual(sum(POWER_TO_THE_PEOPLE_PER_LEVEL.values()), 12)
-        for level in (*LITTLE_SISTERS_PER_LEVEL, *DIRECTORS_COMMENTARY_LEVELS, *POWER_TO_THE_PEOPLE_PER_LEVEL):
+        for level in (*LITTLE_SISTERS_PER_LEVEL, *POWER_TO_THE_PEOPLE_PER_LEVEL):
             self.assertIn(level, LEVEL_NAMES)
 
     def test_location_table(self) -> None:
         self.assertEqual(Counter(location.category for location in LOCATION_TABLE), Counter({
             LocationCategory.AUDIO_DIARY: 122,
             LocationCategory.LITTLE_SISTER: 21,
-            LocationCategory.DIRECTORS_COMMENTARY: 10,
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
-            LocationCategory.STORY: 33,
+            LocationCategory.STORY: 28,
         }))
         names = [location.name for location in LOCATION_TABLE]
         ids = [location.id for location in LOCATION_TABLE]
@@ -46,15 +44,15 @@ class TestGameData(unittest.TestCase):
         diary_ids = {location.id for location in LOCATION_TABLE if location.category == LocationCategory.AUDIO_DIARY}
         self.assertEqual(diary_ids, set(range(1001, 1123)))
         self.assertEqual({location.id for location in LOCATION_TABLE if location.category == LocationCategory.STORY},
-                         set(range(7001, 7034)))
+                         set(range(7001, 7034)) - {7001, 7002, 7003, 7007, 7025})
 
     def test_story_milestones(self) -> None:
         keys = [milestone.key for milestone in STORY_MILESTONES]
         self.assertEqual(len(keys), len(set(keys)))
         levels = [LEVEL_NAMES.index(milestone.level) for milestone in STORY_MILESTONES]
         self.assertEqual(levels, sorted(levels), "grouped by level, levels in story order")
-        self.assertEqual(set(LEVEL_NAMES), {milestone.level for milestone in STORY_MILESTONES},
-                         "every level has at least one")
+        self.assertEqual(set(LEVEL_NAMES) - {milestone.level for milestone in STORY_MILESTONES}, {"Welcome to Rapture"},
+                         "every level but the first has at least one")
         story = [location for location in LOCATION_TABLE if location.category == LocationCategory.STORY]
         self.assertFalse([location.name for location in story if location.missable], "a story step cannot be missed")
 
@@ -64,13 +62,9 @@ class TestGameData(unittest.TestCase):
         names = {location.id: location.name for location in LOCATION_TABLE
                  if location.category == LocationCategory.STORY}
         self.assertEqual(names, {
-            7001: "Welcome to Rapture - Story: Inject Electro Bolt",
-            7002: "Welcome to Rapture - Story: Survive Ryan's Ambush",
-            7003: "Medical Pavilion - Story: Melt the Ice to Dental Services",
             7004: "Medical Pavilion - Story: Clear the Way to Surgery",
             7005: "Medical Pavilion - Story: Defeat Dr. Steinman",
             7006: "Neptune's Bounty - Story: Photograph the Spider Splicers",
-            7007: "Neptune's Bounty - Story: Defeat Peach Wilkins",
             7008: "Smuggler's Hideout - Story: Open the Submarine Bay",
             7009: "Arcadia - Story: Bring Langford the Rosa Gallica",
             7010: "Arcadia - Story: Open Langford's Safe",
@@ -88,7 +82,6 @@ class TestGameData(unittest.TestCase):
             7022: "Hephaestus - Story: Assemble the EMP Bomb",
             7023: "Hephaestus - Story: Overload the Core",
             7024: "Rapture Central Control - Story: Confront Andrew Ryan",
-            7025: "Rapture Central Control - Story: Stop the Self-Destruct",
             7026: "Olympus Heights - Story: Take the First Dose of Lot 192",
             7027: "Apollo Square - Story: Take the Second Dose of Lot 192",
             7028: "Point Prometheus - Story: Get the Big Daddy Voice Box",
@@ -98,15 +91,14 @@ class TestGameData(unittest.TestCase):
             7032: "Point Prometheus - Story: Find the Big Daddy Boots",
             7033: "Proving Grounds - Story: Escort the Little Sister",
         })
-        self.assertEqual(game_data.MILESTONE_LOCATION["peach_wilkins"], 7007, "the agent's key for it")
-        self.assertEqual(len(game_data.MILESTONE_LOCATION), 33)
+        self.assertEqual(game_data.MILESTONE_LOCATION["steinman"], 7005, "the agent's key for it")
+        self.assertEqual(len(game_data.MILESTONE_LOCATION), 28)
 
     def test_only_welcome_to_rapture_is_missable(self) -> None:
         missable = {location.name for location in LOCATION_TABLE if location.missable}
         self.assertEqual(missable, {
             "Welcome to Rapture - Audio Diary: New Year's Eve Alone",
             "Welcome to Rapture - Audio Diary: Hole in Bathroom Wall",
-            "Welcome to Rapture - Director's Commentary Reel",
         })
 
     def test_item_table(self) -> None:

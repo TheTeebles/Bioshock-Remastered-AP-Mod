@@ -3,10 +3,9 @@
 A mod to use BioShock Remastered with [Archipelago](https://archipelago.gg) for randomization: the APWorld, the
 client that ships inside it, and the script the client puts into the running game.
 
-> **Early development (v0.1.5).** Seeds generate, the client talks to Archipelago and puts items into the real game
-> on the Steam version, and it notices levels reached, most story objectives, Little Sisters and audio diaries.
-> Power to the People stations, film reels and five story objectives are not noticed yet, so a whole seed can only
-> be played end to end with the client's simulated game for now.
+> **Early development (v0.1.7).** Seeds generate, the client talks to Archipelago and puts items into the real game
+> on the Steam version, and it notices every kind of check: levels reached, story objectives, Little Sisters, audio
+> diaries and Power to the People stations, all seen working in the real game.
 
 ## Where things stand
 
@@ -17,10 +16,11 @@ client that ships inside it, and the script the client puts into the running gam
 | Getting into the game and giving items (Steam build 1.0.127355) | Works in the real game, by the client itself: ADAM, tonics, plasmids, slots, upgrades, weapons, ammo and more. The Security Alarm trap works too |
 | A game command for every item | Every class the client names is one the running game lists. Not every item has been given yet |
 | Following which level you are in, "Level Complete" checks, holding items while paused | Works in the real game |
-| Story objectives | 28 of 33 noticed, from the game's own quest list. Seen sending checks in the real game. Electro Bolt, Ryan's ambush, the ice wall, Peach Wilkins and the self-destruct are still to find |
-| Little Sisters | Noticed when one is rescued or harvested (not which). Seen in the game with the probe; the client's first real run missed one, and a fix is waiting to be tried |
-| Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Built and tested without the game; not tried in the real game yet |
-| Power to the People stations and film reels | Not noticed yet. Being looked for with the probe |
+| Story objectives | All 28 noticed, from the game's own quest list. Seen sending checks in the real game |
+| Little Sisters | Noticed when one is rescued or harvested (not which). Works in the real game |
+| Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Works in the real game |
+| Power to the People stations | Noticed from each station's use counter. Works in the real game |
+| Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink and the EVE Drain and Pickpocket traps inside the game | Not built yet |
 | The GOG and Epic versions | Not supported yet |
 

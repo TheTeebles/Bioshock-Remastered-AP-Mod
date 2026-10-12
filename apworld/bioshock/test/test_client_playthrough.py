@@ -244,7 +244,6 @@ class TestTrapPlaythrough(PlaythroughBase):
 class TestAudioDiariesOnlyPlaythrough(PlaythroughBase):
     options = {
         "audio_diary_checks": "all",
-        "directors_commentary_checks": "off",
         "story_checks": False,
         "little_sister_checks": False,
         "power_to_the_people_checks": False,
@@ -261,21 +260,21 @@ class TestAudioDiariesOnlyPlaythrough(PlaythroughBase):
 
 
 class TestNoCollectiblesPlaythrough(PlaythroughBase):
-    options = {"audio_diary_checks": "off", "directors_commentary_checks": "off"}
+    options = {"audio_diary_checks": "off"}
     seeds = (1, 2)
 
     def test_the_game_is_finished_without_a_single_diary(self) -> None:
         for seed in self.seeds:
             with self.subTest(seed=seed):
                 harness = self.new_seed(seed)
-                self.assertEqual(len(harness.valid), 78)
+                self.assertEqual(len(harness.valid), 73)
                 self.assertFalse([location for location in harness.valid if 1000 < location < 2000])
                 self.play_story(harness)
                 self.check_finished(harness)
 
 
 class TestSkippingCollectiblesPlaythrough(PlaythroughBase):
-    """The default settings, played by someone who never picks up a diary or a film reel."""
+    """The default settings, played by someone who never picks up a diary."""
     seeds = (1, 2, 3)
 
     def test_everything_that_matters_arrives_anyway(self) -> None:
@@ -283,14 +282,12 @@ class TestSkippingCollectiblesPlaythrough(PlaythroughBase):
             with self.subTest(seed=seed):
                 harness = self.new_seed(seed)
                 collectibles = {location.id for location in LOCATION_TABLE
-                                if location.category in (LocationCategory.AUDIO_DIARY,
-                                                         LocationCategory.DIRECTORS_COMMENTARY)}
-                self.assertEqual(len(harness.valid & collectibles), 132)
+                                if location.category == LocationCategory.AUDIO_DIARY}
+                self.assertEqual(len(harness.valid & collectibles), 122)
                 harness.connect().attach()
                 for level in LEVEL_NAMES:
                     play_level(harness.game, level)
                     harness.game.diaries.clear()  # walked past every one of them
-                    harness.game.reels.clear()
                     harness.settle()
                 harness.game.defeat_fontaine()
                 harness.settle()
@@ -304,4 +301,4 @@ class TestSkippingCollectiblesPlaythrough(PlaythroughBase):
                 left_behind = Counter(ITEM_KIND[game_data.ITEM_NAME[harness.placements[location]]]
                                       for location in harness.valid - harness.server_checked)
                 self.assertEqual(set(left_behind), {ItemKind.FILLER})
-                self.assertEqual(sum(left_behind.values()), 132)
+                self.assertEqual(sum(left_behind.values()), 122)

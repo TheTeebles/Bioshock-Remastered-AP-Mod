@@ -35,7 +35,6 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
     return {
         LocationCategory.AUDIO_DIARY: options.audio_diary_checks != CollectibleChecks.option_off,
         LocationCategory.LITTLE_SISTER: bool(options.little_sister_checks),
-        LocationCategory.DIRECTORS_COMMENTARY: options.directors_commentary_checks != CollectibleChecks.option_off,
         LocationCategory.POWER_TO_THE_PEOPLE: bool(options.power_to_the_people_checks),
         LocationCategory.LEVEL_COMPLETION: bool(options.level_completion_checks),
         LocationCategory.STORY: bool(options.story_checks),
@@ -49,8 +48,6 @@ def is_filler_only(world: BioShockWorld, location: LocationData) -> bool:
     options = world.options
     return {
         LocationCategory.AUDIO_DIARY: options.audio_diary_checks == CollectibleChecks.option_filler_only,
-        LocationCategory.DIRECTORS_COMMENTARY:
-            options.directors_commentary_checks == CollectibleChecks.option_filler_only,
     }.get(location.category, False)
 
 

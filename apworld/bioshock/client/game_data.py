@@ -343,10 +343,6 @@ def _numbered_locations(category: str) -> dict[tuple[str, int], int]:
 
 LITTLE_SISTER_LOCATION: dict[tuple[str, int], int] = _numbered_locations(LocationCategory.LITTLE_SISTER)
 STATION_LOCATION: dict[tuple[str, int], int] = _numbered_locations(LocationCategory.POWER_TO_THE_PEOPLE)
-REEL_LOCATION: dict[str, int] = {
-    location.level: location.id for location in LOCATION_TABLE
-    if location.category == LocationCategory.DIRECTORS_COMMENTARY
-}
 LEVEL_COMPLETION_LOCATION: dict[str, int] = {
     level: _LOCATION_ID[level_completion_location_name(level)] for level in LEVEL_COMPLETION_LEVELS
 }
@@ -357,8 +353,7 @@ MILESTONE_LOCATION: dict[str, int] = {
 
 # Which of the game's quests (its objectives, by object name) completes which story milestone. Read from the running
 # game on 2026-10-07 with each quest's on-screen text. Some objectives exist twice, an original and an "Update" that
-# replaces it, and either one being completed counts. Milestones with no quest of their own are left out for now:
-# electro_bolt, ryans_ambush, ice_wall, peach_wilkins and self_destruct.
+# replaces it, and either one being completed counts. Every milestone has one (the five without were dropped in 0.1.7).
 QUEST_MILESTONES: dict[str, str] = {
     "DestroySteinmanDebris": "surgery_wreckage",  # "Destroy the debris."
     "QuarantineKey": "steinman",  # "Get the key from Steinman."
@@ -543,6 +538,18 @@ def diaries_of(received: object) -> frozenset[int] | None:
     if not isinstance(received, (list, tuple)):
         return None
     return frozenset(DIARY_CLASSES[name] for name in received if name in DIARY_CLASSES)
+
+
+def stations_of(used_by_map: object) -> dict[str, int] | None:
+    """Power to the People stations used, by level, from the agent's count by map. None while it cannot tell."""
+    if not isinstance(used_by_map, dict):
+        return None
+    result: dict[str, int] = {}
+    for map_name, count in used_by_map.items():
+        level = level_of(normalize_map(map_name), None)
+        if level is not None and isinstance(count, int) and count > 0:
+            result[level] = result.get(level, 0) + count
+    return result
 
 
 def diary_location(number: int) -> int | None:

@@ -972,6 +972,12 @@ class TestTranslation(unittest.TestCase):
         self.assertEqual(state_from_agent(dict(base, logsReceived=["Fis_At_ReachedFisheries", "Med_St_RantA"])).diaries,
                          frozenset({4}), "a radio message is no diary")
 
+    def test_used_stations_are_counted_by_level(self) -> None:
+        base = {"execAvailable": True, "hookInstalled": True, "engineReady": True, "map": "2-fisheries"}
+        self.assertIsNone(state_from_agent(base).stations)
+        self.assertEqual(state_from_agent(dict(base, stationsUsed={"2-Fisheries": 1, "1-medical": 0, "nowhere": 2}))
+                         .stations, {"Neptune's Bounty": 1}, "unknown maps and unused ones count for nothing")
+
     def test_message_translation(self) -> None:
         def sent(payload: dict[str, Any]) -> Any:
             return event_from_message({"type": "send", "payload": payload})

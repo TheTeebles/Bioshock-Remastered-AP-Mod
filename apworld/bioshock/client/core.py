@@ -29,7 +29,7 @@ from .protocol import (
 )
 
 SAVE_VERSION = 1
-SUPPORTED_SLOT_DATA_VERSION = 2  # keep in step with SLOT_DATA_VERSION in world.py
+SUPPORTED_SLOT_DATA_VERSION = 3  # keep in step with SLOT_DATA_VERSION in world.py
 
 COMMAND_TIMEOUT = 5.0  # seconds without an answer before the player is told the game has not confirmed yet
 RETRY_DELAY = 1.0  # pause before retrying a command the game refused
@@ -453,9 +453,6 @@ class BridgeCore:
         for level, count in (state.stations or {}).items():
             found.update(game_data.STATION_LOCATION[level, k] for k in range(1, count + 1)
                          if (level, k) in game_data.STATION_LOCATION)
-        for level in state.reels or ():
-            if level in game_data.REEL_LOCATION:
-                found.add(game_data.REEL_LOCATION[level])
         for key in state.milestones or ():
             if key in game_data.MILESTONE_LOCATION:
                 found.add(game_data.MILESTONE_LOCATION[key])

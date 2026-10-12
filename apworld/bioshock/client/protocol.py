@@ -29,7 +29,6 @@ class GameState:
     goal: bool | None = None  # True once the agent itself has seen Fontaine defeated
     diaries: frozenset[int] | None = None  # audio diary numbers (1-122) collected in this save
     little_sisters: Mapping[str, int] | None = None  # level -> sisters rescued or harvested there
-    reels: frozenset[str] | None = None  # levels whose Director's Commentary reel is collected
     stations: Mapping[str, int] | None = None  # level -> Power to the People stations used there
     milestones: frozenset[str] | None = None  # story milestones reached in this save (keys of STORY_MILESTONES)
 

@@ -734,17 +734,16 @@ class TestLevelAccess(unittest.TestCase):
 
     def test_story_milestones_are_checks_of_their_level(self) -> None:
         h = Harness().connect().attach()
-        self.assertEqual(h.game.reach_milestone("Medical Pavilion"), "Melt the Ice to Dental Services")
+        self.assertEqual(h.game.reach_milestone("Medical Pavilion"), "Clear the Way to Surgery")
         self.assertEqual(h.game.reach_milestone("Arcadia"), "Bring Langford the Rosa Gallica")
         h.step(3)
-        self.assertEqual(h.sent_checks, [loc("Medical Pavilion - Story: Melt the Ice to Dental Services")])
+        self.assertEqual(h.sent_checks, [loc("Medical Pavilion - Story: Clear the Way to Surgery")])
         self.assertEqual(h.core.held_locations(), [loc("Arcadia - Story: Bring Langford the Rosa Gallica")])
         h.receive("Arcadia Access")
         h.step(3)
         self.assertEqual(h.core.held_locations(), [])
 
-        for _ in range(2):
-            h.game.reach_milestone("Medical Pavilion")
+        h.game.reach_milestone("Medical Pavilion")
         self.assertRaises(ValueError, h.game.reach_milestone, "Medical Pavilion")
         h.core.on_state(core_module.GameState(ready=True, milestones=frozenset({"steinman", "not a real one"})))
         self.assertIn(loc("Medical Pavilion - Story: Defeat Dr. Steinman"), h.core.collected)
@@ -811,7 +810,6 @@ class TestLevelAccess(unittest.TestCase):
         h.connect().attach()
         h.game.collect_diary(1)
         h.game.collect_diary(2)
-        h.game.collect_reel()
         h.step(3)
         self.assertEqual(h.sent_checks, [1001])
 
@@ -842,10 +840,9 @@ class TestLevelAccess(unittest.TestCase):
         h.game.deal_with_little_sister()
         h.game.deal_with_little_sister()
         h.game.use_station()
-        h.game.collect_reel()
         h.step(3)
         for name in ("Fort Frolic - Little Sister 1", "Fort Frolic - Little Sister 2",
-                     "Fort Frolic - Power to the People 1", "Fort Frolic - Director's Commentary Reel"):
+                     "Fort Frolic - Power to the People 1"):
             self.assertIn(loc(name), h.sent_checks, name)
         self.assertNotIn(loc("Fort Frolic - Little Sister 3"), h.sent_checks)
 

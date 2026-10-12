@@ -1,9 +1,9 @@
 # BioShock Remastered Randomizer Setup Guide
 
-> **Early development.** Seeds generate, the client talks to Archipelago, and items can be put into the real game on
-> the Steam version. Some of what you do in the game is not noticed by the client yet, so a whole seed can only be
-> played end to end with the client's simulated game for now (see "Trying it without the game"). "What to expect
-> from the real game today" below says exactly where things stand.
+> **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
+> version, and notices every kind of check there. No whole seed has been played through in the real game yet, and the
+> EVE Drain and Pickpocket traps and DeathLink are not built. "What to expect from the real game today" below says
+> exactly where things stand.
 
 ## Required Software
 
@@ -18,9 +18,8 @@ BioShock is a custom world, so the game has to be generated on a PC that has the
 website cannot generate it, but it can host the result.
 
 1. Create a YAML with the options you want. "Generate Template Options" in the Archipelago Launcher writes a template
-   to `Players/Templates/BioShock.yaml`. Out of the box, audio diaries and film reels only hold filler, so nobody
-   has to hunt for them. `audio_diary_checks` and `directors_commentary_checks` change that (`off`, `filler_only`
-   or `all`).
+   to `Players/Templates/BioShock.yaml`. Out of the box, audio diaries only hold filler, so nobody has to hunt
+   for them. `audio_diary_checks` changes that (`off`, `filler_only` or `all`).
 2. Put it in the `Players` folder together with everyone else's YAMLs and run "Generate" from the Launcher.
 3. Host the zip that appears in the `output` folder: upload it to the website's Host Game page, or run the server
    yourself. The [Archipelago Setup Guide](https://archipelago.gg/tutorial/Archipelago/setup_en) explains both.
@@ -71,14 +70,14 @@ If the game was started as administrator, Archipelago has to be started as admin
     nothing, that is worth reporting, with the item's name.
 - **GOG and Epic:** not supported yet. The client's game side was made for the Steam version.
 - **Checks noticed in the game (Steam):**
-  - *Story objectives:* 28 of the 33, read from the game's own quest list, and seen working in the real game. Not
-    yet: Electro Bolt, Ryan's ambush, the ice wall, Peach Wilkins and the self-destruct.
-  - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. A fix for one
-    the client missed is waiting to be tried.
-  - *Audio diaries:* all 122, noticed when you pick one up. Not tried in the real game yet. A diary picked up
+  - *Story objectives:* all 28, read from the game's own quest list, and seen working in the real game.
+  - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. Works in the
+    real game.
+  - *Audio diaries:* all 122, noticed when you pick one up. Works in the real game. A diary picked up
     while the client was not watching is not noticed once a save has been loaded since.
-- **Not yet, on any version:** noticing Power to the People stations and film reels; the EVE Drain and Pickpocket
-  traps; and DeathLink. The client names every item it could
+  - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
+    game.
+- **Not yet, on any version:** the EVE Drain and Pickpocket traps, and DeathLink. The client names every item it could
   not give you and keeps it for later.
 
 ## Client commands
@@ -101,7 +100,7 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 
 - `/sim travel arcadia` moves to a level (part of the name is enough)
 - `/sim story` does the next story objective in the level you are in
-- `/sim sister`, `/sim station`, `/sim reel` do the next one of those in the level you are in
+- `/sim sister` and `/sim station` do the next one of those in the level you are in
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
 - `/sim fontaine` beats the final boss
 - `/sim die` dies, to try DeathLink

@@ -361,7 +361,10 @@ function makeRuntime({
     };
     const questLog = cls('QuestLog', objectClass);
     const diary = (className) => make(className, cls(className, questLog));
-    return { spawned, splicer, make, quest, diary };
+    const stationClass = cls('PlaceableWeaponUpgradeStation', actor);
+    fields(stationClass, [['NumTimesUsed', intProperty, 0x524]]);
+    const station = (used = 0) => { const at = make('PlaceableWeaponUpgradeStation0', stationClass, 0x600); poke(at + 0x524, used); return at; };
+    return { spawned, splicer, make, quest, diary, station };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1213,6 +1216,17 @@ const tests = {
     model.diary('vo_ducky_fleespang');
     r.frames(3);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+  },
+  'state() counts the Power to the People stations used, by map': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const station = model.station(); model.station();
+    r.load(); r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{}');
+    assert.ok(r.logged('watching stations of class PlaceableWeaponUpgradeStation: NumTimesUsed at +0x524'));
+    r.poke(station + 0x524, 1); r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}');
+    r.poke(station + 0x524, 2); r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}', 'one station used twice is one');
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();
