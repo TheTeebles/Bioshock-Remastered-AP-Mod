@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-12.1';
+const AGENT_VERSION = '2026-10-12.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -468,6 +468,24 @@ function lookForPlayer(level, now) {
 // Where to send a command so that it reaches the local player, or null if that is not possible in this tick.
 // Everything is checked again on every call: the player's controller is replaced whenever a level loads.
 function playerTarget(level, info) {
+  const body = playerBody(level, info);
+  if (body === null) {
+    return null;
+  }
+  const self = viewport.add(LAYOUT.playerExec);
+  const exec = carefulPtr(ptrAt(self)); // slot 0 of the FExec vtable, as on the engine
+  if (!inModule(exec)) {
+    return null;
+  }
+  const key = exec.toString();
+  if (!execFunctions.has(key)) {
+    execFunctions.set(key, new NativeFunction(exec, 'int', ['pointer', 'pointer', 'pointer'], EXEC_CALL));
+  }
+  return { self, exec: execFunctions.get(key), controller: body.controller };
+}
+
+// The local player's controller and pawn, if the player is in the level being ticked right now and has a body.
+function playerBody(level, info) {
   if (viewport === null || info === null) {
     return null;
   }
@@ -482,16 +500,7 @@ function playerTarget(level, info) {
   if (pawn === null || pawn.isNull() || !same(carefulPtr(pawn.add(LAYOUT.pawnController)), controller)) {
     return null; // no body to give anything to: a menu, or the moment between two levels
   }
-  const self = viewport.add(LAYOUT.playerExec);
-  const exec = carefulPtr(ptrAt(self)); // slot 0 of the FExec vtable, as on the engine
-  if (!inModule(exec)) {
-    return null;
-  }
-  const key = exec.toString();
-  if (!execFunctions.has(key)) {
-    execFunctions.set(key, new NativeFunction(exec, 'int', ['pointer', 'pointer', 'pointer'], EXEC_CALL));
-  }
-  return { self, exec: execFunctions.get(key), controller };
+  return { controller, pawn };
 }
 
 function noteLevel(level, info, now) {
@@ -1513,6 +1522,82 @@ function readStations(map) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// DeathLink: noticing the player die, and killing them
+// ---------------------------------------------------------------------------------------------------------------
+
+// Pawn.Health, a float, on the Steam build (fields('ShockPlayer') in the probe, 2026-10-07). The game's damage code
+// sends the player into its Dying state once this reaches 0; a Vita-Chamber brings them back with it above 0.
+const PAWN_HEALTH = 0x57C;
+const KILL_PATIENCE_MS = 30000; // a kill that cannot be carried out for this long is given up
+
+const life = { pawn: null, alive: false }; // the pawn last looked at, and whether it was alive then
+const kills = []; // { id, at }: kills asked for and not carried out yet
+
+function healthOf(pawn) {
+  try {
+    return pawn.add(PAWN_HEALTH).readFloat();
+  } catch (e) {
+    return null;
+  }
+}
+
+// Reports a death once, when the same pawn goes from alive to not. A new pawn (a level loaded, a save loaded) is only
+// looked at, so loading a save in which the player is dead, or the moment a level hands over, reports nothing.
+function watchLife(pawn, map) {
+  const health = healthOf(pawn);
+  if (health === null) {
+    return;
+  }
+  const key = pawn.toString();
+  const alive = health > 0;
+  if (life.pawn !== key) {
+    life.pawn = key;
+    life.alive = alive;
+    return;
+  }
+  if (life.alive && !alive) {
+    log(`the player died in ${map}`);
+    send({ type: 'player_died', map });
+  }
+  life.alive = alive;
+}
+
+function carryOutKills(pawn, now) {
+  while (kills.length > 0 && now - kills[0].at > KILL_PATIENCE_MS) {
+    const late = kills.shift();
+    send({ type: 'action_result', id: late.id, name: 'kill', ok: false,
+      reason: 'the player could not be reached in time (a menu or a loading screen)' });
+  }
+  if (kills.length === 0 || pawn === null) {
+    return;
+  }
+  const health = healthOf(pawn);
+  if (health === null) {
+    return;
+  }
+  if (health > 0) {
+    pawn.add(PAWN_HEALTH).writeFloat(0);
+    log('killed the player for DeathLink');
+  }
+  for (const done of kills.splice(0)) { // a player who is dead already counts as killed
+    send({ type: 'action_result', id: done.id, name: 'kill', ok: true });
+  }
+}
+
+function watchPlayer(level, info, map, now) {
+  const loading = readPath(build.loading, (p) => p.readS32());
+  if (loading) {
+    return;
+  }
+  const body = playerBody(level, info);
+  if (body === null) {
+    return;
+  }
+  carryOutKills(body.pawn, now);
+  watchLife(body.pawn, map);
+}
+
+// ---------------------------------------------------------------------------------------------------------------
 // The hook
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -1532,6 +1617,7 @@ function onLevelTick(level) {
       if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
         watchSisters(level, seen.map, now);
         watchObjects(seen.map, now);
+        watchPlayer(level, info, seen.map, now);
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
@@ -1592,6 +1678,12 @@ globalThis.give = function (command) {
 
 globalThis.state = readState;
 
+// Kills the player, as a DeathLink from someone else would.
+globalThis.kill = function () {
+  kills.push({ id: null, at: Date.now() });
+  return 'the player dies on the next game tick in a level';
+};
+
 globalThis.watch = function (on) {
   watching = handlerInstalled && on !== false;
   if (watching) {
@@ -1635,9 +1727,13 @@ rpc.exports = {
   state() {
     return readState();
   },
-  // Named actions (traps, DeathLink). None are implemented yet: they need the player object, which is still to be
-  // located.
+  // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread; the traps are not
+  // built yet.
   action(id, name) {
+    if (name === 'kill') {
+      kills.push({ id, at: Date.now() });
+      return;
+    }
     send({ type: 'action_result', id, name, ok: false, reason: 'the agent does not support this yet' });
   },
 };

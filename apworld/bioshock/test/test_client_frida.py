@@ -24,6 +24,7 @@ from ..client.frida_agent import (
 )
 from ..client.protocol import (
     ActionResult, AgentError, AgentMessage, CommandResult, CommandStarted, GameState, LittleSisterResolved,
+    PlayerDied,
 )
 from .frida_harness import PYTHON, PYTHON_WITHOUT_FRIDA, FakeFrida, RawHelper, wait_for
 
@@ -995,6 +996,10 @@ class TestTranslation(unittest.TestCase):
         self.assertEqual(sent({"type": "action_result", "id": 4, "ok": True}), ActionResult(4, True))
         self.assertIsInstance(sent({"type": "exec_disabled", "reason": "different build"}), AgentMessage)
         self.assertEqual(sent({"type": "little_sister", "map": "1-Medical.bsm"}), LittleSisterResolved("1-medical"))
+        self.assertEqual(sent({"type": "player_died", "map": "1-medical"}), PlayerDied())
+        self.assertIsNone(sent({"type": "action_result", "id": 0, "name": "kill", "ok": True}), "DeathLink carried out")
+        self.assertIsInstance(sent({"type": "action_result", "id": 0, "name": "kill", "ok": False, "reason": "late"}),
+                              AgentMessage)
         self.assertIsNone(sent({"type": "something new"}))
         self.assertIsNone(event_from_message({"type": "send", "payload": "text"}))
         self.assertEqual(event_from_message({"type": "error", "description": "ReferenceError", "lineNumber": 7}),

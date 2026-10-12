@@ -407,6 +407,7 @@ class BioShockContext(CommonContext):
                 await self.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}])
             elif isinstance(action, SendDeath):
                 await self.send_death(f"{self.player_names.get(self.slot, 'Jack')} {action.cause}")
+                logger.info("DeathLink: you died, so everyone else on DeathLink does too.")
             elif isinstance(action, SaveState):
                 await self.send_msgs([{
                     "cmd": "Set", "key": self.storage_key, "default": {}, "want_reply": False,

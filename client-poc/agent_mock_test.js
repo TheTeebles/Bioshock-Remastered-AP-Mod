@@ -73,6 +73,7 @@ class Ptr {
     return bytes.buffer;
   }
   writePointer(p) { this.runtime.memory.set(this.value, p.value); return this; }
+  writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
 function makeRuntime({
@@ -1227,6 +1228,42 @@ const tests = {
     assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}');
     r.poke(station + 0x524, 2); r.frames(3);
     assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}', 'one station used twice is one');
+  },
+  // ---- DeathLink ----
+  'a death is reported once, and again after a Vita-Chamber': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(3);
+    const died = () => r.messages.filter((m) => m.type === 'player_died');
+    r.poke(game.pawn + 0x57C, 0); r.frames(3);
+    assert.deepStrictEqual(died().map((m) => m.map), ['1-medical']);
+    r.poke(game.pawn + 0x57C, 1000); r.frames(2); // revived
+    r.poke(game.pawn + 0x57C, 0); r.frames(2);
+    assert.strictEqual(died().length, 2);
+  },
+  'a new body that is already dead is no death': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(3);
+    const other = r.object(); r.addActor(game.level, other);
+    r.poke(other + 0x450, game.controller); r.poke(other + 0x57C, 0);
+    r.poke(game.controller + 0x450, other); r.frames(3); // a save loaded with the player dead in it
+    assert.strictEqual(r.messages.filter((m) => m.type === 'player_died').length, 0);
+  },
+  'kill empties the player\'s health on the game thread and says so': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(2);
+    r.context.rpc.exports.action(0, 'kill');
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 875, 'nothing happens off the game thread');
+    r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 0);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[0, 'kill', true]]);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'player_died').length, 1, 'and the death is seen');
+  },
+  'kill waits for a body': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(2);
+    r.poke(game.controller + 0x450, 0); // between two levels
+    r.context.rpc.exports.action(0, 'kill'); r.frames(3);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0);
+    r.poke(game.controller + 0x450, game.pawn); r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 0);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result' && m.ok).length, 1);
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();
