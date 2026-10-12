@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-08.1';
+const AGENT_VERSION = '2026-10-12.1';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -566,6 +566,8 @@ function readState() {
     // Little Sisters this agent saw rescued or harvested, by map. The client counts them as they are reported.
     littleSistersSeen: Object.fromEntries(sistersResolved),
     sistersWatched: sistersKnown.size,
+    // Power to the People stations used, by map: the most this agent has seen used there at once.
+    stationsUsed: Object.fromEntries(stations.used),
     sisterTrouble,
     // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
     completedQuests: quests.flag === null ? null : quests.completed,
@@ -1258,6 +1260,21 @@ function findBoolProperty(cls, wanted) {
   return null;
 }
 
+// Where an int property of a class (or of a class it extends) sits. Null if it has none of that name.
+function findIntProperty(cls, wanted) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'IntProperty') {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0x30 || offset > 0x8000 ? null : { offset };
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Little Sisters
 // ---------------------------------------------------------------------------------------------------------------
@@ -1351,12 +1368,15 @@ function watchSisters(level, map, now) {
 // found by going through the engine's table of all objects, a slice on every tick so that no frame is held up,
 // over and over. Quest flags are read a few times a second. state() lists the names of the completed quests and
 // the classes of the diaries and messages seen; which is which check is the client's business.
+// A Power to the People station is an actor of class PlaceableWeaponUpgradeStation, and its NumTimesUsed goes from
+// 0 to 1 when the player uses it (seen in Neptune's Bounty, 2026-10-12). state() counts the used ones by map.
 const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
-const scan = { next: 0, quests: [], map: null };
+const scan = { next: 0, quests: [], stations: [], map: null };
+const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
-const classKinds = new Map(); // class address -> 'quest', 'log', 'sister' or null
+const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station' or null
 
 function kindOf(cls) {
   const key = cls.toString();
@@ -1371,6 +1391,8 @@ function kindOf(cls) {
         kind = 'log';
       } else if (lineage.includes('Gatherer')) {
         kind = 'sister';
+      } else if (lineage.includes('PlaceableWeaponUpgradeStation')) {
+        kind = 'station';
       }
     }
     if (classKinds.size > 20000) {
@@ -1394,6 +1416,8 @@ function watchObjects(map, now) {
     scan.map = map; // a new map, or a save loaded: start the pass again
     scan.next = 0;
     scan.quests = [];
+    scan.stations = [];
+    stations.list = [];
   }
   const table = carefulPtr(base.add(objectModel.objects));
   const count = carefulS32(base.add(objectModel.objects + 4));
@@ -1411,6 +1435,8 @@ function watchObjects(map, now) {
       logClassesSeen.add(nameOfObject(cls)); // not logged: radio messages are QuestLogs too, and come often
     } else if (kind === 'sister') {
       noteSister(object, cls);
+    } else if (kind === 'station') {
+      scan.stations.push(object);
     }
   }
   scan.next = end;
@@ -1418,6 +1444,8 @@ function watchObjects(map, now) {
     scan.next = 0;
     quests.list = scan.quests;
     scan.quests = [];
+    stations.list = scan.stations;
+    scan.stations = [];
     if (quests.flag === null && quests.trouble === null && quests.list.length > 0) {
       quests.flag = findBoolProperty(classOfObject(quests.list[0]), 'Completed');
       if (quests.flag === null) {
@@ -1429,10 +1457,14 @@ function watchObjects(map, now) {
       }
     }
   }
-  if (quests.flag === null || now - quests.readAt < QUEST_READ_INTERVAL_MS) {
+  if (now - quests.readAt < QUEST_READ_INTERVAL_MS) {
     return;
   }
   quests.readAt = now;
+  readStations(map);
+  if (quests.flag === null) {
+    return;
+  }
   const completed = new Set();
   for (const quest of quests.list) {
     const cls = classOfObject(quest);
@@ -1448,6 +1480,36 @@ function watchObjects(map, now) {
     }
   }
   quests.completed = [...completed].sort();
+}
+
+function stationCounterOf(cls) {
+  const key = cls.toString();
+  if (!stations.counters.has(key)) {
+    const counter = findIntProperty(cls, 'NumTimesUsed');
+    log(counter === null ? `stations of class ${nameOfObject(cls)} cannot be watched: no NumTimesUsed` :
+      `watching stations of class ${nameOfObject(cls)}: NumTimesUsed at +0x${counter.offset.toString(16)}`);
+    stations.counters.set(key, counter);
+  }
+  return stations.counters.get(key);
+}
+
+function readStations(map) {
+  let used = 0;
+  for (const station of stations.list) {
+    const cls = classOfObject(station);
+    if (cls === null || kindOf(cls) !== 'station') {
+      continue; // gone since the scan
+    }
+    const counter = stationCounterOf(cls);
+    const times = counter === null ? null : carefulS32(station.add(counter.offset));
+    if (times !== null && times > 0) {
+      used++;
+    }
+  }
+  if (used > (stations.used.get(map) || 0)) {
+    stations.used.set(map, used);
+    log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

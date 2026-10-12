@@ -545,6 +545,18 @@ def diaries_of(received: object) -> frozenset[int] | None:
     return frozenset(DIARY_CLASSES[name] for name in received if name in DIARY_CLASSES)
 
 
+def stations_of(used_by_map: object) -> dict[str, int] | None:
+    """Power to the People stations used, by level, from the agent's count by map. None while it cannot tell."""
+    if not isinstance(used_by_map, dict):
+        return None
+    result: dict[str, int] = {}
+    for map_name, count in used_by_map.items():
+        level = level_of(normalize_map(map_name), None)
+        if level is not None and isinstance(count, int) and count > 0:
+            result[level] = result.get(level, 0) + count
+    return result
+
+
 def diary_location(number: int) -> int | None:
     return 1000 + number if 1 <= number <= DIARY_COUNT else None
 
