@@ -8,7 +8,7 @@ ID scheme (stable once released, never reuse an ID for something else):
     Locations                            Items
     1001-1122  Audio Diaries             100-107  Level Access
     2001-2021  Little Sisters            200-210  Plasmids
-    3001-3010  Director's Commentary     300-357  Gene Tonics
+    3001-3010  (retired: film reels)     300-357  Gene Tonics
     4001-4012  Power to the People       400-406  Weapons            (reserved, not shuffled yet)
     5001-5012  Level Completion          450-461  Weapon Upgrades    (reserved, not shuffled yet)
     6001-6999  World items, containers   500-505  Character Upgrades
@@ -255,19 +255,8 @@ LITTLE_SISTERS_PER_LEVEL: dict[str, int] = {
     POINT_PROMETHEUS: 3,
 }
 
-# Remastered-only "Director's Commentary" golden film reels. One per listed level, 10 total.
-DIRECTORS_COMMENTARY_LEVELS: tuple[str, ...] = (
-    WELCOME_TO_RAPTURE,  # Footlight Theater stage
-    MEDICAL_PAVILION,  # next to the Gatherer's Garden after the first Little Sister
-    NEPTUNES_BOUNTY,  # Fontaine Fisheries freezer shelf
-    FARMERS_MARKET,  # Worley Winery cellar shack
-    FORT_FROLIC,  # Fleet Hall projection room
-    HEPHAESTUS,  # shelf under the EMP bomb casing
-    RAPTURE_CENTRAL_CONTROL,  # Andrew Ryan's desk
-    APOLLO_SQUARE,  # couch near the bathysphere
-    POINT_PROMETHEUS,  # Little Wonders Educational Facility, Little Sister Room 1
-    PROVING_GROUNDS,  # next to the final U-Invent machine
-)
+# The Remastered "Director's Commentary" film reels are not checks: a reel unlocks its film for the whole PC, not
+# the save, and the game seems to leave out the reels a player has found before (0.1.7). Their IDs stay unused.
 
 # Power to the People weapon upgrade stations. 12 total, one upgrade each.
 # Location k in a level = the k-th station you use there.
@@ -344,10 +333,6 @@ def little_sister_location_name(level: str, index: int) -> str:
     return f"{level} - Little Sister {index}"
 
 
-def directors_commentary_location_name(level: str) -> str:
-    return f"{level} - Director's Commentary Reel"
-
-
 def power_to_the_people_location_name(level: str, index: int) -> str:
     return f"{level} - Power to the People {index}"
 
@@ -371,12 +356,11 @@ class LocationData(NamedTuple):
 class LocationCategory:
     AUDIO_DIARY = "Audio Diaries"
     LITTLE_SISTER = "Little Sisters"
-    DIRECTORS_COMMENTARY = "Director's Commentary"
     POWER_TO_THE_PEOPLE = "Power to the People"
     LEVEL_COMPLETION = "Level Completion"
     STORY = "Story"
 
-    ALL = (AUDIO_DIARY, LITTLE_SISTER, DIRECTORS_COMMENTARY, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY)
+    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -393,11 +377,6 @@ def _build_location_table() -> tuple[LocationData, ...]:
             sister_id += 1
             table.append(LocationData(little_sister_location_name(level, index), sister_id, level,
                                       LocationCategory.LITTLE_SISTER, False))
-
-    for offset, level in enumerate(DIRECTORS_COMMENTARY_LEVELS, start=1):
-        missable = not LEVEL_BY_NAME[level].revisitable
-        table.append(LocationData(directors_commentary_location_name(level), 3000 + offset, level,
-                                  LocationCategory.DIRECTORS_COMMENTARY, missable))
 
     station_id = 4000
     for level in LEVEL_NAMES:

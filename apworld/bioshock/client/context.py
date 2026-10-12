@@ -40,8 +40,8 @@ ATTACH_RETRY_SECONDS = 5.0
 CLOSING_WAIT_SECONDS = 1.0  # how long closing the client waits for the game to confirm an item on its way
 STORAGE_CATEGORY = "bioshock"  # in Archipelago's own settings file on this PC
 
-SIM_HELP = ("story | sister | station | reel | diary <1-122> | travel <level> | fontaine | die | loading | pause | "
-            "bag   (story, sister, station and reel use the level you travelled to)")
+SIM_HELP = ("story | sister | station | diary <1-122> | travel <level> | fontaine | die | loading | pause | "
+            "bag   (story, sister and station use the level you travelled to)")
 
 
 def stored_python() -> str | None:
@@ -140,9 +140,6 @@ class BioShockCommandProcessor(ClientCommandProcessor):
             elif verb == "station":
                 game.use_station()
                 self.output(f"Used a Power to the People station in {game.level}.")
-            elif verb == "reel":
-                game.collect_reel()
-                self.output(f"Picked up the film reel in {game.level}.")
             elif verb == "travel":
                 game.travel(resolve_level(rest))
                 self.output(f"Now in {game.level}.")

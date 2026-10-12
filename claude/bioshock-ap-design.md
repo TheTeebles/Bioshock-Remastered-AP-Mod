@@ -17,6 +17,10 @@ stations, diaries) is the big piece still missing.*
   section 3.
 - **Goal (2026-09-30):** checks should also include world items (plasmids, tonics, weapons) and safes, not just audio
   diaries. Frida makes this possible by intercepting the game's pickup code. See section 5.
+- **Decision (2026-10-12, Teebs):** the Director's Commentary film reels are not checks. A reel unlocks its film for
+  the whole PC (native code, `ShockPlayer.UnlockDeveloperFilmAll`), not the save, and on a save from before the Neptune's
+  Bounty reel the probe found no `DeveloperFilm` object once that reel had been taken in an earlier run. Location IDs
+  3001-3010 and the `directors_commentary_checks` option are gone (0.1.7, slot data v3); the IDs stay unused.
 - **Decision (2026-10-03):** nothing important may depend on audio diaries or film reels. Some are hard to find even
   in a normal playthrough. By default they are extra checks that only ever hold filler, and 33 story objectives
   carry the important items instead. See section 4.

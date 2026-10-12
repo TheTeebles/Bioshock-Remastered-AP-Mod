@@ -14,12 +14,12 @@ from ..data import (
     ACCESS_ITEMS, GOAL_LOCATION, LEVELS, LOCATION_TABLE, PLASMIDS, TONICS, ItemKind, LocationCategory, Source,
 )
 from ..items import ITEM_KIND
-from ..options import AudioDiaryChecks, DirectorsCommentaryChecks, option_presets
+from ..options import AudioDiaryChecks, option_presets
 from ..world import SLOT_DATA_VERSION
 from .bases import BioShockTestBase, generate_multiworld
 
 CATEGORY = {location.name: location.category for location in LOCATION_TABLE}
-COLLECTIBLES = (LocationCategory.AUDIO_DIARY, LocationCategory.DIRECTORS_COMMENTARY)
+COLLECTIBLES = (LocationCategory.AUDIO_DIARY,)
 IMPORTANT = ItemClassification.progression | ItemClassification.useful
 
 
@@ -103,14 +103,13 @@ class TestDefaults(PoolTestBase):
     def test_sizes(self) -> None:
         self.assertEqual(Counter(CATEGORY[location.name] for location in self.real_locations()), Counter({
             LocationCategory.AUDIO_DIARY: 122,
-            LocationCategory.DIRECTORS_COMMENTARY: 10,
             LocationCategory.STORY: 33,
             LocationCategory.LITTLE_SISTER: 21,
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
         }))
         # 78 checks may hold real items: 8 access items and 70 of the 78 useful ones. The rest of the pool is filler.
-        self.assertEqual(self.pool(), Counter(progression=8, useful=70, filler=132))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=70, filler=122))
 
     def test_collectibles_are_marked_filler_only(self) -> None:
         for location in self.real_locations():
@@ -167,7 +166,7 @@ class TestDefaults(PoolTestBase):
 
 
 class TestCollectiblesOff(PoolTestBase):
-    options = {"audio_diary_checks": "off", "directors_commentary_checks": "off"}
+    options = {"audio_diary_checks": "off"}
 
     def test_only_the_real_checks_exist(self) -> None:
         self.assertEqual(len(self.real_locations()), 78)
@@ -178,11 +177,11 @@ class TestCollectiblesOff(PoolTestBase):
 
 
 class TestCollectiblesHoldAnything(PoolTestBase):
-    options = {"audio_diary_checks": "all", "directors_commentary_checks": "all"}
+    options = {"audio_diary_checks": "all"}
 
     def test_every_useful_item_fits(self) -> None:
-        self.assertEqual(len(self.real_locations()), 210)
-        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=124))
+        self.assertEqual(len(self.real_locations()), 200)
+        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=114))
 
     def test_welcome_to_rapture_collectibles_still_only_get_filler(self) -> None:
         """Welcome to Rapture cannot be revisited, so what can be missed there never holds anything important.
@@ -196,10 +195,10 @@ class TestCollectiblesHoldAnything(PoolTestBase):
                 self.assertFalse(location.item.classification & IMPORTANT, location.name)
             else:
                 self.assertEqual(location.progress_type, LocationProgressType.DEFAULT, location.name)
-        self.assertEqual(missable, 3)
+        self.assertEqual(missable, 2)
         excluded = [location for location in self.real_locations()
                     if location.progress_type == LocationProgressType.EXCLUDED]
-        self.assertEqual(len(excluded), 3, "nothing else is filler-only in this mode")
+        self.assertEqual(len(excluded), 2, "nothing else is filler-only in this mode")
 
 
 class TestFewRealChecks(PoolTestBase):
@@ -207,7 +206,7 @@ class TestFewRealChecks(PoolTestBase):
     options = {"story_checks": False, "power_to_the_people_checks": False, "level_completion_checks": False}
 
     def test_pool_shrinks_to_fit(self) -> None:
-        self.assertEqual(self.pool(), Counter(progression=8, useful=13, filler=132))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=13, filler=122))
         useful = [item.name for item in self.multiworld.itempool if item.useful]
         self.assertTrue(all(ITEM_KIND[name] == ItemKind.PLASMID for name in useful), useful)
         self.fill()
@@ -220,7 +219,7 @@ class TestPlayerExcludesLocations(PoolTestBase):
     options = {"exclude_locations": excluded}
 
     def test_pool_leaves_room_for_the_exclusions(self) -> None:
-        self.assertEqual(self.pool(), Counter(progression=8, useful=66, filler=136))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=66, filler=126))
         self.fill()
         for name in self.excluded:
             item = self.multiworld.get_location(name, self.player).item
@@ -231,7 +230,7 @@ class TestPlayerExcludesLocations(PoolTestBase):
         multiworld = self.generate_for_real({"exclude_locations": ["Little Sisters", "Smuggler's Hideout"]})
         placed = [location.item for location in multiworld.get_locations(1) if location.address is not None]
         # 21 Little Sisters, plus the story check and the level completion in Smuggler's Hideout: 55 checks are left.
-        self.assertEqual(count_items(placed), Counter(progression=8, useful=47, filler=155))
+        self.assertEqual(count_items(placed), Counter(progression=8, useful=47, filler=145))
 
 
 class TestAudioDiariesOnly(PoolTestBase):
@@ -260,7 +259,7 @@ class TestOptionChecks(PoolTestBase):
         self.world_setup()
 
     def test_no_checks_at_all_is_refused(self) -> None:
-        nothing = dict(audio_diary_checks="off", directors_commentary_checks="off", story_checks=False,
+        nothing = dict(audio_diary_checks="off", story_checks=False,
                        little_sister_checks=False, power_to_the_people_checks=False, level_completion_checks=False)
         for level_access in ("access_items", "vanilla"):  # vanilla adds no items, so only this check can stop it
             with self.subTest(level_access=level_access), self.assertRaises(OptionError) as raised:
@@ -276,7 +275,7 @@ class TestOptionChecks(PoolTestBase):
 
     # Twelve level completion checks and nothing else, minus what the player excludes.
     completion_only = dict(story_checks=False, little_sister_checks=False, power_to_the_people_checks=False,
-                           audio_diary_checks="off", directors_commentary_checks="off")
+                           audio_diary_checks="off")
     later_levels = ("Arcadia", "Fort Frolic", "Hephaestus", "Apollo Square", "Olympus Heights")
 
     def test_exactly_enough_checks_is_enough(self) -> None:
@@ -304,7 +303,7 @@ class TestOptionChecks(PoolTestBase):
     def test_filler_only_collectibles_alone_work_without_access_items(self) -> None:
         self.generate(level_access="vanilla", story_checks=False, little_sister_checks=False,
                       power_to_the_people_checks=False, level_completion_checks=False)
-        self.assertEqual(self.pool(), Counter(filler=132))
+        self.assertEqual(self.pool(), Counter(filler=122))
         self.fill()
 
     def test_every_preset_generates(self) -> None:
@@ -315,21 +314,21 @@ class TestOptionChecks(PoolTestBase):
                 self.assertBeatable(True)
 
     def test_old_on_off_values_still_work(self) -> None:
-        self.assertEqual(DirectorsCommentaryChecks.from_any(True).value, DirectorsCommentaryChecks.option_all)
-        self.assertEqual(DirectorsCommentaryChecks.from_any(False).value, DirectorsCommentaryChecks.option_off)
+        self.assertEqual(AudioDiaryChecks.from_any(True).value, AudioDiaryChecks.option_all)
+        self.assertEqual(AudioDiaryChecks.from_any(False).value, AudioDiaryChecks.option_off)
         for text, value in (("true", 2), ("on", 2), ("yes", 2), ("false", 0), ("off", 0), ("no", 0)):
-            self.assertEqual(DirectorsCommentaryChecks.from_any(text).value, value, text)
+            self.assertEqual(AudioDiaryChecks.from_any(text).value, value, text)
         self.assertEqual(AudioDiaryChecks.from_any("filler_only").value, AudioDiaryChecks.option_filler_only)
         self.assertEqual(AudioDiaryChecks.default, AudioDiaryChecks.option_filler_only)
         self.assertEqual(AudioDiaryChecks(AudioDiaryChecks.default).current_option_name, "Filler Only")
 
 
 class TestEveryCombination(PoolTestBase):
-    """All 288 ways to set the check options, each as a one-player game: it either fills and can be finished with
+    """All 96 ways to set the check options, each as a one-player game: it either fills and can be finished with
     nothing important on a filler-only check, or it is turned down before generation starts."""
     auto_construct = False
     switches = ("story_checks", "little_sister_checks", "power_to_the_people_checks", "level_completion_checks")
-    collectibles = ("audio_diary_checks", "directors_commentary_checks")
+    collectibles = ("audio_diary_checks",)
 
     @staticmethod
     def should_be_refused(options: dict[str, Any]) -> bool:
@@ -342,7 +341,7 @@ class TestEveryCombination(PoolTestBase):
         # The first access item needs a check in Welcome to Rapture or Medical Pavilion that may hold it. Power to
         # the People stations only start in Neptune's Bounty.
         return not (options["story_checks"] or options["little_sister_checks"] or options["level_completion_checks"]
-                    or "all" in (options["audio_diary_checks"], options["directors_commentary_checks"]))
+                    or options["audio_diary_checks"] == "all")
 
     def test_every_combination(self) -> None:
         refused = 0
@@ -366,7 +365,7 @@ class TestEveryCombination(PoolTestBase):
                             if location.progress_type == LocationProgressType.EXCLUDED:
                                 self.assertFalse(location.item.classification & IMPORTANT,
                                                  f"{location.item.name} on {location.name}")
-        self.assertEqual(refused, 9)
+        self.assertEqual(refused, 5)
 
 
 class TestSomewhereToStart(PoolTestBase):
@@ -406,7 +405,7 @@ class TestSomewhereToStart(PoolTestBase):
                         {"start_inventory": {"Fort Frolic Access": 1}},
                         {"start_inventory_from_pool": {"Arcadia Access": 1}},
                         {"little_sister_checks": True},
-                        {"directors_commentary_checks": "all"}):  # the Medical Pavilion reel can then hold one
+                        {"audio_diary_checks": "all"}):  # a Medical Pavilion diary can then hold one
             with self.subTest(way_out=way_out):
                 self.generate_for_real({**self.stations_only, **way_out})
                 self.generate_for_real({**self.stations_only, **way_out}, {**self.stations_only, **way_out})
@@ -424,11 +423,11 @@ class TestSlotData(BioShockTestBase):
 
     def test_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
-        self.assertEqual(slot_data["slot_data_version"], 2)
+        self.assertEqual(slot_data["slot_data_version"], 3)
         self.assertEqual(SLOT_DATA_VERSION, SUPPORTED_SLOT_DATA_VERSION, "the client that ships with the world")
         self.assertEqual(slot_data["death_link"], 1)
         self.assertEqual(slot_data["story_checks"], 1)
         self.assertEqual(slot_data["audio_diary_checks"], AudioDiaryChecks.option_filler_only)
-        self.assertEqual(slot_data["directors_commentary_checks"], DirectorsCommentaryChecks.option_filler_only)
+        self.assertNotIn("directors_commentary_checks", slot_data)
         self.assertEqual(slot_data["level_access_items"]["Arcadia"], "Arcadia Access")
         self.assertIsNone(slot_data["level_access_items"]["Medical Pavilion"])

@@ -343,10 +343,6 @@ def _numbered_locations(category: str) -> dict[tuple[str, int], int]:
 
 LITTLE_SISTER_LOCATION: dict[tuple[str, int], int] = _numbered_locations(LocationCategory.LITTLE_SISTER)
 STATION_LOCATION: dict[tuple[str, int], int] = _numbered_locations(LocationCategory.POWER_TO_THE_PEOPLE)
-REEL_LOCATION: dict[str, int] = {
-    location.level: location.id for location in LOCATION_TABLE
-    if location.category == LocationCategory.DIRECTORS_COMMENTARY
-}
 LEVEL_COMPLETION_LOCATION: dict[str, int] = {
     level: _LOCATION_ID[level_completion_location_name(level)] for level in LEVEL_COMPLETION_LEVELS
 }

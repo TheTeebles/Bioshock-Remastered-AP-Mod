@@ -11,7 +11,7 @@ import re
 from collections import Counter
 
 from ..data import (
-    AUDIO_DIARIES, DIRECTORS_COMMENTARY_LEVELS, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
+    AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
     STORY_MILESTONES, WELCOME_TO_RAPTURE,
 )
 from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied
@@ -42,7 +42,6 @@ class SimulatedGame:
         self.loading = False
         self.diaries: set[int] = set()
         self.little_sisters: Counter[str] = Counter()
-        self.reels: set[str] = set()
         self.stations: Counter[str] = Counter()
         self.milestones: set[str] = set()
         self.fontaine_defeated = False
@@ -84,7 +83,6 @@ class SimulatedGame:
             goal=self.fontaine_defeated,
             diaries=frozenset(self.diaries),
             little_sisters=dict(self.little_sisters),
-            reels=frozenset(self.reels),
             stations=dict(self.stations),
             milestones=frozenset(self.milestones),
         )
@@ -168,12 +166,6 @@ class SimulatedGame:
         if self.stations[level] >= limit:
             raise ValueError(f"{level} has no more Power to the People stations ({limit} in total).")
         self.stations[level] += 1
-
-    def collect_reel(self, level: str | None = None) -> None:
-        level = level or self.level
-        if level not in DIRECTORS_COMMENTARY_LEVELS:
-            raise ValueError(f"{level} has no Director's Commentary reel.")
-        self.reels.add(level)
 
     def reach_milestone(self, level: str | None = None) -> str:
         """Do the next story milestone of a level. Returns what it was."""

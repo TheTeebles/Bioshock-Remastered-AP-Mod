@@ -26,17 +26,14 @@ These can hold anything, including the items you and other players need:
 - Using each of the 12 Power to the People weapon upgrade stations
 - Finishing each level for the first time (12 checks)
 
-The hidden collectibles are extras. By default they are checks that only ever hold filler such as ADAM and dollars, or
-traps, so nobody ever has to hunt for one:
+The 122 Audio Diaries are extras. By default they are checks that only ever hold filler such as ADAM and dollars, or
+traps, so nobody ever has to hunt for one. They can also be switched off, or set to "all" if you do want important
+items on them. Every other kind of check can be switched off as well.
 
-- The 122 Audio Diaries
-- The 10 Remastered Director's Commentary film reels
+Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.
 
-Each of those two can also be switched off, or set to "all" if you do want important items on them. Every other kind
-of check can be switched off as well.
-
-Welcome to Rapture can never be revisited, so its two audio diaries and its film reel only hold filler whatever you
-choose.
+The Remastered Director's Commentary film reels are not checks. A reel unlocks its film for the whole PC rather than
+the save, so a reel found in an earlier playthrough would not be there to pick up.
 
 ## Which items can I receive?
 
@@ -53,8 +50,8 @@ can hold. With the default options that is every access item, plasmid and upgrad
 random for each seed. With fewer checks switched on, tonics are left out first, then upgrades, then plasmids. Tonics
 that are left out can still be bought, invented or researched in the game as usual.
 
-Traps take the place of filler, so they turn up where filler does. With audio diary and film reel checks both switched
-off your own pool has little or no filler, and then little or nothing becomes a trap.
+Traps take the place of filler, so they turn up where filler does. With audio diary checks switched off your own pool
+has little or no filler, and then little or nothing becomes a trap.
 
 Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are for now. The game hands
 those out itself, so shuffling them has to wait until the client can suppress vanilla pickups.

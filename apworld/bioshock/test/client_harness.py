@@ -16,7 +16,7 @@ from ..client.protocol import (
 )
 from ..client.simulated import SimulatedGame
 from ..data import (
-    AUDIO_DIARIES, DIRECTORS_COMMENTARY_LEVELS, LEVELS, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE,
+    AUDIO_DIARIES, LEVELS, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE,
     POWER_TO_THE_PEOPLE_PER_LEVEL, STORY_MILESTONES,
 )
 from ..items import ITEM_NAME_TO_ID
@@ -52,8 +52,6 @@ def play_level(game: SimulatedGame, level: str) -> None:
         game.deal_with_little_sister()
     for _ in range(POWER_TO_THE_PEOPLE_PER_LEVEL.get(level, 0)):
         game.use_station()
-    if level in DIRECTORS_COMMENTARY_LEVELS:
-        game.collect_reel()
     for milestone in STORY_MILESTONES:
         if milestone.level == level:
             game.reach_milestone()

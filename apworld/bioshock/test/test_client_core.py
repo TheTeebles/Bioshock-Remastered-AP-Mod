@@ -811,7 +811,6 @@ class TestLevelAccess(unittest.TestCase):
         h.connect().attach()
         h.game.collect_diary(1)
         h.game.collect_diary(2)
-        h.game.collect_reel()
         h.step(3)
         self.assertEqual(h.sent_checks, [1001])
 
@@ -842,10 +841,9 @@ class TestLevelAccess(unittest.TestCase):
         h.game.deal_with_little_sister()
         h.game.deal_with_little_sister()
         h.game.use_station()
-        h.game.collect_reel()
         h.step(3)
         for name in ("Fort Frolic - Little Sister 1", "Fort Frolic - Little Sister 2",
-                     "Fort Frolic - Power to the People 1", "Fort Frolic - Director's Commentary Reel"):
+                     "Fort Frolic - Power to the People 1"):
             self.assertIn(loc(name), h.sent_checks, name)
         self.assertNotIn(loc("Fort Frolic - Little Sister 3"), h.sent_checks)
 

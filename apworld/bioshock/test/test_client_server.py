@@ -43,7 +43,7 @@ from .frida_harness import PYTHON, FakeFrida
 
 LOCATION_LEVEL = {location.id: location.level for location in LOCATION_TABLE}
 COLLECTIBLES = {location.id for location in LOCATION_TABLE
-                if location.category in (LocationCategory.AUDIO_DIARY, LocationCategory.DIRECTORS_COMMENTARY)}
+                if location.category == LocationCategory.AUDIO_DIARY}
 
 
 def new_server(archive: str, password: str = "") -> MultiServer.Context:
@@ -303,7 +303,7 @@ class TestSoloSeed(ServerTestBase):
 
         self.assertEqual((jack.ctx.team, jack.ctx.slot), self.slot("Jack"))
         self.assertEqual(jack.ctx.core.valid_locations, self.locations("Jack"))
-        self.assertEqual(len(self.locations("Jack")), 210)
+        self.assertEqual(len(self.locations("Jack")), 200)
         self.assertEqual(jack.ctx.core.access_items["Arcadia"], "Arcadia Access")
         self.assertIsNone(jack.ctx.core.access_items["Medical Pavilion"])
         self.assertIsNone(self.stored("Jack"), "nothing is stored before the client has run")
@@ -329,15 +329,14 @@ class TestSoloSeed(ServerTestBase):
         await self.settle()
         self.assert_finished(jack)
 
-    async def test_finishing_without_a_single_diary_or_film_reel(self) -> None:
+    async def test_finishing_without_a_single_diary(self) -> None:
         self.assertEqual(self.important_items_on("Jack", COLLECTIBLES), [], "collectibles only hold filler")
-        self.assertEqual(len(self.locations("Jack") & COLLECTIBLES), 132)
+        self.assertEqual(len(self.locations("Jack") & COLLECTIBLES), 122)
 
         jack = await self.join("Jack")
         for level in LEVEL_NAMES:
             play_level(jack.game, level)
             jack.game.diaries.clear()  # walked past every one of them
-            jack.game.reels.clear()
             await self.settle()
             self.assert_in_logic("Jack")
         jack.game.defeat_fontaine()
@@ -491,7 +490,7 @@ class TestOtherOptions(ServerTestBase):
 
     async def test_whole_seed_with_fewer_checks_and_traps(self) -> None:
         jack = await self.join("Jack")
-        self.assertEqual(len(self.locations("Jack")), 210 - 21 - 12)
+        self.assertEqual(len(self.locations("Jack")), 200 - 21 - 12)
         for level in LEVEL_NAMES:
             play_level(jack.game, level)  # the player still deals with every Little Sister and station
             await self.settle()
@@ -563,7 +562,7 @@ class TestSecondSeed(ServerTestBase):
         jack.ctx.set_agent(jack.game)
         play_level(jack.game, "Welcome to Rapture")
         await self.settle()
-        self.assertEqual(self.second_server.location_checks[team, slot], {1001, 1002, 3001, 7001, 7002})
+        self.assertEqual(self.second_server.location_checks[team, slot], {1001, 1002, 7001, 7002})
         commands, _ = expected_deliveries([item.item for item in MultiServer.get_received_items(
             self.second_server, team, slot, True)])
         self.assertEqual(jack.game.commands, commands)
@@ -745,7 +744,9 @@ class TestThroughTheHelper(ServerTestBase):
                              and core.delivered == len(self.received("Jack")) and jack.ctx.agent is not first,
                              "the second item to reach the game that was started again")
             self.assertIsNot(jack.ctx.agent, first)
-            self.assertEqual([call["command"] for call in fake.calls("exec")],
+            # Checks the game reports on its own can find Jack's own items too, so only these two are looked at.
+            asked = {"GiveItem 1 ShockGame.HealthUpgrade", "GiveItem 1 ShockGame.BioAmmoUpgrade"}
+            self.assertEqual([call["command"] for call in fake.calls("exec") if call["command"] in asked],
                              ["GiveItem 1 ShockGame.HealthUpgrade", "GiveItem 1 ShockGame.BioAmmoUpgrade"],
                              "each asked for once: the game is not sent back into what closed it")
             self.assertEqual(core.skipped, {0: REFUSED})

@@ -6,7 +6,7 @@ from collections import Counter
 from .. import world
 from ..client import game_data
 from ..data import (
-    ACCESS_ITEMS, AUDIO_DIARIES, DIRECTORS_COMMENTARY_LEVELS, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
+    ACCESS_ITEMS, AUDIO_DIARIES, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
     LOCATION_TABLE, PLASMIDS, POWER_TO_THE_PEOPLE_PER_LEVEL, STORY_MILESTONES, TONICS, LocationCategory,
 )
 
@@ -25,16 +25,14 @@ class TestGameData(unittest.TestCase):
 
     def test_collectible_totals(self) -> None:
         self.assertEqual(sum(LITTLE_SISTERS_PER_LEVEL.values()), 21)
-        self.assertEqual(len(DIRECTORS_COMMENTARY_LEVELS), 10)
         self.assertEqual(sum(POWER_TO_THE_PEOPLE_PER_LEVEL.values()), 12)
-        for level in (*LITTLE_SISTERS_PER_LEVEL, *DIRECTORS_COMMENTARY_LEVELS, *POWER_TO_THE_PEOPLE_PER_LEVEL):
+        for level in (*LITTLE_SISTERS_PER_LEVEL, *POWER_TO_THE_PEOPLE_PER_LEVEL):
             self.assertIn(level, LEVEL_NAMES)
 
     def test_location_table(self) -> None:
         self.assertEqual(Counter(location.category for location in LOCATION_TABLE), Counter({
             LocationCategory.AUDIO_DIARY: 122,
             LocationCategory.LITTLE_SISTER: 21,
-            LocationCategory.DIRECTORS_COMMENTARY: 10,
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
             LocationCategory.STORY: 33,
@@ -106,7 +104,6 @@ class TestGameData(unittest.TestCase):
         self.assertEqual(missable, {
             "Welcome to Rapture - Audio Diary: New Year's Eve Alone",
             "Welcome to Rapture - Audio Diary: Hole in Bathroom Wall",
-            "Welcome to Rapture - Director's Commentary Reel",
         })
 
     def test_item_table(self) -> None:
