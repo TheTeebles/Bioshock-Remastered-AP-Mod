@@ -17,6 +17,9 @@ stations, diaries) is the big piece still missing.*
   section 3.
 - **Goal (2026-09-30):** checks should also include world items (plasmids, tonics, weapons) and safes, not just audio
   diaries. Frida makes this possible by intercepting the game's pickup code. See section 5.
+- **Decision (2026-10-12, Teebs):** five story checks are dropped because the game keeps no quest for them: Inject
+  Electro Bolt, Survive Ryan's Ambush, Melt the Ice to Dental Services, Defeat Peach Wilkins and Stop the Self-Destruct
+  (7001, 7002, 7003, 7007, 7025; IDs stay unused). 28 story checks remain (0.1.7).
 - **Decision (2026-10-12, Teebs):** the Director's Commentary film reels are not checks. A reel unlocks its film for
   the whole PC (native code, `ShockPlayer.UnlockDeveloperFilmAll`), not the save, and on a save from before the Neptune's
   Bounty reel the probe found no `DeveloperFilm` object once that reel had been taken in an earlier run. Location IDs

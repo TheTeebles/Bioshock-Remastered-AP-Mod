@@ -287,15 +287,14 @@ class StoryMilestone(NamedTuple):
 # in Welcome to Rapture. They are grouped by level, and in the order they happen within a level (the story leaves
 # Arcadia for Farmer's Market and comes back to release the Lazarus Vector).
 # Picking up weapons, plasmids and tonics is left out on purpose: those become checks of their own when world items
-# are shuffled. Electro Bolt is the exception. It is a scripted story moment and stays vanilla.
+# are shuffled.
+# Numbers 1, 2, 3, 7 and 25 (Inject Electro Bolt, Survive Ryan's Ambush, Melt the Ice to Dental Services, Defeat Peach
+# Wilkins, Stop the Self-Destruct) were taken out in 0.1.7: the game keeps no quest for them that the client can
+# read. Their IDs stay unused.
 STORY_MILESTONES: tuple[StoryMilestone, ...] = (
-    StoryMilestone(1, "electro_bolt", WELCOME_TO_RAPTURE, "Inject Electro Bolt"),
-    StoryMilestone(2, "ryans_ambush", WELCOME_TO_RAPTURE, "Survive Ryan's Ambush"),  # at the Neptune's Bounty gate
-    StoryMilestone(3, "ice_wall", MEDICAL_PAVILION, "Melt the Ice to Dental Services"),  # not the Twilight Fields door
     StoryMilestone(4, "surgery_wreckage", MEDICAL_PAVILION, "Clear the Way to Surgery"),  # bomb thrown with Telekinesis
     StoryMilestone(5, "steinman", MEDICAL_PAVILION, "Defeat Dr. Steinman"),
     StoryMilestone(6, "spider_photos", NEPTUNES_BOUNTY, "Photograph the Spider Splicers"),  # all three
-    StoryMilestone(7, "peach_wilkins", NEPTUNES_BOUNTY, "Defeat Peach Wilkins"),  # the way on opens when he dies
     StoryMilestone(8, "submarine_bay", SMUGGLERS_HIDEOUT, "Open the Submarine Bay"),
     StoryMilestone(9, "rosa_gallica", ARCADIA, "Bring Langford the Rosa Gallica"),
     StoryMilestone(10, "langfords_safe", ARCADIA, "Open Langford's Safe"),  # the Lazarus Vector formula
@@ -313,7 +312,6 @@ STORY_MILESTONES: tuple[StoryMilestone, ...] = (
     StoryMilestone(22, "emp_bomb", HEPHAESTUS, "Assemble the EMP Bomb"),
     StoryMilestone(23, "core_overload", HEPHAESTUS, "Overload the Core"),
     StoryMilestone(24, "andrew_ryan", RAPTURE_CENTRAL_CONTROL, "Confront Andrew Ryan"),
-    StoryMilestone(25, "self_destruct", RAPTURE_CENTRAL_CONTROL, "Stop the Self-Destruct"),
     StoryMilestone(26, "lot_192_first", OLYMPUS_HEIGHTS, "Take the First Dose of Lot 192"),  # Fontaine's home
     StoryMilestone(27, "lot_192_second", APOLLO_SQUARE, "Take the Second Dose of Lot 192"),  # Suchong's Free Clinic
     StoryMilestone(28, "voice_box", POINT_PROMETHEUS, "Get the Big Daddy Voice Box"),  # Live Subject Testing

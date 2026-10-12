@@ -38,7 +38,7 @@ class CollectibleChecks(Choice):
 
 class StoryChecks(DefaultOnToggle):
     """
-    Bosses and main story objectives send checks (33 checks), for example defeating Dr. Steinman, photographing
+    Bosses and main story objectives send checks (28 checks), for example defeating Dr. Steinman, photographing
     the Spider Splicers or completing Cohen's masterpiece. You cannot miss them.
     """
     display_name = "Story Checks"

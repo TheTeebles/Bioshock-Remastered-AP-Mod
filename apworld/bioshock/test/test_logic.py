@@ -103,13 +103,13 @@ class TestDefaults(PoolTestBase):
     def test_sizes(self) -> None:
         self.assertEqual(Counter(CATEGORY[location.name] for location in self.real_locations()), Counter({
             LocationCategory.AUDIO_DIARY: 122,
-            LocationCategory.STORY: 33,
+            LocationCategory.STORY: 28,
             LocationCategory.LITTLE_SISTER: 21,
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
         }))
-        # 78 checks may hold real items: 8 access items and 70 of the 78 useful ones. The rest of the pool is filler.
-        self.assertEqual(self.pool(), Counter(progression=8, useful=70, filler=122))
+        # 73 checks may hold real items: 8 access items and 65 of the 78 useful ones. The rest of the pool is filler.
+        self.assertEqual(self.pool(), Counter(progression=8, useful=65, filler=122))
 
     def test_collectibles_are_marked_filler_only(self) -> None:
         for location in self.real_locations():
@@ -125,7 +125,7 @@ class TestDefaults(PoolTestBase):
         on_real_checks = [location.item for location in self.real_locations()
                           if CATEGORY[location.name] not in COLLECTIBLES]
         # Alone, the pool is an exact fit: every other check holds something that matters.
-        self.assertEqual(count_items(on_real_checks), Counter(progression=8, useful=70))
+        self.assertEqual(count_items(on_real_checks), Counter(progression=8, useful=65))
         self.assertLessEqual(set(ACCESS_ITEMS), {item.name for item in on_real_checks})
 
     def test_no_vanilla_world_pickups_in_pool(self) -> None:
@@ -147,7 +147,7 @@ class TestDefaults(PoolTestBase):
         self.assertEqual({plasmid.item_name for plasmid in PLASMIDS} - set(expected),
                          {"Telekinesis", "Security Bullseye"})
         tonics = [item.name for item in self.multiworld.itempool if ITEM_KIND[item.name] == ItemKind.TONIC]
-        self.assertEqual(len(tonics), 70 - 18 - 32, "what room is left goes to tonics")
+        self.assertEqual(len(tonics), 65 - 18 - 32, "what room is left goes to tonics")
         self.assertEqual(len(tonics), len(set(tonics)), "and never the same tonic twice")
 
     def test_which_tonics_are_left_out_depends_on_the_seed(self) -> None:
@@ -156,7 +156,7 @@ class TestDefaults(PoolTestBase):
         for seed in (1, 2, 3, 1):
             self.world_setup(seed)
             kept.append([item.name for item in self.multiworld.itempool if ITEM_KIND[item.name] == ItemKind.TONIC])
-            self.assertEqual(len(kept[-1]), 20)
+            self.assertEqual(len(kept[-1]), 15)
         self.assertEqual(sorted(kept[0]), sorted(kept[3]), "the same seed makes the same choice")
         self.assertEqual(len({frozenset(names) for names in kept}), 3, "different seeds choose differently")
         self.assertTrue(any(set(names) != set(candidates[:20]) for names in kept), "not simply the first twenty")
@@ -169,10 +169,10 @@ class TestCollectiblesOff(PoolTestBase):
     options = {"audio_diary_checks": "off"}
 
     def test_only_the_real_checks_exist(self) -> None:
-        self.assertEqual(len(self.real_locations()), 78)
+        self.assertEqual(len(self.real_locations()), 73)
         self.assertFalse([location.name for location in self.real_locations()
                           if CATEGORY[location.name] in COLLECTIBLES])
-        self.assertEqual(self.pool(), Counter(progression=8, useful=70))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=65))
         self.fill()
 
 
@@ -180,8 +180,8 @@ class TestCollectiblesHoldAnything(PoolTestBase):
     options = {"audio_diary_checks": "all"}
 
     def test_every_useful_item_fits(self) -> None:
-        self.assertEqual(len(self.real_locations()), 200)
-        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=114))
+        self.assertEqual(len(self.real_locations()), 195)
+        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=109))
 
     def test_welcome_to_rapture_collectibles_still_only_get_filler(self) -> None:
         """Welcome to Rapture cannot be revisited, so what can be missed there never holds anything important.
@@ -219,7 +219,7 @@ class TestPlayerExcludesLocations(PoolTestBase):
     options = {"exclude_locations": excluded}
 
     def test_pool_leaves_room_for_the_exclusions(self) -> None:
-        self.assertEqual(self.pool(), Counter(progression=8, useful=66, filler=126))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=61, filler=126))
         self.fill()
         for name in self.excluded:
             item = self.multiworld.get_location(name, self.player).item
@@ -229,8 +229,8 @@ class TestPlayerExcludesLocations(PoolTestBase):
         """Archipelago turns the names of location groups into location names before the world looks at them."""
         multiworld = self.generate_for_real({"exclude_locations": ["Little Sisters", "Smuggler's Hideout"]})
         placed = [location.item for location in multiworld.get_locations(1) if location.address is not None]
-        # 21 Little Sisters, plus the story check and the level completion in Smuggler's Hideout: 55 checks are left.
-        self.assertEqual(count_items(placed), Counter(progression=8, useful=47, filler=145))
+        # 21 Little Sisters, plus the story check and the level completion in Smuggler's Hideout: 50 checks are left.
+        self.assertEqual(count_items(placed), Counter(progression=8, useful=42, filler=145))
 
 
 class TestAudioDiariesOnly(PoolTestBase):

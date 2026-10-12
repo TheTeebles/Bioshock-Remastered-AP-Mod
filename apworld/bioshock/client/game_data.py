@@ -353,8 +353,7 @@ MILESTONE_LOCATION: dict[str, int] = {
 
 # Which of the game's quests (its objectives, by object name) completes which story milestone. Read from the running
 # game on 2026-10-07 with each quest's on-screen text. Some objectives exist twice, an original and an "Update" that
-# replaces it, and either one being completed counts. Milestones with no quest of their own are left out for now:
-# electro_bolt, ryans_ambush, ice_wall, peach_wilkins and self_destruct.
+# replaces it, and either one being completed counts. Every milestone has one (the five without were dropped in 0.1.7).
 QUEST_MILESTONES: dict[str, str] = {
     "DestroySteinmanDebris": "surgery_wreckage",  # "Destroy the debris."
     "QuarantineKey": "steinman",  # "Get the key from Steinman."

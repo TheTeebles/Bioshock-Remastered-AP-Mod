@@ -267,7 +267,7 @@ class TestNoCollectiblesPlaythrough(PlaythroughBase):
         for seed in self.seeds:
             with self.subTest(seed=seed):
                 harness = self.new_seed(seed)
-                self.assertEqual(len(harness.valid), 78)
+                self.assertEqual(len(harness.valid), 73)
                 self.assertFalse([location for location in harness.valid if 1000 < location < 2000])
                 self.play_story(harness)
                 self.check_finished(harness)

@@ -20,7 +20,7 @@ back for it.
 
 These can hold anything, including the items you and other players need:
 
-- 33 story objectives and bosses, for example defeating Dr. Steinman, photographing the Spider Splicers or completing
+- 28 story objectives and bosses, for example defeating Dr. Steinman, photographing the Spider Splicers or completing
   Cohen's masterpiece. All of them are part of finishing the game, so you cannot miss one.
 - Rescuing or harvesting each of the 21 Little Sisters
 - Using each of the 12 Power to the People weapon upgrade stations
@@ -46,7 +46,7 @@ the save, so a reel found in an earlier playthrough would not be there to pick u
 - Optional traps: EVE Drain, Pickpocket and Security Alarm
 
 Important items are never placed on a filler-only check, so the world only adds as many of them as its other checks
-can hold. With the default options that is every access item, plasmid and upgrade plus 20 of the 28 tonics, picked at
+can hold. With the default options that is every access item, plasmid and upgrade plus 15 of the 28 tonics, picked at
 random for each seed. With fewer checks switched on, tonics are left out first, then upgrades, then plasmids. Tonics
 that are left out can still be bought, invented or researched in the game as usual.
 

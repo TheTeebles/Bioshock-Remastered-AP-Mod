@@ -303,7 +303,7 @@ class TestSoloSeed(ServerTestBase):
 
         self.assertEqual((jack.ctx.team, jack.ctx.slot), self.slot("Jack"))
         self.assertEqual(jack.ctx.core.valid_locations, self.locations("Jack"))
-        self.assertEqual(len(self.locations("Jack")), 200)
+        self.assertEqual(len(self.locations("Jack")), 195)
         self.assertEqual(jack.ctx.core.access_items["Arcadia"], "Arcadia Access")
         self.assertIsNone(jack.ctx.core.access_items["Medical Pavilion"])
         self.assertIsNone(self.stored("Jack"), "nothing is stored before the client has run")
@@ -344,7 +344,7 @@ class TestSoloSeed(ServerTestBase):
         self.assertTrue(self.has_goal("Jack"))
         self.assertEqual(self.checked("Jack"), self.locations("Jack") - COLLECTIBLES)
         self.assertEqual(jack.ctx.core.held_locations(), [])
-        self.assertEqual(len(self.received("Jack")), 78, "8 access items and 70 useful items; all the filler stayed")
+        self.assertEqual(len(self.received("Jack")), 73, "8 access items and 65 useful items; all the filler stayed")
 
     async def test_items_sent_by_the_server_itself(self) -> None:
         jack = await self.join("Jack")
@@ -490,7 +490,7 @@ class TestOtherOptions(ServerTestBase):
 
     async def test_whole_seed_with_fewer_checks_and_traps(self) -> None:
         jack = await self.join("Jack")
-        self.assertEqual(len(self.locations("Jack")), 200 - 21 - 12)
+        self.assertEqual(len(self.locations("Jack")), 195 - 21 - 12)
         for level in LEVEL_NAMES:
             play_level(jack.game, level)  # the player still deals with every Little Sister and station
             await self.settle()
@@ -562,7 +562,7 @@ class TestSecondSeed(ServerTestBase):
         jack.ctx.set_agent(jack.game)
         play_level(jack.game, "Welcome to Rapture")
         await self.settle()
-        self.assertEqual(self.second_server.location_checks[team, slot], {1001, 1002, 7001, 7002})
+        self.assertEqual(self.second_server.location_checks[team, slot], {1001, 1002})
         commands, _ = expected_deliveries([item.item for item in MultiServer.get_received_items(
             self.second_server, team, slot, True)])
         self.assertEqual(jack.game.commands, commands)
@@ -658,6 +658,9 @@ class TestTwoPlayers(ServerTestBase):
 
 class TestThroughTheHelper(ServerTestBase):
     """Server, client, helper process and "Frida": everything between Archipelago and the game's console."""
+    # "Frida" reports the player in Medical Pavilion, so Welcome to Rapture's Level Complete check goes out on its own.
+    # The seed is one where that check holds no Health Upgrade for Jack, which the game below would give up over too.
+    seed = 4
 
     async def join_through_the_helper(self, name: str, fake: FakeFrida) -> Player:
         ctx = BioShockContext("archipelago.test", None)
@@ -744,9 +747,7 @@ class TestThroughTheHelper(ServerTestBase):
                              and core.delivered == len(self.received("Jack")) and jack.ctx.agent is not first,
                              "the second item to reach the game that was started again")
             self.assertIsNot(jack.ctx.agent, first)
-            # Checks the game reports on its own can find Jack's own items too, so only these two are looked at.
-            asked = {"GiveItem 1 ShockGame.HealthUpgrade", "GiveItem 1 ShockGame.BioAmmoUpgrade"}
-            self.assertEqual([call["command"] for call in fake.calls("exec") if call["command"] in asked],
+            self.assertEqual([call["command"] for call in fake.calls("exec")],
                              ["GiveItem 1 ShockGame.HealthUpgrade", "GiveItem 1 ShockGame.BioAmmoUpgrade"],
                              "each asked for once: the game is not sent back into what closed it")
             self.assertEqual(core.skipped, {0: REFUSED})

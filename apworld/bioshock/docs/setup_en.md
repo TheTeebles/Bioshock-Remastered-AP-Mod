@@ -70,8 +70,7 @@ If the game was started as administrator, Archipelago has to be started as admin
     nothing, that is worth reporting, with the item's name.
 - **GOG and Epic:** not supported yet. The client's game side was made for the Steam version.
 - **Checks noticed in the game (Steam):**
-  - *Story objectives:* 28 of the 33, read from the game's own quest list, and seen working in the real game. Not
-    yet: Electro Bolt, Ryan's ambush, the ice wall, Peach Wilkins and the self-destruct.
+  - *Story objectives:* all 28, read from the game's own quest list, and seen working in the real game.
   - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. Works in the
     real game.
   - *Audio diaries:* all 122, noticed when you pick one up. Works in the real game. A diary picked up
