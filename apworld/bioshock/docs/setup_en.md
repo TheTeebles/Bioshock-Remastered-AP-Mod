@@ -1,9 +1,9 @@
 # BioShock Remastered Randomizer Setup Guide
 
-> **Early development.** Seeds generate, the client talks to Archipelago, and items can be put into the real game on
-> the Steam version. Some of what you do in the game is not noticed by the client yet, so a whole seed can only be
-> played end to end with the client's simulated game for now (see "Trying it without the game"). "What to expect
-> from the real game today" below says exactly where things stand.
+> **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
+> version, and notices every kind of check there. No whole seed has been played through in the real game yet, and the
+> EVE Drain and Pickpocket traps and DeathLink are not built. "What to expect from the real game today" below says
+> exactly where things stand.
 
 ## Required Software
 
@@ -75,8 +75,8 @@ If the game was started as administrator, Archipelago has to be started as admin
     real game.
   - *Audio diaries:* all 122, noticed when you pick one up. Works in the real game. A diary picked up
     while the client was not watching is not noticed once a save has been loaded since.
-  - *Power to the People stations:* each station used counts as the next station of that level. Not tried in the
-    real game yet.
+  - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
+    game.
 - **Not yet, on any version:** the EVE Drain and Pickpocket traps, and DeathLink. The client names every item it could
   not give you and keeps it for later.
 

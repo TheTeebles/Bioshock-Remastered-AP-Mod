@@ -5,7 +5,7 @@ client that ships inside it, and the script the client puts into the running gam
 
 > **Early development (v0.1.7).** Seeds generate, the client talks to Archipelago and puts items into the real game
 > on the Steam version, and it notices every kind of check: levels reached, story objectives, Little Sisters, audio
-> diaries and Power to the People stations. Station checks have not been tried in the real game yet.
+> diaries and Power to the People stations, all seen working in the real game.
 
 ## Where things stand
 
@@ -19,7 +19,7 @@ client that ships inside it, and the script the client puts into the running gam
 | Story objectives | All 28 noticed, from the game's own quest list. Seen sending checks in the real game |
 | Little Sisters | Noticed when one is rescued or harvested (not which). Works in the real game |
 | Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Works in the real game |
-| Power to the People stations | Noticed from each station's use counter. Built and tested without the game; not tried in the real game yet |
+| Power to the People stations | Noticed from each station's use counter. Works in the real game |
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink and the EVE Drain and Pickpocket traps inside the game | Not built yet |
 | The GOG and Epic versions | Not supported yet |
