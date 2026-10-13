@@ -67,7 +67,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.16';
+const PROBE_VERSION = '2026-10-13.17';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1447,13 +1447,43 @@ function stationUses(station) {
   return used === undefined ? null : station.add(used.offset).readS32();
 }
 
+// The state an object is in: its state frame (a pointer in the object's first words) holds the current state, an
+// object of class State, a few words in.
+function stateOf(object) {
+  for (let at = 4; at < objects.nameOffset; at += 4) {
+    const frame = pointerAt(object.add(at));
+    if (frame === null || frame.isNull() || !readable(frame, 0x20)) {
+      continue;
+    }
+    for (let k = 4; k < 0x20; k += 4) {
+      const state = pointerAt(frame.add(k));
+      if (state !== null && !state.isNull() && readable(state, 0x40) && classNameOf(state) === 'State') {
+        return { state, where: `object+${hex(at)} -> +${hex(k)}` };
+      }
+    }
+  }
+  return null;
+}
+
 function finishTouchedStation() {
   const station = stationInUse();
   if (station === null) {
     log('touch: the menu was skipped, but no station has a CurrentPlayer');
     return;
   }
-  const { found } = touching.finish;
+  let { found } = touching.finish;
+  const current = stateOf(station);
+  if (current === null) {
+    log(`touch: could not tell the station's state; its first words: ${hexWords(station, 0, objects.nameOffset)}`);
+  } else {
+    const inState = findFunctionFrom(current.state, 'FinishInteraction');
+    log(`touch: the station is in state ${nameOfObject(current.state)} (${current.where}); ` +
+      `${inState === null ? 'no FinishInteraction of its own' : `its FinishInteraction is at ${inState.function}`} ` +
+      `(the class's is at ${found.function})`);
+    if (inState !== null) {
+      found = inState;
+    }
+  }
   const size = Math.max(found.size, 0x40);
   const block = Memory.alloc(size);
   for (let at = 0; at < size; at += 4) {
@@ -1467,7 +1497,9 @@ function finishTouchedStation() {
   }
   const before = stationUses(station);
   callScript(station, found.function, block);
-  log(`touch: FinishInteraction called on the station at ${station}; NumTimesUsed ${before} -> ${stationUses(station)}`);
+  const after = stateOf(station);
+  log(`touch: FinishInteraction called on the station at ${station}; NumTimesUsed ${before} -> ${stationUses(station)}, ` +
+    `state now ${after === null ? '?' : nameOfObject(after.state)}`);
   block.isNull();
   setTimeout(() => {
     const player = stationInUse();
@@ -1511,7 +1543,14 @@ function findFunction(className, functionName) {
   if (objects.superOffset === undefined) {
     objects.superOffset = findSuperOffset();
   }
-  let cls = findClass(className);
+  const found = findFunctionFrom(findClass(className), functionName);
+  return found === null ? { error: `${className} has no function ${functionName}` } : found;
+}
+
+// The same, starting from any class or state and going up through the ones it extends. A state's version of a
+// function is what the game runs while the object is in that state.
+function findFunctionFrom(start, functionName) {
+  let cls = start;
   for (let depth = 0; cls !== null && !cls.isNull() && depth < 30; depth++) {
     let field = pointerAt(cls.add(objects.layout.childrenOffset));
     for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
@@ -1537,7 +1576,7 @@ function findFunction(className, functionName) {
     }
     cls = pointerAt(cls.add(objects.superOffset));
   }
-  return { error: `${className} has no function ${functionName}` };
+  return null;
 }
 
 const VTABLE_SLOTS = 48;
