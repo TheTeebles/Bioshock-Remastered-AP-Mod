@@ -38,11 +38,13 @@
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
  *                     failed hack does. hurt(1000) should kill. hurt(10, 'TakeScriptedDamage') tries the other one,
  *                     hurt(10, 'RemoveHealth') takes health away directly
+ *   die()             after events(): empties the player's health and calls OnKilled, the game's own end of a death
+ *                     (what its damage code calls when health runs out). Should end in a Vita-Chamber
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.2';
+const PROBE_VERSION = '2026-10-13.3';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -979,6 +981,38 @@ function runOnGameThread(job) {
   }
   onGameThread.push(job);
 }
+
+globalThis.die = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, 'OnKilled');
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`${found.owner}.OnKilled(${described.join(', ')})`);
+  const size = Math.max(found.size, 0x80);
+  const block = Memory.alloc(size);
+  for (let at = 0; at < size; at += 4) {
+    block.add(at).writeU32(0); // no damage set, no damager, no hit: all None
+  }
+  runOnGameThread(() => {
+    const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    player.add(PAWN_HEALTH).writeFloat(0);
+    processEvent.call(player, found.function, block, NULL);
+    log(`die: health ${before} -> 0, OnKilled called`);
+    block.isNull();
+    setTimeout(() => {
+      log(`die: a few seconds later, health ${player.add(PAWN_HEALTH).readFloat().toFixed(1)}`);
+    }, 5000);
+  });
+  return 'queued for the game thread; the result follows';
+};
 
 globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type = 36) {
   if (processEvent.call === null) {
