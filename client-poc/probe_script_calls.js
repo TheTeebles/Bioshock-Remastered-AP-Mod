@@ -36,12 +36,13 @@
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
- *                     failed hack does. hurt(1000) should kill. hurt(10, 'TakeScriptedDamage') tries the other one
+ *                     failed hack does. hurt(1000) should kill. hurt(10, 'TakeScriptedDamage') tries the other one,
+ *                     hurt(10, 'RemoveHealth') takes health away directly
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.1';
+const PROBE_VERSION = '2026-10-13.2';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -993,7 +994,7 @@ globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type
   }
   const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
   log(`${found.owner}.${functionName}(${described.join(', ')})`);
-  const wanted = { DamageType: type, DamageAmount: amount, DamageChance: 1 };
+  const wanted = { DamageType: type, DamageAmount: amount, DamageChance: 1, numHealth: amount };
   const block = Memory.alloc(Math.max(found.size, 0x40));
   for (let at = 0; at < Math.max(found.size, 0x40); at += 4) {
     block.add(at).writeU32(0);
@@ -1016,6 +1017,9 @@ globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type
     const after = player.add(PAWN_HEALTH).readFloat().toFixed(1);
     log(`hurt: called ${functionName}(${type}, ${amount}); health ${before} -> ${after}`);
     block.isNull(); // keeps the parameter block alive until the call is done
+    setTimeout(() => {
+      log(`hurt: a second later, health ${player.add(PAWN_HEALTH).readFloat().toFixed(1)}`);
+    }, 1000);
   });
   return 'queued for the game thread; the result follows';
 };
