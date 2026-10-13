@@ -41,6 +41,10 @@
  *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
  *   stationHooks()    print when the station's begin, confirm and cancel run
  *   blockConfirm()    make confirming an upgrade do what cancelling does
+ *   stationCode()     print the machine code of the station's begin, confirm and cancel, and of the C++ functions
+ *                     they call; then print a line each time one of those C++ functions runs
+ *   blockDeep()       after stationCode(): confirming runs the C++ cancel instead of the C++ confirm
+ *   deadStat(2)       give upgrade line 2 a stat name no weapon uses, so claiming it upgrades nothing
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -57,7 +61,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.11';
+const PROBE_VERSION = '2026-10-13.12';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1196,6 +1200,118 @@ globalThis.blockConfirm = function () {
       { onEnter() { log(`${fname} called`); } }));
   }
   return 'confirming now cancels (and logs "CancelWeaponUpgrade called")';
+};
+
+// The code each station stub calls: calls and jumps to a fixed address inside the game, followed one level down.
+const stationCalls = { unique: null, hooks: [] };
+
+function callTargets(start, count) {
+  const targets = [];
+  let at = start;
+  for (let n = 0; n < count; n++) {
+    let instruction;
+    try {
+      instruction = Instruction.parse(at);
+    } catch (e) {
+      break;
+    }
+    const op = instruction.operands === undefined ? undefined : instruction.operands[0];
+    if ((instruction.mnemonic === 'call' || instruction.mnemonic === 'jmp') && op !== undefined && op.type === 'imm') {
+      const target = ptr(op.value);
+      if (target.compare(base) >= 0 && target.compare(base.add(mod.size)) < 0) {
+        targets.push(target);
+      }
+    }
+    if (instruction.mnemonic === 'ret' || (instruction.mnemonic === 'jmp' && op !== undefined && op.type !== 'imm')) {
+      break;
+    }
+    if (instruction.mnemonic === 'jmp') {
+      break;
+    }
+    at = instruction.next;
+  }
+  return targets;
+}
+
+globalThis.stationCode = function () {
+  if (stationNatives.found === null) {
+    const result = findStationNatives();
+    if (result.error) {
+      return result.error;
+    }
+    stationNatives.found = result.found;
+  }
+  const calls = {};
+  for (const [fname, at] of Object.entries(stationNatives.found)) {
+    log(`${fname} at ${rel(at)}:`);
+    disassemble(at, 40).forEach((line) => log(`  ${line}`));
+    calls[fname] = callTargets(at, 40).map((t) => t.toString());
+    log(`  calls ${calls[fname].map((t) => rel(ptr(t))).join(', ') || 'nothing at a fixed address'}`);
+  }
+  // A target only one stub calls is that stub's own C++ method; the shared ones are the interpreter's helpers.
+  const counts = new Map();
+  Object.values(calls).forEach((list) => new Set(list).forEach((t) => counts.set(t, (counts.get(t) || 0) + 1)));
+  stationCalls.unique = {};
+  for (const [fname, list] of Object.entries(calls)) {
+    const own = [...new Set(list)].filter((t) => counts.get(t) === 1);
+    stationCalls.unique[fname] = own.map((t) => ptr(t));
+    for (const t of own) {
+      log(`${fname} -> ${rel(ptr(t))}:`);
+      disassemble(ptr(t), 80).forEach((line) => log(`  ${line}`));
+      log(`  calls ${callTargets(ptr(t), 80).map(rel).join(', ')}`);
+    }
+  }
+  stationCalls.hooks.forEach((hook) => hook.detach());
+  stationCalls.hooks = [];
+  for (const [fname, own] of Object.entries(stationCalls.unique)) {
+    own.forEach((t) => stationCalls.hooks.push(Interceptor.attach(t,
+      { onEnter() { log(`${fname}'s ${rel(t)} called`); } })));
+  }
+  return 'printed; now open the station, pick, confirm, and send the log';
+};
+
+globalThis.blockDeep = function () {
+  if (stationCalls.unique === null) {
+    return 'run stationCode() first';
+  }
+  const confirm = stationCalls.unique.ConfirmWeaponUpgrade;
+  const cancel = stationCalls.unique.CancelWeaponUpgrade;
+  if (confirm.length !== 1 || cancel.length !== 1) {
+    return `confirm calls ${confirm.length} and cancel ${cancel.length} functions of their own; ` +
+      'not sure which to swap, send the log';
+  }
+  stationCalls.hooks.forEach((hook) => hook.detach());
+  stationCalls.hooks = [];
+  Interceptor.flush();
+  Interceptor.replace(confirm[0], cancel[0]);
+  stationCalls.hooks.push(Interceptor.attach(cancel[0], { onEnter() { log(`C++ cancel ${rel(cancel[0])} called`); } }));
+  return `C++ confirm ${rel(confirm[0])} now runs C++ cancel ${rel(cancel[0])}`;
+};
+
+// Points stat n's StatName at a name no weapon uses (APCheckNothing, or Testing when that is not a name yet), so whatever the claim upgrades by that
+// name, nothing on the weapon changes.
+globalThis.deadStat = function (n, nameText = 'APCheckNothing') {
+  const stats = weaponStats();
+  const learned = learnAnyClass('UpgradeableWeaponStat');
+  if (learned.error) {
+    return learned.error;
+  }
+  const field = learned.properties.get('StatName');
+  if (n < 0 || n >= stats.length || field === undefined) {
+    return field === undefined ? 'StatName not found' : `pick n from 0 to ${stats.length - 1}`;
+  }
+  let index = indexOfName(nameText);
+  if (index < 0) {
+    index = indexOfName('Testing'); // in the name table: ShockPlayer logs with it
+  }
+  if (index < 0) {
+    return `neither ${nameText} nor Testing is in the name table`;
+  }
+  const at = stats[n].add(field.offset);
+  const before = nameOf(at.readS32());
+  at.writeS32(index);
+  log(`${nameOfObject(stats[n])}: StatName ${before} -> ${nameOf(index)} (put back with deadStat(${n}, '${before}'))`);
+  return 'set';
 };
 
 // ---- calling the game's script functions, for DeathLink ----
