@@ -1,7 +1,7 @@
 from dataclasses import dataclass
 
 from Options import (
-    Choice, DeathLink, DefaultOnToggle, OptionGroup, PerGameCommonOptions, Range, StartInventoryPool,
+    Choice, DeathLink, DefaultOnToggle, OptionGroup, PerGameCommonOptions, Range, StartInventoryPool, Toggle,
 )
 
 
@@ -70,6 +70,17 @@ class PowerToThePeopleChecks(DefaultOnToggle):
     display_name = "Power to the People Checks"
 
 
+class ShopChecks(Toggle):
+    """
+    Buying each gene upgrade from a Gatherer's Garden sends a check (one per item it sells, in each level). The
+    Garden's plasmids, tonics, slots and upgrades then come from the multiworld instead.
+    These checks never hold an item anyone needs to progress, because how much ADAM you have to spend depends on
+    how you play. Circus of Values and El Ammo Bandito machines are never checks.
+    So far only the Neptune's Bounty Garden is mapped (16 checks); the other levels follow.
+    """
+    display_name = "Shop Checks"
+
+
 class LevelCompletionChecks(DefaultOnToggle):
     """Finishing each level for the first time sends a check (12 checks)."""
     display_name = "Level Completion Checks"
@@ -96,6 +107,7 @@ class BioShockOptions(PerGameCommonOptions):
     power_to_the_people_checks: PowerToThePeopleChecks
     level_completion_checks: LevelCompletionChecks
     audio_diary_checks: AudioDiaryChecks
+    shop_checks: ShopChecks
     trap_chance: TrapChance
     death_link: DeathLink
     start_inventory_from_pool: StartInventoryPool
@@ -104,7 +116,7 @@ class BioShockOptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
-                           AudioDiaryChecks]),
+                           AudioDiaryChecks, ShopChecks]),
     OptionGroup("Item Pool", [TrapChance]),
 ]
 

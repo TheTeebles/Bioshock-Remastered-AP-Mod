@@ -38,7 +38,14 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
         LocationCategory.POWER_TO_THE_PEOPLE: bool(options.power_to_the_people_checks),
         LocationCategory.LEVEL_COMPLETION: bool(options.level_completion_checks),
         LocationCategory.STORY: bool(options.story_checks),
+        LocationCategory.GATHERERS_GARDEN: bool(options.shop_checks),
     }[location.category]
+
+
+def may_hold_progression(location: LocationData) -> bool:
+    """False for checks that can hold useful items but nothing needed to progress. Shop purchases cost ADAM, and
+    how much a player has depends on how they play, so a shop check might never be bought."""
+    return location.category != LocationCategory.GATHERERS_GARDEN
 
 
 def is_filler_only(world: BioShockWorld, location: LocationData) -> bool:
@@ -66,12 +73,19 @@ def open_locations(world: BioShockWorld) -> list[LocationData]:
             if not is_filler_only(world, location) and location.name not in excluded_by_player]
 
 
+def progression_locations(world: BioShockWorld) -> list[LocationData]:
+    """This slot's checks that can hold progression items."""
+    return [location for location in open_locations(world) if may_hold_progression(location)]
+
+
 def create_all_locations(world: BioShockWorld) -> None:
     for data in enabled_locations(world):
         region = world.get_region(data.level)
         location = BioShockLocation(world.player, data.name, data.id, region)
         if is_filler_only(world, data):
             location.progress_type = LocationProgressType.EXCLUDED
+        elif not may_hold_progression(data):
+            location.item_rule = lambda item: not item.advancement
         region.locations.append(location)
 
     world.get_region(GOAL_LEVEL).add_event(

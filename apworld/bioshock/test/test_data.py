@@ -6,7 +6,7 @@ from collections import Counter
 from .. import world
 from ..client import game_data
 from ..data import (
-    ACCESS_ITEMS, AUDIO_DIARIES, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
+    ACCESS_ITEMS, AUDIO_DIARIES, GATHERERS_GARDEN_STOCK, ITEM_TABLE, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL,
     LOCATION_TABLE, PLASMIDS, POWER_TO_THE_PEOPLE_PER_LEVEL, STORY_MILESTONES, TONICS, LocationCategory,
 )
 
@@ -36,6 +36,7 @@ class TestGameData(unittest.TestCase):
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
             LocationCategory.STORY: 28,
+            LocationCategory.GATHERERS_GARDEN: 16,
         }))
         names = [location.name for location in LOCATION_TABLE]
         ids = [location.id for location in LOCATION_TABLE]
@@ -55,6 +56,23 @@ class TestGameData(unittest.TestCase):
                          "every level but the first has at least one")
         story = [location for location in LOCATION_TABLE if location.category == LocationCategory.STORY]
         self.assertFalse([location.name for location in story if location.missable], "a story step cannot be missed")
+
+    def test_gatherers_garden_location_ids_never_change(self) -> None:
+        """Each level's Garden lines take IDs from 8000 + 50 * the level's place in story order, in stock order."""
+        names = {location.id: location.name for location in LOCATION_TABLE
+                 if location.category == LocationCategory.GATHERERS_GARDEN}
+        self.assertEqual(names[8101], "Neptune's Bounty - Gatherer's Garden: Plasmid Slot")
+        self.assertEqual(names[8107], "Neptune's Bounty - Gatherer's Garden: Winter Blast")
+        self.assertEqual(names[8116], "Neptune's Bounty - Gatherer's Garden: Static Discharge")
+        self.assertEqual(sorted(names), list(range(8101, 8117)))
+
+    def test_gatherers_garden_sells_pool_items(self) -> None:
+        """Every line names an item the world knows (a plasmid by its level's name), so the location reads as the gene
+        it replaces."""
+        known = {item.name for item in ITEM_TABLE} | {name for plasmid in PLASMIDS for name, _, _ in plasmid.levels}
+        for level, stock in GATHERERS_GARDEN_STOCK.items():
+            self.assertIn(level, LEVEL_NAMES)
+            self.assertLessEqual(set(stock), known, level)
 
     def test_story_location_ids_never_change(self) -> None:
         """Location IDs are what a generated seed and the server know a check by. A new milestone gets the next free

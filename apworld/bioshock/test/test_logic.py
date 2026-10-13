@@ -56,7 +56,7 @@ class PoolTestBase(BioShockTestBase):
 
 
 class TestAccessItems(BioShockTestBase):
-    options = {"level_access": "access_items"}
+    options = {"level_access": "access_items", "shop_checks": True}  # every kind of check, so all are tested
 
     def test_default_pool(self) -> None:
         self.assertEqual(len(self.multiworld.get_unfilled_locations(self.player)) + 1,  # +1 for the goal event
@@ -321,6 +321,45 @@ class TestOptionChecks(PoolTestBase):
         self.assertEqual(AudioDiaryChecks.from_any("filler_only").value, AudioDiaryChecks.option_filler_only)
         self.assertEqual(AudioDiaryChecks.default, AudioDiaryChecks.option_filler_only)
         self.assertEqual(AudioDiaryChecks(AudioDiaryChecks.default).current_option_name, "Filler Only")
+
+
+class TestShopChecks(PoolTestBase):
+    """Gatherer's Garden lines are checks when asked for, and only ever hold useful items or filler: a player may
+    never have the ADAM to buy one."""
+    options = {"shop_checks": True}
+
+    def test_sizes(self) -> None:
+        garden = [location for location in self.real_locations()
+                  if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN]
+        self.assertEqual(len(garden), 16)
+        self.assertEqual({location.parent_region.name for location in garden}, {"Neptune's Bounty"})
+        # 16 more checks make room for 13 more of the useful items, all 78 now: the rest is filler.
+        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=125))
+
+    def test_no_progression_in_a_shop(self) -> None:
+        self.fill()
+        for location in self.real_locations():
+            if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN:
+                self.assertFalse(location.item.advancement, f"{location.item.name} on {location.name}")
+        self.assertBeatable(True)
+
+    def test_off_by_default(self) -> None:
+        self.assertFalse(self.generate_for_real({"game": "BioShock", "BioShock": {}}).worlds[1].options.shop_checks)
+
+    def test_shops_alone_cannot_hold_access_items(self) -> None:
+        only_shops = {"shop_checks": True, "story_checks": False, "little_sister_checks": False,
+                      "power_to_the_people_checks": False, "level_completion_checks": False,
+                      "audio_diary_checks": "off"}
+        with self.assertRaises(OptionError):
+            self.options = only_shops
+            self.world_setup()
+        self.options = {**only_shops, "level_access": "vanilla"}
+        self.world_setup()
+        self.fill()
+        self.assertBeatable(True)
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["shop_checks"], 1)
 
 
 class TestEveryCombination(PoolTestBase):

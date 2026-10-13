@@ -14,6 +14,7 @@ ID scheme (stable once released, never reuse an ID for something else):
     6001-6999  World items, containers   500-505  Character Upgrades
                (reserved, not used yet)  900-910  Filler
     7001-7033  Story                     950-952  Traps
+    8001-8999  Gatherer's Garden: 8000 + 50 * level index + line
 
 Data sources are listed in docs/en_BioShock.md. Values marked "verify" in the design doc should be
 confirmed in-game while building the client.
@@ -331,6 +332,23 @@ def little_sister_location_name(level: str, index: int) -> str:
     return f"{level} - Little Sister {index}"
 
 
+# What each level's Gatherer's Garden sells, in the order of its stock list (VendingLootSpec). Every line can be
+# bought once (the Plasmid Slot twice), and each line is one check. Only levels whose stock was read from the running
+# game are listed; the probe's stock() reads the rest. Neptune's Bounty: probe log of 2026-10-13.
+GATHERERS_GARDEN_STOCK: dict[str, tuple[str, ...]] = {
+    NEPTUNES_BOUNTY: (
+        "Plasmid Slot", "Health Upgrade", "EVE Upgrade", "Enrage!", "Sonic Boom", "Target Dummy", "Winter Blast",
+        "Armored Shell", "EVE Link", "Extra Nutrition", "Machine Buster", "Hacker's Delight", "Security Expert",
+        "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+}
+GATHERERS_GARDEN_LINES_PER_LEVEL = 50  # room in the location IDs for each level's lines
+
+
+def gatherers_garden_location_name(level: str, vanilla_item: str) -> str:
+    return f"{level} - Gatherer's Garden: {vanilla_item}"
+
+
 def power_to_the_people_location_name(level: str, index: int) -> str:
     return f"{level} - Power to the People {index}"
 
@@ -357,8 +375,9 @@ class LocationCategory:
     POWER_TO_THE_PEOPLE = "Power to the People"
     LEVEL_COMPLETION = "Level Completion"
     STORY = "Story"
+    GATHERERS_GARDEN = "Gatherer's Garden"
 
-    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY)
+    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -391,6 +410,13 @@ def _build_location_table() -> tuple[LocationData, ...]:
     for milestone in STORY_MILESTONES:
         table.append(LocationData(story_location_name(milestone), 7000 + milestone.number, milestone.level,
                                   LocationCategory.STORY, False))
+
+    for level, stock in GATHERERS_GARDEN_STOCK.items():
+        assert len(stock) < GATHERERS_GARDEN_LINES_PER_LEVEL and len(set(stock)) == len(stock), level
+        for line, vanilla_item in enumerate(stock, start=1):
+            table.append(LocationData(gatherers_garden_location_name(level, vanilla_item),
+                                      8000 + GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(level) + line,
+                                      level, LocationCategory.GATHERERS_GARDEN, False))
 
     return tuple(table)
 

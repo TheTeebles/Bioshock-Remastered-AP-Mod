@@ -30,6 +30,10 @@ The 122 Audio Diaries are extras. By default they are checks that only ever hold
 traps, so nobody ever has to hunt for one. They can also be switched off, or set to "all" if you do want important
 items on them. Every other kind of check can be switched off as well.
 
+Shop Checks (off by default) make each gene upgrade a Gatherer's Garden sells a check. They can hold useful items
+but never anything needed to progress, since the ADAM to buy them depends on how you play. Only the Neptune's
+Bounty Garden is mapped so far (16 checks), and the client cannot send them yet.
+
 Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.
 
 The Remastered Director's Commentary film reels are not checks. A reel unlocks its film for the whole PC rather than
