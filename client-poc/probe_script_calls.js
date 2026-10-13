@@ -38,6 +38,9 @@
  *                     stock('Vend') lists the objects of the classes matching 'Vend' instead
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
+ *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
+ *   stationHooks()    print when the station's begin, confirm and cancel run
+ *   blockConfirm()    make confirming an upgrade do what cancelling does
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -54,7 +57,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.10';
+const PROBE_VERSION = '2026-10-13.11';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1094,6 +1097,105 @@ globalThis.setUpgrade = function (n, points) {
   at.writeS32(points);
   log(`${nameOfObject(stat)}: PointsAllocated ${before} -> ${points}`);
   return 'set';
+};
+
+// ---- a preview in the station: one line that names a multiworld item, and confirm turned into cancel ----
+
+// Writes text into a string's own buffer (an FString: data, count with the terminator, capacity), cut to fit, so
+// the game never has to free memory it did not allocate.
+function writeInPlace(at, text) {
+  const data = pointerAt(at);
+  const capacity = u32(at.add(8));
+  if (data === null || data.isNull() || capacity === null || capacity < 2 || !readable(data, capacity * 2)) {
+    return null;
+  }
+  const kept = text.slice(0, capacity - 1);
+  data.writeUtf16String(kept);
+  at.add(4).writeU32(kept.length + 1);
+  return kept;
+}
+
+// Shows one upgrade line, stat n of upgrades(), retitled; every other line is marked as bought so it is not listed.
+globalThis.preview = function (n, title, text) {
+  const stats = weaponStats();
+  const learned = learnAnyClass('UpgradeableWeaponStat');
+  if (learned.error) {
+    return learned.error;
+  }
+  const points = learned.properties.get('PointsAllocated');
+  const name = learned.properties.get('FriendlyName');
+  const description = learned.properties.get('Description');
+  if (n < 0 || n >= stats.length) {
+    return `pick n from 0 to ${stats.length - 1}`;
+  }
+  stats.forEach((stat, k) => stat.add(points.offset).writeS32(k === n ? 0 : 1));
+  const stat = stats[n];
+  const shownTitle = writeInPlace(stat.add(name.offset), title || 'Archipelago item');
+  const lines = pointerAt(stat.add(description.offset));
+  const shownText = lines === null || lines.isNull() ? null :
+    writeInPlace(lines, text || 'Sends a check to the multiworld.');
+  log(`${nameOfObject(stat)} now reads ${JSON.stringify(shownTitle)}: ${JSON.stringify(shownText)}; ` +
+      `the other ${stats.length - 1} are marked as bought`);
+  return 'open the station';
+};
+
+// A native script function's C++ entry point: the one word, at the same place in every function, that points into
+// the game's code and differs between the three station functions.
+const stationNatives = { found: null, hooks: [] };
+
+function findStationNatives() {
+  const names = ['BeginWeaponUpgradeInteraction', 'ConfirmWeaponUpgrade', 'CancelWeaponUpgrade'];
+  const fns = names.map((fname) => findFunction('ShockPlayer', fname));
+  const missing = fns.find((f) => f.error);
+  if (missing) {
+    return { error: missing.error };
+  }
+  const code = mod.enumerateRanges('r-x').map((r) => [r.base.toUInt32(), r.base.toUInt32() + r.size]);
+  const isCode = (value) => value !== null && code.some(([from, to]) => value >= from && value < to);
+  for (let at = 0x30; at <= 0x100; at += 4) {
+    const words = fns.map((f) => u32(f.function.add(at)));
+    if (words.every(isCode) && new Set(words).size === 3) {
+      const found = {};
+      names.forEach((fname, k) => { found[fname] = ptr(words[k]); });
+      log(`station natives at function+${hex(at)}: ` + names.map((fname) => `${fname} ${rel(found[fname])}`).join(', '));
+      return { found };
+    }
+  }
+  fns.forEach((f, k) => log(`  ${names[k]}: ${hexWords(f.function, 0x30, 0x100)}`));
+  return { error: 'no word points into the code for all three' };
+}
+
+// Logs each call of the three; blockConfirm() then makes confirming do what cancelling does.
+globalThis.stationHooks = function () {
+  if (stationNatives.found === null) {
+    const result = findStationNatives();
+    if (result.error) {
+      return result.error;
+    }
+    stationNatives.found = result.found;
+  }
+  if (stationNatives.hooks.length === 0) {
+    for (const [fname, at] of Object.entries(stationNatives.found)) {
+      stationNatives.hooks.push(Interceptor.attach(at, { onEnter() { log(`${fname} called`); } }));
+    }
+  }
+  return 'watching the station: open it, pick, confirm or cancel';
+};
+
+globalThis.blockConfirm = function () {
+  const hooked = globalThis.stationHooks();
+  if (stationNatives.found === null) {
+    return hooked;
+  }
+  stationNatives.hooks.forEach((hook) => hook.detach());
+  stationNatives.hooks = [];
+  Interceptor.flush();
+  Interceptor.replace(stationNatives.found.ConfirmWeaponUpgrade, stationNatives.found.CancelWeaponUpgrade);
+  for (const fname of ['BeginWeaponUpgradeInteraction', 'CancelWeaponUpgrade']) {
+    stationNatives.hooks.push(Interceptor.attach(stationNatives.found[fname],
+      { onEnter() { log(`${fname} called`); } }));
+  }
+  return 'confirming now cancels (and logs "CancelWeaponUpgrade called")';
 };
 
 // ---- calling the game's script functions, for DeathLink ----
