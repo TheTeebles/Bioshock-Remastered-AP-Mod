@@ -36,6 +36,8 @@
  *   stock()           every shop loaded in the level (vending machines, Gatherer's Gardens, Power to the People
  *                     stations): where it is and the values of its own properties, arrays and structs opened up.
  *                     stock('Vend') lists the objects of the classes matching 'Vend' instead
+ *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
+ *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -52,7 +54,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.9';
+const PROBE_VERSION = '2026-10-13.10';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1059,6 +1061,39 @@ globalThis.stock = function (pattern) {
     n++;
   }
   return n === 0 ? 'no shops loaded here' : `${n} shops`;
+};
+
+// ---- weapon upgrades, for taking back what a Power to the People station gave ----
+
+function weaponStats() {
+  return [...matchingObjects('^UpgradeableWeaponStat$').values()].flat();
+}
+
+globalThis.upgrades = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const stats = weaponStats();
+  stats.forEach((stat, n) => {
+    log(`${n}: ${nameOfObject(stat)} in ${outerNameOf(stat)} at ${stat}`);
+    ownValues(stat, '    ', 1);
+  });
+  return `${stats.length} weapon stats`;
+};
+
+globalThis.setUpgrade = function (n, points) {
+  const stats = weaponStats();
+  const stat = stats[n];
+  const learned = stat === undefined ? null : learnAnyClass('UpgradeableWeaponStat');
+  const property = learned === null || learned.error ? undefined : learned.properties.get('PointsAllocated');
+  if (property === undefined) {
+    return stat === undefined ? `pick n from 0 to ${stats.length - 1}` : 'PointsAllocated not found';
+  }
+  const at = stat.add(property.offset);
+  const before = at.readS32();
+  at.writeS32(points);
+  log(`${nameOfObject(stat)}: PointsAllocated ${before} -> ${points}`);
+  return 'set';
 };
 
 // ---- calling the game's script functions, for DeathLink ----
