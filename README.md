@@ -21,7 +21,7 @@ client that ships inside it, and the script the client puts into the running gam
 | Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Works in the real game |
 | Power to the People stations | Noticed from each station's use counter. Works in the real game |
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
-| DeathLink in the game | Your deaths are sent: works in the real game. A received death empties Jack's health and calls the game's own OnKilled, so he collapses and wakes in a Vita-Chamber: seen working with the probe, the client doing it is still to be tried |
+| DeathLink in the game | Works in the real game, both ways: your deaths are sent, and a received death kills Jack through the game's own OnKilled, so he collapses and wakes in a Vita-Chamber |
 | The EVE Drain and Pickpocket traps inside the game | Not built yet |
 | The GOG and Epic versions | Not supported yet |
 
