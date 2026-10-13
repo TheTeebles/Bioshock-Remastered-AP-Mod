@@ -42,11 +42,13 @@
  *                     (what its damage code calls when health runs out). Should end in a Vita-Chamber
  *   check()           after events(): calls SetInvincible(true), then SetInvincible(false), on the player and reads
  *                     the flag after each, to see whether calls through events() run the game's script at all
+ *   peek()            after events(): prints the start of that function's machine code, and the raw words of a few
+ *                     script functions, to see what it checks before it runs one
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.4';
+const PROBE_VERSION = '2026-10-13.5';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1017,6 +1019,44 @@ globalThis.check = function () {
     block.isNull();
   });
   return 'queued for the game thread; the result follows';
+};
+
+function disassemble(start, count) {
+  const lines = [];
+  let at = start;
+  for (let n = 0; n < count; n++) {
+    let instruction;
+    try {
+      instruction = Instruction.parse(at);
+    } catch (e) {
+      lines.push(`${rel(at)}: ?? (${e.message})`);
+      break;
+    }
+    lines.push(`${rel(at)}: ${instruction.toString()}`);
+    at = instruction.next;
+  }
+  return lines;
+}
+
+globalThis.peek = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  log(`peek: the start of ${rel(processEvent.target)}`);
+  for (const line of disassemble(processEvent.target, 120)) {
+    log(`  ${line}`);
+  }
+  for (const [className, functionName] of [[PLAYER_CLASS, 'SetInvincible'], [PLAYER_CLASS, 'OnKilled'],
+    [PLAYER_CLASS, 'TakeSimpleDamage'], [PLAYER_CLASS, 'GetActiveHoldable'], [PLAYER_CLASS, 'Tick'],
+    ['HUD', 'PostRender'], [PLAYER_CLASS, 'GetHealth']]) {
+    const found = findFunction(className, functionName);
+    if (found.error) {
+      log(`  ${found.error}`);
+      continue;
+    }
+    log(`  ${found.owner}.${functionName} at ${found.function}: ${hexWords(found.function, 0, 0xC0)}`);
+  }
+  return 'done';
 };
 
 globalThis.die = function () {
