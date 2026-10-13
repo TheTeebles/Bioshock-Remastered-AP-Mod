@@ -119,7 +119,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
     'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
     'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
-    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer', 'StructProperty', 'Actor', 'Location', 'Rotation', 'Velocity', 'ShockPlayer', 'PlaceableWeaponUpgradeStation', 'PlaceableWeaponUpgradeStation0'];
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer', 'StructProperty', 'Actor', 'Location', 'Rotation', 'Velocity', 'ShockPlayer', 'PlaceableWeaponUpgradeStation', 'PlaceableWeaponUpgradeStation0', 'VendingStation', 'VendingStation0', 'ArrayProperty', 'ObjectProperty', 'ItemsForSale', 'Price', 'HealthUpgrade'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -217,6 +217,18 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     stationAt = make('PlaceableWeaponUpgradeStation0', cls('PlaceableWeaponUpgradeStation'));
     float(stationAt + 0x80, 1000); float(stationAt + 0x84, 2000); float(stationAt + 0x88, 100);
     writeU32(stationAt + 0x90, 16384); // facing +y
+    // A shop: an array of the classes it sells (its inner property has the array's name) and a price.
+    const arrayProperty = cls('ArrayProperty');
+    const objectProperty = cls('ObjectProperty');
+    const vending = cls('VendingStation');
+    fields(vending, [['ItemsForSale', arrayProperty, 0xA0], ['Price', intProperty, 0xAC]]);
+    const forSale = readU32(vending + 0x40);
+    writeU32(forSale + 0x54, make('ItemsForSale', objectProperty));
+    const shop = make('VendingStation0', vending);
+    const sold = [cls('HealthUpgrade'), quest];
+    writeU32(shop + 0xA0, 0x14000000); writeU32(shop + 0xA4, 2); writeU32(shop + 0xA8, 2);
+    sold.forEach((c, i) => writeU32(0x14000000 + 4 * i, c));
+    writeU32(shop + 0xAC, 25);
     writeU32(q2 + 0x60, 1); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
     const m = make('AwardAchievementsManager0', manager);
     writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
@@ -464,6 +476,16 @@ test('where() lists the matching objects, and goto() moves the player in front o
   assert.deepStrictEqual([at.readFloat(), at.add(4).readFloat(), at.add(8).readFloat()].map(Math.round), [1000, 2080, 140]);
   assert.strictEqual(rt.ptr(rt.playerAt() + 0x98).readFloat(), 0, 'standing still');
   assert.strictEqual(rt.context.where('Nope'), 'nothing matches Nope here');
+});
+
+test('stock() lists each shop with the values of its own properties', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.stock(), '1 shops');
+  const text = rt.logs.join('\n');
+  assert.match(text, /0: VendingStation0 \(VendingStation\)/);
+  assert.match(text, /ItemsForSale \(VendingStation\) = \[2: class HealthUpgrade, class Quest\]/);
+  assert.match(text, /Price \(VendingStation\) = 25/);
+  assert.strictEqual(rt.context.stock('^Nope$'), 'no shops loaded here');
 });
 
 test('without an object table it says so and goes on to the script calls', () => {

@@ -33,6 +33,9 @@
  *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
  *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
  *                     off its front instead of 80; a negative distance stands behind it
+ *   stock()           every shop loaded in the level (vending machines, Gatherer's Gardens, Power to the People
+ *                     stations): where it is and the values of its own properties, arrays and structs opened up.
+ *                     stock('Vend') lists the objects of the classes matching 'Vend' instead
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -49,7 +52,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.8';
+const PROBE_VERSION = '2026-10-13.9';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -723,7 +726,7 @@ function learnAnyClass(className) {
         }
         const fieldName = nameOfObject(field);
         if (!properties.has(fieldName)) {
-          properties.set(fieldName, { offset: at, kind, mask, owner: name });
+          properties.set(fieldName, { offset: at, kind, mask, owner: name, field });
         }
       }
       field = pointerAt(field.add(objects.layout.nextOffset));
@@ -847,6 +850,215 @@ globalThis.goto = function (pattern, n = 0, distance = 80) {
   log(`moved the player from ${placeText(from)} to (${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)}), ` +
     `next to ${nameOfObject(targets[n])} at ${placeText(target)}`);
   return 'moved';
+};
+
+// ---- what the shops sell, for item purchases ----
+
+// The fields of a struct (or a class's own fields), laid out the way classes are.
+function structFields(struct) {
+  const list = [];
+  const bools = new Map();
+  let field = pointerAt(struct.add(objects.layout.childrenOffset));
+  for (let n = 0; field !== null && !field.isNull() && n < 500 && readable(field, 0x80); n++) {
+    const kind = classNameOf(field) || '';
+    if (/Property$/.test(kind)) {
+      const offset = u32(field.add(objects.propertyOffset));
+      let mask = null;
+      if (kind === 'BoolProperty') {
+        const sharing = bools.get(offset) || 0;
+        bools.set(offset, sharing + 1);
+        mask = 1 << sharing;
+      }
+      list.push({ name: nameOfObject(field), offset, kind, mask, field });
+    }
+    field = pointerAt(field.add(objects.layout.nextOffset));
+  }
+  return list;
+}
+
+// A pointer kept in a property after its offset: an array's inner property (it has the array's name), or a struct
+// property's struct.
+function linkedTo(field, wanted) {
+  for (let at = objects.propertyOffset + 4; at <= objects.propertyOffset + 0x40; at += 4) {
+    const target = pointerAt(field.add(at));
+    if (target !== null && !target.isNull() && readable(target, 0x80) && wanted(target)) {
+      return target;
+    }
+  }
+  return null;
+}
+
+function innerOf(field) {
+  const name = nameOfObject(field);
+  return linkedTo(field, (t) => /Property$/.test(classNameOf(t) || '') && nameOfObject(t) === name);
+}
+
+function structOf(field) {
+  return linkedTo(field, (t) => /^(Script)?Struct$/.test(classNameOf(t) || ''));
+}
+
+const KIND_SIZE = {
+  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 4, ObjectProperty: 4,
+  ClassProperty: 4, StrProperty: 12, ArrayProperty: 12,
+};
+
+function sizeOf(property, depth = 0) {
+  if (property.kind === 'StructProperty') {
+    const struct = structOf(property.field);
+    if (struct === null || depth > 4) {
+      return null;
+    }
+    let end = 0;
+    for (const f of structFields(struct)) {
+      const size = sizeOf(f, depth + 1);
+      if (size === null) {
+        return null;
+      }
+      end = Math.max(end, f.offset + size);
+    }
+    return (end + 3) & ~3;
+  }
+  return KIND_SIZE[property.kind] || null;
+}
+
+function objectText(value) {
+  if (value === 0) {
+    return 'None';
+  }
+  const object = ptr(value);
+  if (!readable(object, 0x40)) {
+    return hex(value);
+  }
+  const name = nameOfObject(object);
+  const className = classNameOf(object);
+  if (name === null || className === null) {
+    return hex(value);
+  }
+  return className === 'Class' ? `class ${name}` : `${name} (${className})`;
+}
+
+// One value, read the way its property says. Structs and arrays are opened up a few levels deep.
+function valueText(at, property, depth = 0) {
+  const word = u32(at);
+  if (word === null) {
+    return '?';
+  }
+  switch (property.kind) {
+    case 'BoolProperty':
+      return property.mask === null ? hex(word) : String((word & property.mask) !== 0);
+    case 'ByteProperty':
+      return String(at.readU8());
+    case 'IntProperty':
+      return String(word | 0);
+    case 'FloatProperty':
+      return String(Math.round(at.readFloat() * 100) / 100);
+    case 'NameProperty':
+      return nameOf(word) || `#${word}`;
+    case 'StrProperty':
+      return JSON.stringify(stringAt(at));
+    case 'ObjectProperty':
+    case 'ClassProperty':
+      return objectText(word);
+    case 'StructProperty': {
+      const struct = structOf(property.field);
+      if (struct === null || depth > 3) {
+        return `{${hexWords(at, 0, 12)} ...}`;
+      }
+      return `{${structFields(struct).map((f) => `${f.name}: ${valueText(at.add(f.offset), f, depth + 1)}`).join(', ')}}`;
+    }
+    case 'ArrayProperty': {
+      const count = u32(at.add(4));
+      if (word === 0 || count === null || count === 0) {
+        return '[]';
+      }
+      const inner = innerOf(property.field);
+      const kind = inner === null ? null : classNameOf(inner);
+      const element = inner === null ? null : { kind, field: inner, mask: kind === 'BoolProperty' ? 1 : null };
+      const size = element === null ? null : sizeOf(element);
+      if (count > 500 || size === null || depth > 3 || !readable(ptr(word), count * size)) {
+        return `[${count} of ${kind || '?'}${size === null ? '' : `, ${size} bytes each`}]`;
+      }
+      const shown = [];
+      for (let i = 0; i < Math.min(count, 60); i++) {
+        shown.push(valueText(ptr(word).add(i * size), element, depth + 1));
+      }
+      return `[${count}: ${shown.join(', ')}${count > 60 ? ', ...' : ''}]`;
+    }
+    default:
+      return hex(word);
+  }
+}
+
+// The properties a class adds below Actor (or below Object, for things that are not actors), with their values.
+function ownValues(object, indent, depth) {
+  const cls = classOf(object);
+  const learned = learnAnyClass(classNameOf(object));
+  if (cls === null || learned.error) {
+    log(`${indent}${learned.error || 'no class'}`);
+    return [];
+  }
+  const below = new Set(learned.lineage.slice(0, Math.max(0, learned.lineage.indexOf('Actor'))));
+  if (learned.lineage.indexOf('Actor') < 0) {
+    learned.lineage.filter((name) => name !== 'Object').forEach((name) => below.add(name));
+  }
+  const followed = [];
+  const sorted = [...learned.properties.entries()].filter(([, p]) => below.has(p.owner))
+    .sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted) {
+    const text = valueText(object.add(p.offset), p);
+    log(`${indent}${name} (${p.owner}) = ${text}`);
+    if (p.kind === 'ObjectProperty' && depth < 1) {
+      const target = pointerAt(object.add(p.offset));
+      if (target !== null && !target.isNull() && readable(target, 0x40) &&
+          /Vend|Loot|Stock|Upgrade|Shop|Store/i.test(classNameOf(target) || '')) {
+        followed.push(target);
+      }
+    }
+  }
+  for (const target of followed) {
+    log(`${indent}-> ${nameOfObject(target)} (${classNameOf(target)}):`);
+    ownValues(target, `${indent}    `, depth + 1);
+  }
+  return sorted;
+}
+
+const SHOP_CLASSES = ['VendingStation', 'WeaponUpgradeStation'];
+
+globalThis.stock = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
+  const regex = pattern ? new RegExp(pattern, 'i') : null;
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const caches = new Map(SHOP_CLASSES.map((shop) => [shop, new Map()]));
+  const total = u32(objects.table.add(4)) || objects.count;
+  let n = 0;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    const className = cls === null ? null : nameOfObject(cls);
+    if (className === null || className === 'Class') {
+      continue;
+    }
+    const wanted = regex !== null ? regex.test(className) :
+      SHOP_CLASSES.some((shop) => extendsClass(cls, shop, caches.get(shop)));
+    if (!wanted) {
+      continue;
+    }
+    const place = actorPlace(object);
+    const away = from === null || from.error || place.error ? '' :
+      `, ${Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z).toFixed(0)} away`;
+    log(`${n}: ${nameOfObject(object)} (${learnAnyClass(className).lineage.join(' < ')})` +
+        `${place.error ? '' : ` at ${placeText(place)}`}${away}`);
+    ownValues(object, '    ', 0);
+    n++;
+  }
+  return n === 0 ? 'no shops loaded here' : `${n} shops`;
 };
 
 // ---- calling the game's script functions, for DeathLink ----
