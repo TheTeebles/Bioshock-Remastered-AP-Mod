@@ -67,7 +67,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.15';
+const PROBE_VERSION = '2026-10-13.16';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -121,10 +121,13 @@ function readablePage(value) {
       const access = protect & 0xFF;
       verdict = state === 0x1000 && (protect & 0x100) === 0 && access !== 0 && access !== 0x01 && access !== 0x10;
     }
-    if (pageVerdicts.size > 16384) {
-      pageVerdicts.clear();
+    // Only good pages are remembered: one not yet in use (say, on the main menu) may hold objects after a load.
+    if (verdict) {
+      if (pageVerdicts.size > 16384) {
+        pageVerdicts.clear();
+      }
+      pageVerdicts.set(page, verdict);
     }
-    pageVerdicts.set(page, verdict);
   }
   return verdict;
 }
@@ -238,7 +241,9 @@ function nameOf(index) {
     if (text !== null && !IDENTIFIER.test(text)) {
       text = null;
     }
-    nameCache.set(index, text);
+    if (text !== null) {
+      nameCache.set(index, text); // a name not readable yet is looked up again next time
+    }
   }
   return text;
 }
