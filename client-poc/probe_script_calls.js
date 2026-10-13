@@ -49,7 +49,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.6';
+const PROBE_VERSION = '2026-10-13.7';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -970,7 +970,9 @@ globalThis.events = function () {
       const slot = start === null ? undefined : slotOf.get(start.toString());
       log(`  slot ${best.slots[0]} is called from ${rel(ptr(from))} (${count} times), in the function at ` +
         `${start === null ? '?' : rel(start)}${slot === undefined ? '' : `, vtable slot ${slot}`}`);
-      if (start !== null && (chosen === null || (slot !== undefined && chosen.slot === undefined))) {
+      // The busiest caller: ProcessEvent, called for every event. The other one, vtable slot 25 on this build, is
+      // CallFunction (script calling script), which takes a stack frame rather than parameters.
+      if (start !== null && chosen === null) {
         chosen = { start, slot };
       }
     }
@@ -978,7 +980,7 @@ globalThis.events = function () {
       log('events: could not tell which function calls it. Please send this log.');
       return;
     }
-    for (const line of disassemble(chosen.start, 40)) {
+    for (const line of disassemble(chosen.start, 60)) {
       log(`    ${line}`);
     }
     processEvent.target = chosen.start;
