@@ -33,11 +33,15 @@
  *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
  *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
  *                     off its front instead of 80; a negative distance stands behind it
+ *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
+ *                     the player's virtual functions for one second (the game must be running, not paused)
+ *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
+ *                     failed hack does. hurt(1000) should kill. hurt(10, 'TakeScriptedDamage') tries the other one
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-08.10';
+const PROBE_VERSION = '2026-10-13.1';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -835,6 +839,185 @@ globalThis.goto = function (pattern, n = 0, distance = 80) {
   log(`moved the player from ${placeText(from)} to (${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)}), ` +
     `next to ${nameOfObject(targets[n])} at ${placeText(target)}`);
   return 'moved';
+};
+
+// ---- calling the game's script functions, for DeathLink ----
+
+// A script function of a class or the classes it extends, and its parameters (offsets into the parameter block).
+function findFunction(className, functionName) {
+  if (objects.layout === null || objects.propertyOffset === null) {
+    return { error: 'the layout of classes is not known (Quest was not learned)' };
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  let cls = findClass(className);
+  for (let depth = 0; cls !== null && !cls.isNull() && depth < 30; depth++) {
+    let field = pointerAt(cls.add(objects.layout.childrenOffset));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
+      if (nameOfObject(field) === functionName && classNameOf(field) === 'Function') {
+        const parameters = new Map();
+        let size = 0;
+        let parameter = pointerAt(field.add(objects.layout.childrenOffset));
+        for (let k = 0; parameter !== null && !parameter.isNull() && k < 40 && readable(parameter, 0x80); k++) {
+          const kind = classNameOf(parameter) || '?';
+          if (/Property$/.test(kind)) {
+            const offset = u32(parameter.add(objects.propertyOffset));
+            parameters.set(nameOfObject(parameter), { offset, kind });
+            size = Math.max(size, offset + 16);
+          }
+          parameter = pointerAt(parameter.add(objects.layout.nextOffset));
+        }
+        return { function: field, owner: nameOfObject(cls), parameters, size };
+      }
+      field = pointerAt(field.add(objects.layout.nextOffset));
+    }
+    if (objects.superOffset === null) {
+      break;
+    }
+    cls = pointerAt(cls.add(objects.superOffset));
+  }
+  return { error: `${className} has no function ${functionName}` };
+}
+
+const VTABLE_SLOTS = 48;
+const PAWN_HEALTH = 0x57C; // Pawn.Health
+const processEvent = { target: null, slot: null, call: null };
+
+globalThis.events = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const vtable = pointerAt(player);
+  const code = mod.enumerateRanges('r-x');
+  const inCode = (p) => code.some((r) => p.compare(r.base) >= 0 && p.compare(r.base.add(r.size)) < 0);
+  const slots = new Map(); // target -> {slots, calls, functions, names}
+  for (let slot = 0; slot < VTABLE_SLOTS; slot++) {
+    const target = pointerAt(vtable.add(slot * 4));
+    if (target === null || !inCode(target)) {
+      log(`  vtable slot ${slot} is not code; the table ends at ${slot}`);
+      break;
+    }
+    const key = target.toString();
+    if (slots.has(key)) {
+      slots.get(key).slots.push(slot);
+      continue;
+    }
+    const entry = { target, slots: [slot], calls: 0, functions: 0, names: new Map(), listener: null };
+    slots.set(key, entry);
+    try {
+      entry.listener = Interceptor.attach(target, {
+        onEnter(args) {
+          entry.calls++;
+          const first = pointerAt(this.context.esp.add(4));
+          if (first !== null && !first.isNull() && readable(first, 0x40) && classNameOf(first) === 'Function') {
+            entry.functions++;
+            const name = nameOfObject(first) || '?';
+            entry.names.set(name, (entry.names.get(name) || 0) + 1);
+          }
+        },
+      });
+    } catch (e) {
+      log(`  vtable slot ${slot} (${rel(target)}) cannot be watched: ${e.message}`);
+    }
+  }
+  setTimeout(() => {
+    let best = null;
+    for (const entry of slots.values()) {
+      if (entry.listener !== null) {
+        entry.listener.detach();
+      }
+      if (entry.functions > 0) {
+        const names = [...entry.names.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+          .map(([name, count]) => `${name} ${count}`).join(', ');
+        log(`  slot ${entry.slots.join('/')} at ${rel(entry.target)}: ${entry.calls} calls, ` +
+          `${entry.functions} with a script function first: ${names}`);
+        if (entry.functions === entry.calls && (best === null || entry.functions > best.functions)) {
+          best = entry;
+        }
+      }
+    }
+    if (best === null) {
+      log('events: no virtual function of the player is called with a script function first. ' +
+        'Was the game paused? Please send this log.');
+      return;
+    }
+    processEvent.target = best.target;
+    processEvent.slot = best.slots[0];
+    processEvent.call = new NativeFunction(best.target, 'void', ['pointer', 'pointer', 'pointer', 'pointer'],
+      'thiscall');
+    log(`events: script functions are called through vtable slot ${processEvent.slot} ` +
+      `(${rel(processEvent.target)}). hurt(10) can be tried now.`);
+  }, 1000);
+  return `watching ${slots.size} virtual functions of the player for one second; the report follows`;
+};
+
+// Calls waiting for the game thread: the game's script must only ever run there.
+const onGameThread = [];
+const DELTA_FUNCTION = 0x53D850; // the game-thread function the agent hooks on the Steam build
+let gameThreadHook = null;
+
+function runOnGameThread(job) {
+  if (gameThreadHook === null) {
+    gameThreadHook = Interceptor.attach(base.add(DELTA_FUNCTION), {
+      onEnter() {
+        while (onGameThread.length > 0) {
+          const next = onGameThread.shift();
+          try {
+            next();
+          } catch (e) {
+            log(`on the game thread: ${e.message}`);
+          }
+        }
+      },
+    });
+  }
+  onGameThread.push(job);
+}
+
+globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type = 36) {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, functionName);
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`${found.owner}.${functionName}(${described.join(', ')})`);
+  const wanted = { DamageType: type, DamageAmount: amount, DamageChance: 1 };
+  const block = Memory.alloc(Math.max(found.size, 0x40));
+  for (let at = 0; at < Math.max(found.size, 0x40); at += 4) {
+    block.add(at).writeU32(0);
+  }
+  for (const [name, p] of found.parameters) {
+    if (!(name in wanted)) {
+      continue; // Damager: none
+    }
+    if (p.kind === 'ByteProperty') {
+      block.add(p.offset).writeU8(wanted[name]);
+    } else if (p.kind === 'FloatProperty') {
+      block.add(p.offset).writeFloat(wanted[name]);
+    } else {
+      return `${name} is a ${p.kind}; not sure what to put there`;
+    }
+  }
+  runOnGameThread(() => {
+    const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    processEvent.call(player, found.function, block, NULL);
+    const after = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    log(`hurt: called ${functionName}(${type}, ${amount}); health ${before} -> ${after}`);
+    block.isNull(); // keeps the parameter block alive until the call is done
+  });
+  return 'queued for the game thread; the result follows';
 };
 
 // What a changed word is, by the properties at that offset.
