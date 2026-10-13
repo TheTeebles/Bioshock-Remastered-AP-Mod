@@ -45,6 +45,9 @@
  *                     they call; then print a line each time one of those C++ functions runs
  *   blockDeep()       after stationCode(): confirming runs the C++ cancel instead of the C++ confirm
  *   deadStat(2)       give upgrade line 2 a stat name no weapon uses, so claiming it upgrades nothing
+ *   traceCalls()      print every script function the game runs from now on that it did not run in the first
+ *                     three seconds (so not the ones it runs every frame); traceStop() ends it with a count of each
+ *   skipCall('AddStatUpgrade')  the game skips that script function whenever it would run it; skipCall() undoes it
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -61,7 +64,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.12';
+const PROBE_VERSION = '2026-10-13.13';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1312,6 +1315,93 @@ globalThis.deadStat = function (n, nameText = 'APCheckNothing') {
   at.writeS32(index);
   log(`${nameOfObject(stats[n])}: StatName ${before} -> ${nameOf(index)} (put back with deadStat(${n}, '${before}'))`);
   return 'set';
+};
+
+// Every script function the game runs goes through the function DeathLink calls (module+0x736070): the object in
+// ecx, and one argument, the call's frame, with the function at frame+4.
+const SCRIPT_RUN = 0x736070;
+const SCRIPT_RUN_START = 0x81EC8B55; // push ebp; mov ebp, esp; sub esp, ...
+const scriptTrace = { hook: null, started: 0, warm: null, counts: null, names: new Map(), skip: null, replaced: false };
+
+function scriptRunAt() {
+  const at = base.add(SCRIPT_RUN);
+  return u32(at) === SCRIPT_RUN_START ? at : null;
+}
+
+function functionLabel(fn) {
+  let label = scriptTrace.names.get(fn.toString());
+  if (label === undefined) {
+    label = nameOfObject(fn) || `function at ${fn}`;
+    scriptTrace.names.set(fn.toString(), label);
+  }
+  return label;
+}
+
+globalThis.traceCalls = function () {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  if (scriptTrace.hook !== null) {
+    return 'already tracing; traceStop() first';
+  }
+  scriptTrace.started = Date.now();
+  scriptTrace.warm = new Set();
+  scriptTrace.counts = new Map();
+  scriptTrace.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      const fn = pointerAt(args[0].add(4));
+      if (fn === null) {
+        return;
+      }
+      const label = functionLabel(fn);
+      scriptTrace.counts.set(label, (scriptTrace.counts.get(label) || 0) + 1);
+      if (Date.now() - scriptTrace.started < 3000) {
+        scriptTrace.warm.add(label);
+      } else if (!scriptTrace.warm.has(label) && scriptTrace.counts.get(label) <= 3) {
+        log(`call: ${label} on ${nameOfObject(this.context.ecx)} (${classNameOf(this.context.ecx)})`);
+      }
+    },
+  });
+  setTimeout(() => {
+    if (scriptTrace.hook !== null) {
+      log(`trace: learned ${scriptTrace.warm.size} functions the game runs all the time; open the station now`);
+    }
+  }, 3000);
+  return 'tracing: wait for the "open the station now" line (about three seconds), then open it, pick, confirm';
+};
+
+globalThis.traceStop = function () {
+  if (scriptTrace.hook === null) {
+    return 'not tracing';
+  }
+  scriptTrace.hook.detach();
+  scriptTrace.hook = null;
+  const rare = [...scriptTrace.counts.entries()].filter(([label]) => !scriptTrace.warm.has(label));
+  log(`trace: ${rare.length} functions that were not running at the start:`);
+  rare.forEach(([label, count]) => log(`  ${label}: ${count}`));
+  return 'stopped';
+};
+
+globalThis.skipCall = function (functionName) {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  scriptTrace.skip = functionName || null;
+  if (!scriptTrace.replaced && scriptTrace.skip !== null) {
+    const original = new NativeFunction(at, 'void', ['pointer', 'pointer'], 'thiscall');
+    Interceptor.replace(at, new NativeCallback(function (self, frame) {
+      const fn = pointerAt(frame.add(4));
+      if (scriptTrace.skip !== null && fn !== null && nameOfObject(fn) === scriptTrace.skip) {
+        log(`skipped ${functionLabel(fn)} on ${nameOfObject(self)}`);
+        return;
+      }
+      original(self, frame);
+    }, 'void', ['pointer', 'pointer'], 'thiscall'));
+    scriptTrace.replaced = true;
+  }
+  return scriptTrace.skip === null ? 'nothing skipped' : `the game now skips ${scriptTrace.skip}`;
 };
 
 // ---- calling the game's script functions, for DeathLink ----
