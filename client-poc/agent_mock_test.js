@@ -21,6 +21,7 @@ const STEAM_SIZE = 23556096;
 const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
+const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
 const ENGINE = 0x50000000;
 const GUARD_PAGE = 0x00190000; // a page that must never be read
@@ -73,6 +74,9 @@ class Ptr {
     return bytes.buffer;
   }
   writePointer(p) { this.runtime.memory.set(this.value, p.value); return this; }
+  writeU32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
+  compare(other) { return this.value < other.value ? -1 : (this.value > other.value ? 1 : 0); }
+  writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
 function makeRuntime({
@@ -93,7 +97,11 @@ function makeRuntime({
     raises: new Map(), // part of a command -> the exceptions the "game" raises, and deals with, while it runs
     answers: [], // what the agent's handler answered each time: true would take the exception away from the game
     nextStack: 0x0A000000,
+    scriptCalls: [], // what the agent ran through ProcessEvent: object, function, the frame's words
+    onScriptCall: null,
   };
+  // ProcessEvent's first instructions, as the agent checks them before calling it
+  runtime.memory.set(BASE + PROCESS_EVENT, 0x81EC8B55); runtime.memory.set(BASE + PROCESS_EVENT + 4, 0x000400EC);
   const ptr = (n) => new Ptr(n, runtime);
   const committed = (address) => {
     const page = address >>> 12;
@@ -107,6 +115,7 @@ function makeRuntime({
     console: { log: (text) => runtime.logs.push(text) },
     Date: { now: () => runtime.time },
     JSON, Map, Set, Math,
+    ptr: (value) => ptr(Number(value)),
     send: (message) => runtime.messages.push(message),
     rpc: { exports: {} },
     Process: {
@@ -152,6 +161,13 @@ function makeRuntime({
           return 28;
         };
       }
+      if (address.value === BASE + PROCESS_EVENT) {
+        return (self, frame) => {
+          const read = (at) => runtime.memory.get(frame.value + at);
+          runtime.scriptCalls.push({ self: self.value, fn: read(4), object: read(8), parms: read(0x10), vtable: read(0) });
+          if (runtime.onScriptCall) { runtime.onScriptCall(self.value, read(4)); }
+        };
+      }
       return (self, wide) => {
         const command = runtime.strings.get(wide.value);
         const onPlayer = address.value === PLAYER_EXEC;
@@ -179,7 +195,13 @@ function makeRuntime({
         return 1;
       };
     },
-    Interceptor: { attach: (address, callbacks) => runtime.hooks.push({ address: address.value, callbacks }) },
+    Interceptor: {
+      attach: (address, callbacks) => {
+        const hook = { address: address.value, callbacks };
+        runtime.hooks.push(hook);
+        return { detach: () => { runtime.hooks = runtime.hooks.filter((h) => h !== hook); } };
+      },
+    },
   };
   context.globalThis = context;
   runtime.context = context;
@@ -190,8 +212,16 @@ function makeRuntime({
     runtime.time += ms;
     const levels = runtime.levels.length > 0 ? runtime.levels : [0x12340000]; // or for something unreadable
     for (const level of levels) {
-      runtime.hooks.forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(level) } }));
+      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT)
+        .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(level) } }));
     }
+  };
+  // The game running one script event through ProcessEvent: the hooks there see the object and its frame.
+  runtime.gameEvent = (self, fn) => {
+    const frame = runtime.object(0x40); poke(frame + 4, fn); poke(frame + 8, self); poke(frame, 0x11336134);
+    const stack = runtime.object(0x40); poke(stack + 4, frame);
+    runtime.hooks.filter((h) => h.address === BASE + PROCESS_EVENT)
+      .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(self), esp: ptr(stack) } }));
   };
   runtime.frames = (count, ms = 100) => { for (let i = 0; i < count; i++) { runtime.frame(ms); } };
 
@@ -364,7 +394,13 @@ function makeRuntime({
     const stationClass = cls('PlaceableWeaponUpgradeStation', actor);
     fields(stationClass, [['NumTimesUsed', intProperty, 0x524]]);
     const station = (used = 0) => { const at = make('PlaceableWeaponUpgradeStation0', stationClass, 0x600); poke(at + 0x524, used); return at; };
-    return { spawned, splicer, make, quest, diary, station };
+    const functionClass = cls('Function', objectClass);
+    const pawnClass = cls('ShockPawn', actor);
+    const onKilled = make('OnKilled', functionClass);
+    poke(pawnClass + 0x5C, onKilled);
+    const playerClass = cls('ShockPlayer', pawnClass);
+    const tick = make('Tick', functionClass);
+    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1227,6 +1263,73 @@ const tests = {
     assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}');
     r.poke(station + 0x524, 2); r.frames(3);
     assert.strictEqual(JSON.stringify(state(r).stationsUsed), '{"1-medical":1}', 'one station used twice is one');
+  },
+  // ---- DeathLink ----
+  'a death is reported once, and again after a Vita-Chamber': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(3);
+    const died = () => r.messages.filter((m) => m.type === 'player_died');
+    r.poke(game.pawn + 0x57C, 0); r.frames(3);
+    assert.deepStrictEqual(died().map((m) => m.map), ['1-medical']);
+    r.poke(game.pawn + 0x57C, 1000); r.frames(2); // revived
+    r.poke(game.pawn + 0x57C, 0); r.frames(2);
+    assert.strictEqual(died().length, 2);
+  },
+  'a new body that is already dead is no death': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(3);
+    const other = r.object(); r.addActor(game.level, other);
+    r.poke(other + 0x450, game.controller); r.poke(other + 0x57C, 0);
+    r.poke(game.controller + 0x450, other); r.frames(3); // a save loaded with the player dead in it
+    assert.strictEqual(r.messages.filter((m) => m.type === 'player_died').length, 0);
+  },
+  'kill empties the health and calls OnKilled, with a frame copied from the game\'s own calls': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(0, 'kill');
+    r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 875, 'nothing before a call of the game\'s has been seen');
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(1);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 0);
+    assert.deepStrictEqual(r.scriptCalls.map((c) => [c.self, c.fn, c.object, c.vtable]),
+      [[game.pawn, model.onKilled, game.pawn, 0x11336134]], 'OnKilled on the player, in a frame like the game\'s');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[0, 'kill', true]]);
+    assert.ok(!r.hooks.some((h) => h.address === BASE + PROCESS_EVENT), 'the watch on the game\'s calls is gone');
+    r.frames(1);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'player_died').length, 1, 'and the death is seen');
+  },
+  'kill waits for a body': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(2);
+    r.poke(game.controller + 0x450, 0); // between two levels
+    r.context.rpc.exports.action(0, 'kill'); r.frames(3);
+    r.gameEvent(game.hud, model.tick); r.frames(2);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0);
+    r.poke(game.controller + 0x450, game.pawn); r.frames(3);
+    r.gameEvent(game.hud, model.tick); r.frames(1);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 0);
+    assert.strictEqual(r.scriptCalls.length, 1);
+  },
+  'a kill that cannot be carried out is said, and the health is left alone': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.memory.set(BASE + PROCESS_EVENT, 0x90909090); // some other code there
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(0, 'kill'); r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0x57C), 875);
+    const answers = r.messages.filter((m) => m.type === 'action_result');
+    assert.deepStrictEqual(answers.map((m) => m.ok), [false]);
+    assert.ok(answers[0].reason.includes('not what this agent expects'), answers[0].reason);
+  },
+  'a kill after the game has answered by itself ends after a while': () => {
+    const r = makeRuntime(); const game = r.game(); r.load(); r.frames(2);
+    r.poke(game.controller + 0x450, 0);
+    r.context.rpc.exports.action(5, 'kill'); r.frames(310);
+    const answers = r.messages.filter((m) => m.type === 'action_result');
+    assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[5, false]]);
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

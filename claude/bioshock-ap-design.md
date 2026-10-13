@@ -57,7 +57,7 @@ stations, diaries) is the big piece still missing.*
 - **Not done:**
   - Noticing story objectives, Little Sisters, Power to the People stations, audio diaries and film reels. With the
     real game, only "Level Complete" checks (from the map the player reaches) and the goal can be sent so far.
-  - The EVE Drain and Pickpocket traps, and DeathLink inside the game.
+  - The EVE Drain and Pickpocket traps.
   - The GOG and Epic builds.
 - **Next** (section 7, "Next session"): the few commands still to try by hand, then the first full run of client,
   real game and a real seed. After that, check detection.
@@ -532,7 +532,7 @@ everything else (server, checks, items, held checks, goal) is real.
 | Goal, held like any other Proving Grounds check | built; the Fontaine phase value has not been seen live |
 | Progress stored on the server, `/resync` | done |
 | Reconnects, client restarts, a second seed in the same client | done |
-| DeathLink both ways without echoing a death back | client done; the agent cannot kill the player or see a death yet |
+| DeathLink both ways without echoing a death back | works in the real game (2026-10-13) |
 | Traps | Security Alarm is a console command (`StartSecurityAlarm`): **live**, it rings for a minute, and no security bots were seen. The agent has no EVE Drain or Pickpocket yet |
 | Attach to the game with Frida, hook the game thread | **live**, by hand |
 | Run commands | **live**, by hand: engine commands through the engine, `GiveItem` and the other cheats through the local player |
@@ -603,6 +603,15 @@ everything else (server, checks, items, held checks, goal) is real.
 - **DeathLink.** A received death kills the player once the game is ready, and the death that causes is not sent
   back. A death that arrives while no game is running, or that cannot be carried out within 30 seconds, is dropped.
   `/deathlink` holds for the rest of the session.
+- **DeathLink in the game (Steam).** The agent reports a death when the player's Pawn.Health (+0x57C) goes from above
+  0 to 0 on the same pawn. To kill, it empties that health and calls the player's `OnKilled` script function itself:
+  emptying the health alone is not a death, because the game's damage code only calls `OnKilled` (which starts the
+  Dying state, the collapse and the Vita-Chamber) when a hit takes health from above 0 to 0, and a later hit then
+  leaves the player stuck. Script functions are called through the engine's ProcessEvent at module+0x736070, which
+  takes one argument, a stack frame (function at +4, object at +8, parameters at +0x10); the agent copies the frame
+  of one call the game makes itself and puts its own function, object and parameters in. Found with the probe's
+  `events()`, `check()` and `die()`: vtable slot 6 is ProcessRemoteFunction and slot 25 CallFunction, neither of
+  which runs a call made this way. Confirmed both ways in the real game on 2026-10-13.
 
 ### Where the player is
 
@@ -844,8 +853,8 @@ version of the agent and not in this one, so that one version number never stand
    `state()`. Story objectives come first: with the default options they and the Little Sisters hold most of what
    matters. The core already understands those fields; today only the simulated game fills them in. Section 7
    lists where to look.
-3. Player death and kill for DeathLink (`Suicide` is a console command; a death should show in the health value),
-   and the EVE Drain and Pickpocket traps (the player's EVE and dollars are at known offsets).
+3. ~~Player death and kill for DeathLink~~ (done 2026-10-13; there is no `Suicide` command), and the EVE Drain and
+   Pickpocket traps (the player's EVE and dollars are at known offsets; script calls now work, see section 6).
 4. Item details:
    - Tonics, plasmids and slot upgrades open the game's own window in the middle of play. Fine for a pickup the
      player walks into; for an item that arrives out of nowhere, perhaps during a fight, it may want holding
@@ -1173,7 +1182,7 @@ declaration without guessing at addresses.
    - the first full run: client, real game, a real seed
    - the two text extracts
 3. **Check detection:** story objectives first, then Little Sisters and stations, then diaries and reels. Then
-   death and kill for DeathLink, and the two traps the agent still lacks.
+   death and kill for DeathLink (done), and the two traps the agent still lacks.
 4. **Friends playtest:** async multiworld, then fix counts and edge cases. The multiworld side can be rehearsed
    before step 3 with the simulated game.
 5. **APWorld v0.2, world items and safes** (section 5), no separate DLL phase needed:

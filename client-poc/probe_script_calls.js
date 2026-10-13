@@ -33,11 +33,23 @@
  *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
  *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
  *                     off its front instead of 80; a negative distance stands behind it
+ *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
+ *                     the player's virtual functions for one second (the game must be running, not paused)
+ *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
+ *                     failed hack does. hurt(1000) should kill. hurt(10, 'TakeScriptedDamage') tries the other one,
+ *                     hurt(10, 'RemoveHealth') takes health away directly
+ *   die()             after events(): empties the player's health and calls OnKilled, the game's own end of a death
+ *                     (what its damage code calls when health runs out). Should end in a Vita-Chamber
+ *   check()           after events(): calls SetInvincible(true), then SetInvincible(false), on the player and reads
+ *                     the flag after each, to see whether calls through events() run the game's script at all
+ *                     (events() looks for ProcessEvent: the function that calls the one it watched)
+ *   peek()            after events(): prints the start of that function's machine code, and the raw words of a few
+ *                     script functions, to see what it checks before it runs one
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-08.10';
+const PROBE_VERSION = '2026-10-13.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -835,6 +847,402 @@ globalThis.goto = function (pattern, n = 0, distance = 80) {
   log(`moved the player from ${placeText(from)} to (${x.toFixed(0)}, ${y.toFixed(0)}, ${z.toFixed(0)}), ` +
     `next to ${nameOfObject(targets[n])} at ${placeText(target)}`);
   return 'moved';
+};
+
+// ---- calling the game's script functions, for DeathLink ----
+
+// A script function of a class or the classes it extends, and its parameters (offsets into the parameter block).
+function findFunction(className, functionName) {
+  if (objects.layout === null || objects.propertyOffset === null) {
+    return { error: 'the layout of classes is not known (Quest was not learned)' };
+  }
+  if (objects.superOffset === undefined) {
+    objects.superOffset = findSuperOffset();
+  }
+  let cls = findClass(className);
+  for (let depth = 0; cls !== null && !cls.isNull() && depth < 30; depth++) {
+    let field = pointerAt(cls.add(objects.layout.childrenOffset));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
+      if (nameOfObject(field) === functionName && classNameOf(field) === 'Function') {
+        const parameters = new Map();
+        let size = 0;
+        let parameter = pointerAt(field.add(objects.layout.childrenOffset));
+        for (let k = 0; parameter !== null && !parameter.isNull() && k < 40 && readable(parameter, 0x80); k++) {
+          const kind = classNameOf(parameter) || '?';
+          if (/Property$/.test(kind)) {
+            const offset = u32(parameter.add(objects.propertyOffset));
+            parameters.set(nameOfObject(parameter), { offset, kind });
+            size = Math.max(size, offset + 16);
+          }
+          parameter = pointerAt(parameter.add(objects.layout.nextOffset));
+        }
+        return { function: field, owner: nameOfObject(cls), parameters, size };
+      }
+      field = pointerAt(field.add(objects.layout.nextOffset));
+    }
+    if (objects.superOffset === null) {
+      break;
+    }
+    cls = pointerAt(cls.add(objects.superOffset));
+  }
+  return { error: `${className} has no function ${functionName}` };
+}
+
+const VTABLE_SLOTS = 48;
+const PAWN_HEALTH = 0x57C; // Pawn.Health
+const processEvent = { target: null, slot: null, call: null, template: null };
+
+globalThis.events = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const vtable = pointerAt(player);
+  const code = mod.enumerateRanges('r-x');
+  const inCode = (p) => code.some((r) => p.compare(r.base) >= 0 && p.compare(r.base.add(r.size)) < 0);
+  const slots = new Map(); // target -> {slots, calls, functions, names}
+  for (let slot = 0; slot < VTABLE_SLOTS; slot++) {
+    const target = pointerAt(vtable.add(slot * 4));
+    if (target === null || !inCode(target)) {
+      log(`  vtable slot ${slot} is not code; the table ends at ${slot}`);
+      break;
+    }
+    const key = target.toString();
+    if (slots.has(key)) {
+      slots.get(key).slots.push(slot);
+      continue;
+    }
+    const entry = { target, slots: [slot], calls: 0, functions: 0, names: new Map(), callers: new Map(),
+      listener: null };
+    slots.set(key, entry);
+    try {
+      entry.listener = Interceptor.attach(target, {
+        onEnter(args) {
+          entry.calls++;
+          const first = pointerAt(this.context.esp.add(4));
+          if (first !== null && !first.isNull() && readable(first, 0x40) && classNameOf(first) === 'Function') {
+            entry.functions++;
+            const name = nameOfObject(first) || '?';
+            entry.names.set(name, (entry.names.get(name) || 0) + 1);
+            const from = this.returnAddress.toString();
+            entry.callers.set(from, (entry.callers.get(from) || 0) + 1);
+          }
+        },
+      });
+    } catch (e) {
+      log(`  vtable slot ${slot} (${rel(target)}) cannot be watched: ${e.message}`);
+    }
+  }
+  setTimeout(() => {
+    let best = null;
+    for (const entry of slots.values()) {
+      if (entry.listener !== null) {
+        entry.listener.detach();
+      }
+      if (entry.functions > 0) {
+        const names = [...entry.names.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8)
+          .map(([name, count]) => `${name} ${count}`).join(', ');
+        log(`  slot ${entry.slots.join('/')} at ${rel(entry.target)}: ${entry.calls} calls, ` +
+          `${entry.functions} with a script function first: ${names}`);
+        if (entry.functions === entry.calls && (best === null || entry.functions > best.functions)) {
+          best = entry;
+        }
+      }
+    }
+    if (best === null) {
+      log('events: no virtual function of the player is called with a script function first. ' +
+        'Was the game paused? Please send this log.');
+      return;
+    }
+    // On this build that slot is ProcessRemoteFunction (it only decides whether a call goes over the network and
+    // returns). ProcessEvent is the function that calls it: found from where those calls return to.
+    const slotOf = new Map();
+    for (const entry of slots.values()) {
+      entry.slots.forEach((slot) => slotOf.set(entry.target.toString(), slot));
+    }
+    const callers = [...best.callers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    let chosen = null;
+    for (const [from, count] of callers) {
+      const start = functionStart(ptr(from));
+      const slot = start === null ? undefined : slotOf.get(start.toString());
+      log(`  slot ${best.slots[0]} is called from ${rel(ptr(from))} (${count} times), in the function at ` +
+        `${start === null ? '?' : rel(start)}${slot === undefined ? '' : `, vtable slot ${slot}`}`);
+      // The busiest caller: ProcessEvent, called for every event. The other one, vtable slot 25 on this build, is
+      // CallFunction (script calling script), which takes a stack frame rather than parameters.
+      if (start !== null && chosen === null) {
+        chosen = { start, slot };
+      }
+    }
+    if (chosen === null) {
+      log('events: could not tell which function calls it. Please send this log.');
+      return;
+    }
+    for (const line of disassemble(chosen.start, 60)) {
+      log(`    ${line}`);
+    }
+    // It takes one argument: a block with the function at +4 and the parameters at +0x10 (a stack frame, as the
+    // script VM keeps them). Copy what the game itself passes in, from one real call.
+    let sampler = null;
+    sampler = Interceptor.attach(chosen.start, {
+      onEnter() {
+        if (processEvent.template !== null) {
+          return;
+        }
+        const info = pointerAt(this.context.esp.add(4));
+        if (info === null || !readable(info, 0x30)) {
+          return;
+        }
+        const fn = pointerAt(info.add(4));
+        if (fn === null || classNameOf(fn) !== 'Function') {
+          return;
+        }
+        const self = this.context.ecx;
+        const words = [];
+        for (let at = 0; at < 0x30; at += 4) {
+          const word = pointerAt(info.add(at));
+          words.push(word === null ? ptr(0) : word);
+        }
+        processEvent.template = { words, self, fn, name: nameOfObject(fn) };
+      },
+    });
+    setTimeout(() => {
+      sampler.detach();
+      const template = processEvent.template;
+      if (template === null) {
+        log('events: saw no call to copy. Was the game paused? Please send this log.');
+        return;
+      }
+      const shown = template.words.map((w, i) => {
+        const at = hex(i * 4);
+        if (w.equals(template.self)) {
+          return `+${at} the object`;
+        }
+        const kind = w.isNull() || !readable(w, 0x40) ? null : classNameOf(w);
+        return `+${at} ${w}${kind === null ? '' : ` (${kind})`}`;
+      });
+      log(`events: a real call (${template.name}) passes: ${shown.join(', ')}`);
+      processEvent.target = chosen.start;
+      processEvent.slot = chosen.slot === undefined ? null : chosen.slot;
+      processEvent.call = new NativeFunction(chosen.start, 'void', ['pointer', 'pointer'], 'thiscall');
+      log(`events: script functions are called through ${rel(processEvent.target)}. check() can be tried now.`);
+    }, 300);
+  }, 1000);
+  return `watching ${slots.size} virtual functions of the player for one second; the report follows`;
+};
+
+// The start of the function an address is in: functions here begin on a 16-byte boundary after int3 padding,
+function functionStart(address) {
+  let at = address.and(ptr('0xFFFFFFF0'));
+  for (let n = 0; n < 0x400; n++, at = at.sub(16)) {
+    if (!readable(at.sub(1), 2)) {
+      return null;
+    }
+    // ... and start by setting up a frame (push ebp; mov ebp, esp), as the functions around here do
+    if (at.sub(1).readU8() === 0xCC && at.readU8() === 0x55 && at.add(1).readU8() === 0x8B &&
+        at.add(2).readU8() === 0xEC) {
+      return at;
+    }
+  }
+  return null;
+}
+
+const FUNCTION_SCRIPT = 0x70; // a function's bytecode: data, count, capacity
+
+// Runs a script function on an object, the way the game's own events do: a frame like the one it passes, with this
+// function and these parameters. Game thread only.
+function callScript(object, fn, parms) {
+  const frame = Memory.alloc(0x40);
+  processEvent.template.words.forEach((word, i) => {
+    frame.add(i * 4).writePointer(word.equals(processEvent.template.self) ? object : word);
+  });
+  frame.add(4).writePointer(fn);
+  frame.add(0x10).writePointer(parms);
+  // A word pointing into the copied call's own bytecode points into this function's instead
+  const theirs = pointerAt(processEvent.template.fn.add(FUNCTION_SCRIPT));
+  const theirLength = u32(processEvent.template.fn.add(FUNCTION_SCRIPT + 4)) || 0;
+  const ours = pointerAt(fn.add(FUNCTION_SCRIPT));
+  processEvent.template.words.forEach((word, i) => {
+    if (theirs !== null && ours !== null && word.compare(theirs) >= 0 && word.compare(theirs.add(theirLength + 1)) < 0) {
+      frame.add(i * 4).writePointer(ours.add(word.sub(theirs)));
+    }
+  });
+  processEvent.call(object, frame);
+  frame.isNull(); // keeps it alive until the call is done
+}
+
+// Calls waiting for the game thread: the game's script must only ever run there.
+const onGameThread = [];
+const DELTA_FUNCTION = 0x53D850; // the game-thread function the agent hooks on the Steam build
+let gameThreadHook = null;
+
+function runOnGameThread(job) {
+  if (gameThreadHook === null) {
+    gameThreadHook = Interceptor.attach(base.add(DELTA_FUNCTION), {
+      onEnter() {
+        while (onGameThread.length > 0) {
+          const next = onGameThread.shift();
+          try {
+            next();
+          } catch (e) {
+            log(`on the game thread: ${e.message}`);
+          }
+        }
+      },
+    });
+  }
+  onGameThread.push(job);
+}
+
+globalThis.check = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, 'SetInvincible');
+  if (found.error) {
+    return found.error;
+  }
+  const flag = learnAnyClass(PLAYER_CLASS).properties.get('bIsInvincible');
+  if (flag === undefined) {
+    return 'ShockPlayer has no bIsInvincible property here';
+  }
+  const parameter = [...found.parameters.values()][0];
+  const read = () => ((player.add(flag.offset).readU32() & flag.mask) !== 0);
+  log(`check: bIsInvincible at +${hex(flag.offset)} bit ${hex(flag.mask)}, now ${read()}; ` +
+    `SetInvincible's parameter at +${hex(parameter.offset)}`);
+  const block = Memory.alloc(0x40);
+  runOnGameThread(() => {
+    for (const value of [1, 0]) {
+      for (let at = 0; at < 0x40; at += 4) {
+        block.add(at).writeU32(0);
+      }
+      block.add(parameter.offset).writeU32(value);
+      callScript(player, found.function, block);
+      log(`check: after SetInvincible(${value === 1}), bIsInvincible is ${read()}`);
+    }
+    block.isNull();
+  });
+  return 'queued for the game thread; the result follows';
+};
+
+function disassemble(start, count) {
+  const lines = [];
+  let at = start;
+  for (let n = 0; n < count; n++) {
+    let instruction;
+    try {
+      instruction = Instruction.parse(at);
+    } catch (e) {
+      lines.push(`${rel(at)}: ?? (${e.message})`);
+      break;
+    }
+    lines.push(`${rel(at)}: ${instruction.toString()}`);
+    at = instruction.next;
+  }
+  return lines;
+}
+
+globalThis.peek = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  log(`peek: the start of ${rel(processEvent.target)}`);
+  for (const line of disassemble(processEvent.target, 120)) {
+    log(`  ${line}`);
+  }
+  for (const [className, functionName] of [[PLAYER_CLASS, 'SetInvincible'], [PLAYER_CLASS, 'OnKilled'],
+    [PLAYER_CLASS, 'TakeSimpleDamage'], [PLAYER_CLASS, 'GetActiveHoldable'], [PLAYER_CLASS, 'Tick'],
+    ['HUD', 'PostRender'], [PLAYER_CLASS, 'GetHealth']]) {
+    const found = findFunction(className, functionName);
+    if (found.error) {
+      log(`  ${found.error}`);
+      continue;
+    }
+    log(`  ${found.owner}.${functionName} at ${found.function}: ${hexWords(found.function, 0, 0xC0)}`);
+  }
+  return 'done';
+};
+
+globalThis.die = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, 'OnKilled');
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`${found.owner}.OnKilled(${described.join(', ')})`);
+  const size = Math.max(found.size, 0x80);
+  const block = Memory.alloc(size);
+  for (let at = 0; at < size; at += 4) {
+    block.add(at).writeU32(0); // no damage set, no damager, no hit: all None
+  }
+  runOnGameThread(() => {
+    const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    player.add(PAWN_HEALTH).writeFloat(0);
+    callScript(player, found.function, block);
+    log(`die: health ${before} -> 0, OnKilled called`);
+    block.isNull();
+    setTimeout(() => {
+      log(`die: a few seconds later, health ${player.add(PAWN_HEALTH).readFloat().toFixed(1)}`);
+    }, 5000);
+  });
+  return 'queued for the game thread; the result follows';
+};
+
+globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type = 36) {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, functionName);
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`${found.owner}.${functionName}(${described.join(', ')})`);
+  const wanted = { DamageType: type, DamageAmount: amount, DamageChance: 1, numHealth: amount };
+  const block = Memory.alloc(Math.max(found.size, 0x40));
+  for (let at = 0; at < Math.max(found.size, 0x40); at += 4) {
+    block.add(at).writeU32(0);
+  }
+  for (const [name, p] of found.parameters) {
+    if (!(name in wanted)) {
+      continue; // Damager: none
+    }
+    if (p.kind === 'ByteProperty') {
+      block.add(p.offset).writeU8(wanted[name]);
+    } else if (p.kind === 'FloatProperty') {
+      block.add(p.offset).writeFloat(wanted[name]);
+    } else {
+      return `${name} is a ${p.kind}; not sure what to put there`;
+    }
+  }
+  runOnGameThread(() => {
+    const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    callScript(player, found.function, block);
+    const after = player.add(PAWN_HEALTH).readFloat().toFixed(1);
+    log(`hurt: called ${functionName}(${type}, ${amount}); health ${before} -> ${after}`);
+    block.isNull(); // keeps the parameter block alive until the call is done
+    setTimeout(() => {
+      log(`hurt: a second later, health ${player.add(PAWN_HEALTH).readFloat().toFixed(1)}`);
+    }, 1000);
+  });
+  return 'queued for the game thread; the result follows';
 };
 
 // What a changed word is, by the properties at that offset.
