@@ -67,7 +67,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.14';
+const PROBE_VERSION = '2026-10-13.15';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -140,8 +140,18 @@ function readable(pointer, length) {
   return readablePage(value) && readablePage(value + (length || 4) - 1);
 }
 
+// Pages are judged once and remembered, so one freed since then still reads as fine: such a read fails, and the
+// page is judged again next time.
 function u32(pointer) {
-  return readable(pointer, 4) ? pointer.readU32() : null;
+  if (!readable(pointer, 4)) {
+    return null;
+  }
+  try {
+    return pointer.readU32();
+  } catch (e) {
+    pageVerdicts.delete(pointer.toUInt32() >>> 12);
+    return null;
+  }
 }
 
 function pointerAt(pointer) {
