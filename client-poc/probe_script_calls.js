@@ -48,6 +48,9 @@
  *   traceCalls()      print every script function the game runs from now on that it did not run in the first
  *                     three seconds (so not the ones it runs every frame); traceStop() ends it with a count of each
  *   skipCall('AddStatUpgrade')  the game skips that script function whenever it would run it; skipCall() undoes it
+ *                     (crashed the game when tried on GetHoldableByClassName: do not use)
+ *   touch()           after events(): using a Power to the People station no longer opens its menu; the station
+ *                     finishes its interaction at once (FinishInteraction) and should close, with no upgrade given
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -64,7 +67,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.13';
+const PROBE_VERSION = '2026-10-13.14';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1402,6 +1405,85 @@ globalThis.skipCall = function (functionName) {
     scriptTrace.replaced = true;
   }
   return scriptTrace.skip === null ? 'nothing skipped' : `the game now skips ${scriptTrace.skip}`;
+};
+
+// ---- Touch: a station that sends its check and closes, with no menu ----
+
+// UShockPlayer::BeginWeaponUpgradeInteraction, which opens the menu (what the script native's stub calls).
+const OPEN_UPGRADE_MENU = 0x1dbf70;
+const OPEN_UPGRADE_MENU_START = 0x64EC8B55; // push ebp; mov ebp, esp; mov eax, fs:[0]
+const touching = { replaced: false, finish: null };
+
+function stationInUse() {
+  const learned = learnAnyClass('PlaceableWeaponUpgradeStation');
+  const current = learned.error ? undefined : learned.properties.get('CurrentPlayer');
+  if (current === undefined) {
+    return null;
+  }
+  const list = matchingObjects('^PlaceableWeaponUpgradeStation$').get('PlaceableWeaponUpgradeStation') || [];
+  return list.find((station) => {
+    const player = pointerAt(station.add(current.offset));
+    return player !== null && !player.isNull();
+  }) || null;
+}
+
+function stationUses(station) {
+  const used = learnAnyClass('PlaceableWeaponUpgradeStation').properties.get('NumTimesUsed');
+  return used === undefined ? null : station.add(used.offset).readS32();
+}
+
+function finishTouchedStation() {
+  const station = stationInUse();
+  if (station === null) {
+    log('touch: the menu was skipped, but no station has a CurrentPlayer');
+    return;
+  }
+  const { found } = touching.finish;
+  const size = Math.max(found.size, 0x40);
+  const block = Memory.alloc(size);
+  for (let at = 0; at < size; at += 4) {
+    block.add(at).writeU32(0);
+  }
+  // A success flag, if FinishInteraction has one, is true: the station was used.
+  for (const p of found.parameters.values()) {
+    if (p.kind === 'BoolProperty') {
+      block.add(p.offset).writeU32(1);
+    }
+  }
+  const before = stationUses(station);
+  callScript(station, found.function, block);
+  log(`touch: FinishInteraction called on the station at ${station}; NumTimesUsed ${before} -> ${stationUses(station)}`);
+  block.isNull();
+  setTimeout(() => {
+    const player = stationInUse();
+    log(`touch: a second later, NumTimesUsed ${stationUses(station)}, ` +
+      `${player === null ? 'no station in use' : 'a station is still in use'}. Is it closed, and are the controls back?`);
+  }, 1000);
+}
+
+globalThis.touch = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const at = base.add(OPEN_UPGRADE_MENU);
+  if (u32(at) !== OPEN_UPGRADE_MENU_START) {
+    return `module+${hex(OPEN_UPGRADE_MENU)} does not start the way it should; is this the Steam build?`;
+  }
+  const found = findFunction('PlaceableWeaponUpgradeStation', 'FinishInteraction');
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`touch: ${found.owner}.FinishInteraction(${described.join(', ')})`);
+  touching.finish = { found };
+  if (!touching.replaced) {
+    Interceptor.replace(at, new NativeCallback(function () {
+      log('touch: the station tried to open its menu; skipped');
+      runOnGameThread(finishTouchedStation);
+    }, 'void', ['pointer'], 'thiscall'));
+    touching.replaced = true;
+  }
+  return 'use a station now: no menu should open, and it should close';
 };
 
 // ---- calling the game's script functions, for DeathLink ----

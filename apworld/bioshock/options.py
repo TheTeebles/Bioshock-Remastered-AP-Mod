@@ -64,8 +64,9 @@ class LittleSisterChecks(DefaultOnToggle):
 
 class PowerToThePeopleChecks(DefaultOnToggle):
     """
-    Using each Power to the People weapon upgrade station sends a check (12 checks).
-    The station still gives you its weapon upgrade as normal.
+    Each Power to the People weapon upgrade station is a check (12 checks). Using a station sends its check and
+    closes it, with no upgrade menu. The 12 weapon upgrades are items in the multiworld instead; one for a weapon you
+    don't have yet waits until you pick the weapon up.
     """
     display_name = "Power to the People Checks"
 
