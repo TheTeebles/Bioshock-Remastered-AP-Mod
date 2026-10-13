@@ -42,13 +42,14 @@
  *                     (what its damage code calls when health runs out). Should end in a Vita-Chamber
  *   check()           after events(): calls SetInvincible(true), then SetInvincible(false), on the player and reads
  *                     the flag after each, to see whether calls through events() run the game's script at all
+ *                     (events() looks for ProcessEvent: the function that calls the one it watched)
  *   peek()            after events(): prints the start of that function's machine code, and the raw words of a few
  *                     script functions, to see what it checks before it runs one
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.5';
+const PROBE_VERSION = '2026-10-13.6';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -914,7 +915,8 @@ globalThis.events = function () {
       slots.get(key).slots.push(slot);
       continue;
     }
-    const entry = { target, slots: [slot], calls: 0, functions: 0, names: new Map(), listener: null };
+    const entry = { target, slots: [slot], calls: 0, functions: 0, names: new Map(), callers: new Map(),
+      listener: null };
     slots.set(key, entry);
     try {
       entry.listener = Interceptor.attach(target, {
@@ -925,6 +927,8 @@ globalThis.events = function () {
             entry.functions++;
             const name = nameOfObject(first) || '?';
             entry.names.set(name, (entry.names.get(name) || 0) + 1);
+            const from = this.returnAddress.toString();
+            entry.callers.set(from, (entry.callers.get(from) || 0) + 1);
           }
         },
       });
@@ -953,15 +957,55 @@ globalThis.events = function () {
         'Was the game paused? Please send this log.');
       return;
     }
-    processEvent.target = best.target;
-    processEvent.slot = best.slots[0];
-    processEvent.call = new NativeFunction(best.target, 'void', ['pointer', 'pointer', 'pointer', 'pointer'],
+    // On this build that slot is ProcessRemoteFunction (it only decides whether a call goes over the network and
+    // returns). ProcessEvent is the function that calls it: found from where those calls return to.
+    const slotOf = new Map();
+    for (const entry of slots.values()) {
+      entry.slots.forEach((slot) => slotOf.set(entry.target.toString(), slot));
+    }
+    const callers = [...best.callers.entries()].sort((a, b) => b[1] - a[1]).slice(0, 4);
+    let chosen = null;
+    for (const [from, count] of callers) {
+      const start = functionStart(ptr(from));
+      const slot = start === null ? undefined : slotOf.get(start.toString());
+      log(`  slot ${best.slots[0]} is called from ${rel(ptr(from))} (${count} times), in the function at ` +
+        `${start === null ? '?' : rel(start)}${slot === undefined ? '' : `, vtable slot ${slot}`}`);
+      if (start !== null && (chosen === null || (slot !== undefined && chosen.slot === undefined))) {
+        chosen = { start, slot };
+      }
+    }
+    if (chosen === null) {
+      log('events: could not tell which function calls it. Please send this log.');
+      return;
+    }
+    for (const line of disassemble(chosen.start, 40)) {
+      log(`    ${line}`);
+    }
+    processEvent.target = chosen.start;
+    processEvent.slot = chosen.slot === undefined ? null : chosen.slot;
+    processEvent.call = new NativeFunction(chosen.start, 'void', ['pointer', 'pointer', 'pointer', 'pointer'],
       'thiscall');
-    log(`events: script functions are called through vtable slot ${processEvent.slot} ` +
-      `(${rel(processEvent.target)}). hurt(10) can be tried now.`);
+    log(`events: script functions are called through ${rel(processEvent.target)}` +
+      `${chosen.slot === undefined ? '' : ` (vtable slot ${chosen.slot})`}. check() can be tried now.`);
   }, 1000);
   return `watching ${slots.size} virtual functions of the player for one second; the report follows`;
 };
+
+// The start of the function an address is in: functions here begin on a 16-byte boundary after int3 padding,
+function functionStart(address) {
+  let at = address.and(ptr('0xFFFFFFF0'));
+  for (let n = 0; n < 0x400; n++, at = at.sub(16)) {
+    if (!readable(at.sub(1), 2)) {
+      return null;
+    }
+    // ... and start by setting up a frame (push ebp; mov ebp, esp), as the functions around here do
+    if (at.sub(1).readU8() === 0xCC && at.readU8() === 0x55 && at.add(1).readU8() === 0x8B &&
+        at.add(2).readU8() === 0xEC) {
+      return at;
+    }
+  }
+  return null;
+}
 
 // Calls waiting for the game thread: the game's script must only ever run there.
 const onGameThread = [];
