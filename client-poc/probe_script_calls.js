@@ -40,11 +40,13 @@
  *                     hurt(10, 'RemoveHealth') takes health away directly
  *   die()             after events(): empties the player's health and calls OnKilled, the game's own end of a death
  *                     (what its damage code calls when health runs out). Should end in a Vita-Chamber
+ *   check()           after events(): calls SetInvincible(true), then SetInvincible(false), on the player and reads
+ *                     the flag after each, to see whether calls through events() run the game's script at all
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.3';
+const PROBE_VERSION = '2026-10-13.4';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -981,6 +983,41 @@ function runOnGameThread(job) {
   }
   onGameThread.push(job);
 }
+
+globalThis.check = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const found = findFunction(PLAYER_CLASS, 'SetInvincible');
+  if (found.error) {
+    return found.error;
+  }
+  const flag = learnAnyClass(PLAYER_CLASS).properties.get('bIsInvincible');
+  if (flag === undefined) {
+    return 'ShockPlayer has no bIsInvincible property here';
+  }
+  const parameter = [...found.parameters.values()][0];
+  const read = () => ((player.add(flag.offset).readU32() & flag.mask) !== 0);
+  log(`check: bIsInvincible at +${hex(flag.offset)} bit ${hex(flag.mask)}, now ${read()}; ` +
+    `SetInvincible's parameter at +${hex(parameter.offset)}`);
+  const block = Memory.alloc(0x40);
+  runOnGameThread(() => {
+    for (const value of [1, 0]) {
+      for (let at = 0; at < 0x40; at += 4) {
+        block.add(at).writeU32(0);
+      }
+      block.add(parameter.offset).writeU32(value);
+      processEvent.call(player, found.function, block, NULL);
+      log(`check: after SetInvincible(${value === 1}), bIsInvincible is ${read()}`);
+    }
+    block.isNull();
+  });
+  return 'queued for the game thread; the result follows';
+};
 
 globalThis.die = function () {
   if (processEvent.call === null) {
