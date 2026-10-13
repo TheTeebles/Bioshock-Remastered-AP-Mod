@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-12.2';
+const AGENT_VERSION = '2026-10-13.1';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -121,6 +121,9 @@ const BUILDS = {
     inGame: [0x1356620, 0x214, 0x6E8, 0x38],
     fontainePhase: [0x1356200, 0x0, 0x14, 0x1C, 0x1148],
     objects: STEAM_OBJECTS,
+    // The function the engine runs every script event through (its ProcessEvent), found with the probe on
+    // 2026-10-13. It takes one argument: a stack frame with the function at +4 and the parameters at +0x10.
+    processEvent: { rva: 0x736070, start: [0x81EC8B55, 0x000400EC] },
   },
   23552000: {
     name: 'Epic 1.0.127355',
@@ -269,6 +272,11 @@ function carefulPtr(address) {
     return null;
   }
   return ptrAt(address);
+}
+
+function carefulU32(address) {
+  const value = carefulPtr(address);
+  return value === null ? null : value.toUInt32();
 }
 
 function carefulS32(address) {
@@ -1525,9 +1533,13 @@ function readStations(map) {
 // DeathLink: noticing the player die, and killing them
 // ---------------------------------------------------------------------------------------------------------------
 
-// Pawn.Health, a float, on the Steam build (fields('ShockPlayer') in the probe, 2026-10-07). The game's damage code
-// sends the player into its Dying state once this reaches 0; a Vita-Chamber brings them back with it above 0.
+// Pawn.Health, a float, on the Steam build (fields('ShockPlayer') in the probe, 2026-10-07). A Vita-Chamber brings
+// the player back with it above 0. Emptying it is not a death by itself: the game's damage code only calls OnKilled,
+// which starts the Dying state, when a hit takes the health from above 0 to 0. So a kill empties the health and then
+// calls OnKilled itself, with no damage, damager or hit (seen working with the probe, 2026-10-13).
 const PAWN_HEALTH = 0x57C;
+const ON_KILLED_PARMS = 0x80; // OnKilled's parameters take 0x4C bytes; all of them None, 0 or false
+const FUNCTION_SCRIPT = 0x70; // a function's bytecode {data, count, max}
 const KILL_PATIENCE_MS = 30000; // a kill that cannot be carried out for this long is given up
 
 const life = { pawn: null, alive: false }; // the pawn last looked at, and whether it was alive then
@@ -1562,12 +1574,130 @@ function watchLife(pawn, map) {
   life.alive = alive;
 }
 
-function carryOutKills(pawn, now) {
+// Calling the game's script functions. The frame ProcessEvent takes is copied from one call the game makes itself,
+// watched once when the first kill comes in; only the function, its parameters and its object are put in.
+const scriptCalls = { call: null, rva: null, template: null, sampler: null, trouble: null, functions: new Map() };
+
+function scriptCallsTrouble() {
+  if (scriptCalls.trouble !== null || scriptCalls.call !== null) {
+    return scriptCalls.trouble;
+  }
+  const info = build.processEvent;
+  if (!info) {
+    scriptCalls.trouble = `calling the game's script is not supported on the ${build.name} build yet`;
+    return scriptCalls.trouble;
+  }
+  const start = base.add(info.rva);
+  if (carefulU32(start) !== info.start[0] || carefulU32(start.add(4)) !== info.start[1]) {
+    scriptCalls.trouble = `the game's code at module+${start.sub(base)} is not what this agent expects`;
+    return scriptCalls.trouble;
+  }
+  scriptCalls.call = new NativeFunction(start, 'void', ['pointer', 'pointer'], 'thiscall');
+  scriptCalls.rva = info.rva;
+  return null;
+}
+
+// Watches the game's own calls until one has been seen. Returns whether a frame to copy is known.
+function readyToCallScript() {
+  if (scriptCalls.template !== null) {
+    if (scriptCalls.sampler !== null) {
+      scriptCalls.sampler.detach();
+      scriptCalls.sampler = null;
+    }
+    return true;
+  }
+  if (scriptCalls.sampler === null) {
+    scriptCalls.sampler = Interceptor.attach(base.add(scriptCalls.rva), {
+      onEnter() {
+        if (scriptCalls.template !== null) {
+          return;
+        }
+        const frame = carefulPtr(this.context.esp.add(4));
+        const fn = frame === null ? null : carefulPtr(frame.add(4));
+        if (fn === null || fn.isNull() || nameOfObject(classOf(fn)) !== 'Function') {
+          return;
+        }
+        const words = [];
+        for (let at = 0; at < 0x30; at += 4) {
+          const word = carefulPtr(frame.add(at));
+          words.push(word === null ? ptr(0) : word);
+        }
+        scriptCalls.template = { words, self: this.context.ecx, fn };
+      },
+    });
+  }
+  return false;
+}
+
+function findFunction(object, wanted) {
+  const cls = classOf(object);
+  const key = `${cls}:${wanted}`;
+  if (scriptCalls.functions.has(key)) {
+    return scriptCalls.functions.get(key);
+  }
+  let found = null;
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000 && found === null; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'Function') {
+        found = field;
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+    if (found !== null) {
+      break;
+    }
+  }
+  scriptCalls.functions.set(key, found);
+  return found;
+}
+
+// Runs a script function on an object as the game's own events do. Game thread only.
+function callScript(object, fn, parms) {
+  const template = scriptCalls.template;
+  const frame = Memory.alloc(0x40);
+  const theirs = carefulPtr(template.fn.add(FUNCTION_SCRIPT));
+  const theirLength = carefulS32(template.fn.add(FUNCTION_SCRIPT + 4)) || 0;
+  const ours = carefulPtr(fn.add(FUNCTION_SCRIPT));
+  template.words.forEach((word, i) => {
+    let value = word.equals(template.self) ? object : word;
+    if (theirs !== null && ours !== null && !theirs.isNull() && word.compare(theirs) >= 0 &&
+        word.compare(theirs.add(theirLength + 1)) < 0) {
+      value = ours.add(word.sub(theirs)); // a word in the copied call's bytecode: the same place in this one's
+    }
+    frame.add(i * 4).writePointer(value);
+  });
+  frame.add(4).writePointer(fn);
+  frame.add(0x10).writePointer(parms);
+  scriptCalls.call(object, frame);
+  frame.isNull(); // keeps the frame alive until the call is done
+}
+
+function killPawn(pawn) {
+  pawn.add(PAWN_HEALTH).writeFloat(0);
+  const onKilled = findFunction(pawn, 'OnKilled');
+  if (onKilled === null) {
+    return 'the player has no OnKilled function here';
+  }
+  const parms = Memory.alloc(ON_KILLED_PARMS);
+  for (let at = 0; at < ON_KILLED_PARMS; at += 4) {
+    parms.add(at).writePointer(ptr(0));
+  }
+  callScript(pawn, onKilled, parms);
+  parms.isNull();
+  return null;
+}
+
+function dropLateKills(now) {
   while (kills.length > 0 && now - kills[0].at > KILL_PATIENCE_MS) {
     const late = kills.shift();
     send({ type: 'action_result', id: late.id, name: 'kill', ok: false,
       reason: 'the player could not be reached in time (a menu or a loading screen)' });
   }
+}
+
+function carryOutKills(pawn, now) {
+  dropLateKills(now);
   if (kills.length === 0 || pawn === null) {
     return;
   }
@@ -1575,12 +1705,24 @@ function carryOutKills(pawn, now) {
   if (health === null) {
     return;
   }
+  let trouble = null;
   if (health > 0) {
-    pawn.add(PAWN_HEALTH).writeFloat(0);
-    log('killed the player for DeathLink');
+    trouble = scriptCallsTrouble();
+    if (trouble === null && !readyToCallScript()) {
+      return; // watching for a call to copy; the kill follows in a later tick
+    }
+    if (trouble === null) {
+      try {
+        trouble = killPawn(pawn);
+      } catch (e) {
+        trouble = `the game refused the call (${e.message})`;
+      }
+    }
+    log(trouble === null ? 'killed the player for DeathLink' : `could not kill the player for DeathLink: ${trouble}`);
   }
   for (const done of kills.splice(0)) { // a player who is dead already counts as killed
-    send({ type: 'action_result', id: done.id, name: 'kill', ok: true });
+    send(trouble === null ? { type: 'action_result', id: done.id, name: 'kill', ok: true }
+      : { type: 'action_result', id: done.id, name: 'kill', ok: false, reason: trouble });
   }
 }
 
@@ -1626,6 +1768,7 @@ function onLevelTick(level) {
     if (probing) {
       probeTick(level, now);
     }
+    dropLateKills(now);
     runQueuedCommand(level, info, now);
   } catch (e) {
     if (!complained) {
