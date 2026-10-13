@@ -49,7 +49,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.7';
+const PROBE_VERSION = '2026-10-13.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -890,7 +890,7 @@ function findFunction(className, functionName) {
 
 const VTABLE_SLOTS = 48;
 const PAWN_HEALTH = 0x57C; // Pawn.Health
-const processEvent = { target: null, slot: null, call: null };
+const processEvent = { target: null, slot: null, call: null, template: null };
 
 globalThis.events = function () {
   if (objects.table === null) {
@@ -983,12 +983,52 @@ globalThis.events = function () {
     for (const line of disassemble(chosen.start, 60)) {
       log(`    ${line}`);
     }
-    processEvent.target = chosen.start;
-    processEvent.slot = chosen.slot === undefined ? null : chosen.slot;
-    processEvent.call = new NativeFunction(chosen.start, 'void', ['pointer', 'pointer', 'pointer', 'pointer'],
-      'thiscall');
-    log(`events: script functions are called through ${rel(processEvent.target)}` +
-      `${chosen.slot === undefined ? '' : ` (vtable slot ${chosen.slot})`}. check() can be tried now.`);
+    // It takes one argument: a block with the function at +4 and the parameters at +0x10 (a stack frame, as the
+    // script VM keeps them). Copy what the game itself passes in, from one real call.
+    let sampler = null;
+    sampler = Interceptor.attach(chosen.start, {
+      onEnter() {
+        if (processEvent.template !== null) {
+          return;
+        }
+        const info = pointerAt(this.context.esp.add(4));
+        if (info === null || !readable(info, 0x30)) {
+          return;
+        }
+        const fn = pointerAt(info.add(4));
+        if (fn === null || classNameOf(fn) !== 'Function') {
+          return;
+        }
+        const self = this.context.ecx;
+        const words = [];
+        for (let at = 0; at < 0x30; at += 4) {
+          const word = pointerAt(info.add(at));
+          words.push(word === null ? ptr(0) : word);
+        }
+        processEvent.template = { words, self, fn, name: nameOfObject(fn) };
+      },
+    });
+    setTimeout(() => {
+      sampler.detach();
+      const template = processEvent.template;
+      if (template === null) {
+        log('events: saw no call to copy. Was the game paused? Please send this log.');
+        return;
+      }
+      const shown = template.words.map((w, i) => {
+        const at = hex(i * 4);
+        if (w.equals(template.self)) {
+          return `+${at} the object`;
+        }
+        const kind = w.isNull() || !readable(w, 0x40) ? null : classNameOf(w);
+        return `+${at} ${w}${kind === null ? '' : ` (${kind})`}`;
+      });
+      log(`events: a real call (${template.name}) passes: ${shown.join(', ')}`);
+      processEvent.target = chosen.start;
+      processEvent.slot = chosen.slot === undefined ? null : chosen.slot;
+      processEvent.call = new NativeFunction(chosen.start, 'void', ['pointer', 'pointer'], 'thiscall');
+      log(`events: script functions are called through ${rel(processEvent.target)}. check() can be tried now.`);
+    }, 300);
   }, 1000);
   return `watching ${slots.size} virtual functions of the player for one second; the report follows`;
 };
@@ -1007,6 +1047,30 @@ function functionStart(address) {
     }
   }
   return null;
+}
+
+const FUNCTION_SCRIPT = 0x70; // a function's bytecode: data, count, capacity
+
+// Runs a script function on an object, the way the game's own events do: a frame like the one it passes, with this
+// function and these parameters. Game thread only.
+function callScript(object, fn, parms) {
+  const frame = Memory.alloc(0x40);
+  processEvent.template.words.forEach((word, i) => {
+    frame.add(i * 4).writePointer(word.equals(processEvent.template.self) ? object : word);
+  });
+  frame.add(4).writePointer(fn);
+  frame.add(0x10).writePointer(parms);
+  // A word pointing into the copied call's own bytecode points into this function's instead
+  const theirs = pointerAt(processEvent.template.fn.add(FUNCTION_SCRIPT));
+  const theirLength = u32(processEvent.template.fn.add(FUNCTION_SCRIPT + 4)) || 0;
+  const ours = pointerAt(fn.add(FUNCTION_SCRIPT));
+  processEvent.template.words.forEach((word, i) => {
+    if (theirs !== null && ours !== null && word.compare(theirs) >= 0 && word.compare(theirs.add(theirLength + 1)) < 0) {
+      frame.add(i * 4).writePointer(ours.add(word.sub(theirs)));
+    }
+  });
+  processEvent.call(object, frame);
+  frame.isNull(); // keeps it alive until the call is done
 }
 
 // Calls waiting for the game thread: the game's script must only ever run there.
@@ -1059,7 +1123,7 @@ globalThis.check = function () {
         block.add(at).writeU32(0);
       }
       block.add(parameter.offset).writeU32(value);
-      processEvent.call(player, found.function, block, NULL);
+      callScript(player, found.function, block);
       log(`check: after SetInvincible(${value === 1}), bIsInvincible is ${read()}`);
     }
     block.isNull();
@@ -1127,7 +1191,7 @@ globalThis.die = function () {
   runOnGameThread(() => {
     const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
     player.add(PAWN_HEALTH).writeFloat(0);
-    processEvent.call(player, found.function, block, NULL);
+    callScript(player, found.function, block);
     log(`die: health ${before} -> 0, OnKilled called`);
     block.isNull();
     setTimeout(() => {
@@ -1170,7 +1234,7 @@ globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type
   }
   runOnGameThread(() => {
     const before = player.add(PAWN_HEALTH).readFloat().toFixed(1);
-    processEvent.call(player, found.function, block, NULL);
+    callScript(player, found.function, block);
     const after = player.add(PAWN_HEALTH).readFloat().toFixed(1);
     log(`hurt: called ${functionName}(${type}, ${amount}); health ${before} -> ${after}`);
     block.isNull(); // keeps the parameter block alive until the call is done
