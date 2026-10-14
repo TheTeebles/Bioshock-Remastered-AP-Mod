@@ -75,7 +75,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.4';
+const PROBE_VERSION = '2026-10-14.5';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1270,6 +1270,7 @@ function classDefaults(className) {
     return { error: `${className} has no text properties` };
   }
   const candidates = [];
+  const instances = [];
   // default objects
   const total = u32(objects.table.add(4)) || objects.count;
   for (let index = 0; index < total; index++) {
@@ -1279,6 +1280,7 @@ function classDefaults(className) {
     }
     const name = nameOfObject(object) || '';
     log(`  object ${name} of class ${className} at ${object}`);
+    instances.push(object);
     if (/^Default/i.test(name)) {
       candidates.push({ where: `default object ${name}`, data: object });
     }
@@ -1308,7 +1310,7 @@ function classDefaults(className) {
   if (best === null) {
     return { error: `no default values with text found for ${className} (${candidates.length} places tried)` };
   }
-  return best;
+  return { ...best, instances };
 }
 
 globalThis.defaults = function (className) {
@@ -1340,14 +1342,19 @@ globalThis.rename = function (className, propertyName, text) {
   if (entry === undefined) {
     return `${className} has no text property ${propertyName}`;
   }
-  const at = found.data.add(entry[1].offset);
-  // A new buffer the game did not allocate; kept alive here, and never handed to the game to free.
+  // A new buffer the game did not allocate; kept alive here, and never handed to the game to free. Written into the
+  // class's default values and into every object of the class (Items are objects, and the game may show one of them).
   const buffer = Memory.allocUtf16String(text);
   keptStrings.push(buffer);
-  at.writePointer(buffer);
-  at.add(4).writeU32(text.length + 1);
-  at.add(8).writeU32(text.length + 1);
-  log(`${className}.${propertyName}: ${JSON.stringify(entry[2])} -> ${JSON.stringify(stringAt(at))}`);
+  const places = [['defaults', found.data], ...found.instances.map((o) => [`object at ${o}`, o])];
+  for (const [label, base] of places) {
+    const at = base.add(entry[1].offset);
+    const before = readable(at, 12) ? stringAt(at) : '?';
+    at.writePointer(buffer);
+    at.add(4).writeU32(text.length + 1);
+    at.add(8).writeU32(text.length + 1);
+    log(`${className}.${propertyName} in ${label}: ${JSON.stringify(before)} -> ${JSON.stringify(stringAt(at))}`);
+  }
   return 'open the Garden (or look at a chips pickup) to see it';
 };
 
