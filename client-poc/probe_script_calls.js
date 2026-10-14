@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.7';
+const PROBE_VERSION = '2026-10-14.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1399,7 +1399,8 @@ globalThis.placeholders = function () {
 
 // A copy of an item class made in memory: the class object's bytes copied, with its own copy of the default values
 // so its texts can differ. The copy is not in the object table; it keeps the original's name and index.
-const CLASS_COPY_SIZE = 0x1000;
+const CLASS_COPY_SIZE = 0x1000; // at most; the class object is at least 0xb58 bytes (arrays at +0x54c and +0xb4c)
+const CLASS_MIN_SIZE = 0xb58;
 const clones = [];
 
 function cloneClass(className, friendlyName, description) {
@@ -1408,11 +1409,16 @@ function cloneClass(className, friendlyName, description) {
   if (found.error || cls === null || found.at === undefined) {
     return { error: found.error || `${className}'s default values are not in the class` };
   }
-  if (!readable(cls, CLASS_COPY_SIZE)) {
-    return { error: `cannot read ${hex(CLASS_COPY_SIZE)} bytes of class ${className}` };
+  // As much of the class as can be read, up to CLASS_COPY_SIZE: the memory after it may belong to nobody.
+  let size = CLASS_COPY_SIZE;
+  while (size >= CLASS_MIN_SIZE && !readable(cls, size)) {
+    size -= 0x10;
+  }
+  if (size < Math.max(CLASS_MIN_SIZE, found.at + 12)) {
+    return { error: `cannot read ${hex(CLASS_MIN_SIZE)} bytes of class ${className}` };
   }
   const copy = Memory.alloc(CLASS_COPY_SIZE);
-  Memory.copy(copy, cls, CLASS_COPY_SIZE);
+  Memory.copy(copy, cls, size);
   const count = u32(cls.add(found.at + 4));
   const defaults = Memory.alloc(count);
   Memory.copy(defaults, found.data, count);
