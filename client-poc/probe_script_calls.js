@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.11';
+const PROBE_VERSION = '2026-10-14.12';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1588,6 +1588,91 @@ globalThis.named = function (pattern, limit = 300) {
     n++;
   }
   return `${n} objects`;
+};
+
+// ---- the Garden's icons: FlashMovie objects named after the item class ----
+
+function objectNamedOfClass(name, className) {
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && nameOfObject(object) === name && classNameOf(object) === className) {
+      return object;
+    }
+  }
+  return null;
+}
+
+function bytesText(at, length) {
+  if (!readable(at, length)) {
+    return '?';
+  }
+  const bytes = new Uint8Array(at.readByteArray(length));
+  const hexText = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const ascii = [...bytes].map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
+  return `${hexText}  ${ascii}`;
+}
+
+// Every FlashMovie loaded, by name.
+globalThis.movies = function (pattern = '.', limit = 300) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern, 'i');
+  const total = u32(objects.table.add(4)) || objects.count;
+  const names = [];
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && classNameOf(object) === 'FlashMovie') {
+      const name = nameOfObject(object) || '?';
+      if (regex.test(name)) {
+        names.push(`${name} (${object}, in ${pointerAt(object.add(0x1c)) === null ? '?' :
+          nameOfObject(pointerAt(object.add(0x1c)))})`);
+      }
+    }
+  }
+  names.slice(0, limit).forEach((n) => log(`  ${n}`));
+  return `${names.length} FlashMovies`;
+};
+
+// One FlashMovie: its class's properties and values, then every word of the object that could be an array
+// (data, count, capacity), with the first bytes of its data, to find the movie file (SWF/GFX) it holds.
+globalThis.movie = function (name = 'AirBlast') {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const object = objectNamedOfClass(name, 'FlashMovie');
+  if (object === null) {
+    return `no FlashMovie named ${name} is loaded; open the Garden first`;
+  }
+  const learned = learnAnyClass('FlashMovie');
+  log(`FlashMovie ${name} at ${object}: ${learned.error || learned.lineage.join(' < ')}`);
+  if (!learned.error) {
+    [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset).forEach(([field, p]) => {
+      log(`  +${hex(p.offset)} ${field} (${p.kind}, ${p.owner}) = ${valueText(object.add(p.offset), p)}`);
+    });
+  }
+  log(`  words: ${hexWords(object, 0, 0x100)}`);
+  for (let at = 0x30; at < 0x200; at += 4) {
+    const data = pointerAt(object.add(at));
+    const count = u32(object.add(at + 4));
+    const capacity = u32(object.add(at + 8));
+    if (data === null || data.isNull() || count === null || capacity === null || count < 4 ||
+        count > 0x4000000 || capacity < count || !readable(data, 16)) {
+      continue;
+    }
+    log(`  array? at +${hex(at)}: ${count} items, data ${data}: ${bytesText(data, 32)}`);
+  }
+  for (let at = 0x30; at < 0x200; at += 4) {
+    const target = pointerAt(object.add(at));
+    if (target !== null && !target.isNull() && readable(target, 16)) {
+      const first = bytesText(target, 4);
+      if (/ (FWS|CWS|GFX|CFX|ZWS)/.test(` ${first.split('  ')[1] || ''}`)) {
+        log(`  +${hex(at)} points at a movie file: ${bytesText(target, 32)}`);
+      }
+    }
+  }
+  return 'done';
 };
 
 globalThis.upgrades = function () {
