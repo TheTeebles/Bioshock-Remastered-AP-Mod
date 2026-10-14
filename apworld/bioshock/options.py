@@ -78,7 +78,7 @@ class ShopChecks(Toggle):
     These checks never hold an item anyone needs to progress, because how much ADAM you have to spend depends on
     how you play. Circus of Values and El Ammo Bandito machines are never checks.
     Each line that is a check shows the name of the multiworld item it holds. Your own plasmids and tonics keep their
-    usual price; other items cost 80 ADAM (progression), 40 (useful) or 20 (anything else).
+    usual price; other items cost 80 ADAM (useful) or 20 (anything else).
     So far only the Neptune's Bounty Garden is mapped (16 checks); the other levels follow.
     """
     display_name = "Shop Checks"

@@ -1278,10 +1278,10 @@ class TestGatherersGarden(unittest.TestCase):
         h = self.shop()
         line = {n: game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, n] for n in (1, 2, 3, 5)}
         h.placed = {
-            line[1]: ScoutedItem("Sonic Boom", "Teebs", 2, True),  # a gene of ours: its vanilla price
+            line[1]: ScoutedItem("Progressive Sonic Boom", "Teebs", 2, True),  # a gene of ours: its vanilla price
             line[2]: ScoutedItem("Potion", "Link", 2, False),
             line[3]: ScoutedItem("Rupee", "Link", 0, False),
-            line[5]: ScoutedItem("Sonic Boom 2", "Teebs", 2, True),  # a gene whose price is not known yet
+            line[5]: ScoutedItem("Speedy Hacker", "Teebs", 2, True),  # a gene whose price is not known yet
         }
         h.connect().attach()
         h.game.travel(NEPTUNES_BOUNTY)
@@ -1290,6 +1290,9 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual([offer[n]["price"] for n in (1, 2, 3, 5)], [40, game_data.USEFUL_PRICE,
                                                                      game_data.FILLER_PRICE, game_data.USEFUL_PRICE])
         self.assertIn("Yours", offer[1]["description"])
+
+    def test_every_gene_price_is_for_an_item(self) -> None:
+        self.assertLessEqual(set(game_data.GENE_PRICES), {entry.name for entry in ITEM_TABLE})
 
     def test_checks_already_on_the_server_are_marked_bought(self) -> None:
         h = self.shop()

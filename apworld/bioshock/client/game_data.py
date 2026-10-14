@@ -759,12 +759,12 @@ def in_fontaine_arena(map_name: str | None, level_value: int | None) -> bool | N
 # a BioShock gene for this slot costs what it costs in the base game, anything else goes by how important it is.
 # Vanilla prices seen in the Neptune's Bounty Garden (probe, 2026-10-14). Genes not listed yet go by importance.
 GENE_PRICES: dict[str, int] = {
-    "Plasmid Slot": 100, "Health Upgrade": 80, "EVE Upgrade": 80, "Enrage!": 60, "Sonic Boom": 40,
-    "Target Dummy": 60, "Winter Blast": 60, "Armored Shell": 20, "EVE Link": 20, "Extra Nutrition": 20,
+    "Plasmid Slot": 100, "Health Upgrade": 80, "EVE Upgrade": 80, "Enrage!": 60,
+    "Progressive Sonic Boom": 40, "Target Dummy": 60, "Progressive Winter Blast": 60, "Armored Shell": 20, "EVE Link": 20, "Extra Nutrition": 20,
     "Machine Buster": 20,
 }
 PROGRESSION_PRICE = 80  # Teebs, 2026-10-14: 80 for a key item, 20 for filler
-USEFUL_PRICE = 40  # not set by Teebs: halfway
+USEFUL_PRICE = 80  # Teebs, 2026-10-14: shop checks never hold progression, so useful items take the key-item price
 FILLER_PRICE = 20
 _GENE_KINDS = (ItemKind.PLASMID, ItemKind.TONIC, ItemKind.CHARACTER_UPGRADE)
 
