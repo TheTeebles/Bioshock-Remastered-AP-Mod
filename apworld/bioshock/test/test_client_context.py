@@ -681,13 +681,18 @@ class TestContext(ContextTestBase):
         names = ("Health Upgrade", "EVE Upgrade", "10 ADAM", "25 ADAM", "$25", "$50", "Auto-Hack Tool", "First Aid Kit")
         await self.receive(*names)
         await self.run_loop(1)  # the first item is with the simulated game
+        # The simulated game stops there, so that items are still coming however long the real one takes to attach.
+        game.paused = True
         commands = self.ctx.command_processor(self.ctx)
         with self.assertLogs("Client", level="INFO"):
             self.assertTrue(commands("/attach"))
-            await self.until(lambda: self.ctx.core.delivered == len(names) and not self.ctx.core.busy,
-                             "every item to be given")
-        self.assertIsInstance(self.ctx.agent, FridaAgent)
-        given = game.commands + [call["command"] for call in fake.calls("exec")]
+            await self.until(lambda: isinstance(self.ctx.agent, FridaAgent) and
+                             self.ctx.core.delivered == len(names) and not self.ctx.core.busy,
+                             "the real game to take over and every item to be given")
+        never_ran = [text for _, text, is_action in game._waiting if not is_action]  # sent while it was paused
+        ran = game.commands[:len(game.commands) - len(never_ran)]
+        self.assertTrue(ran, "the simulated game gave something first")
+        given = ran + [call["command"] for call in fake.calls("exec")]
         self.assertEqual(sorted(given), sorted(set(given)), "nothing twice")
         self.assertEqual(len(given), len(names))
         self.assertTrue(fake.calls("exec"), "the real game took over while items were still coming")
