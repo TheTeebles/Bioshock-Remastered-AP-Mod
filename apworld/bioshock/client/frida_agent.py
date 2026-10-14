@@ -25,10 +25,10 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, stations_of
+from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, quests_of, stations_of
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
-    LittleSisterResolved, PlayerDied,
+    LittleSisterResolved, PlayerDied, TravelRedirected,
 )
 
 PROCESS_NAME = "BioshockHD.exe"
@@ -128,6 +128,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         weapons=weapons_of(raw.get("weaponsHeld")),
         weapons_pending=raw.get("weaponsPending") is True,
         garden_bought=gardens_of(raw.get("gardenBought")),
+        quests=quests_of(raw.get("completedQuests")),
     )
 
 
@@ -168,6 +169,8 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
         return PlayerDied()
     if kind == "little_sister":
         return LittleSisterResolved(normalize_map(payload.get("map")))
+    if kind == "travel_redirected":
+        return TravelRedirected(normalize_map(payload.get("to")))
     if kind == "exec_disabled":
         return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
     return None

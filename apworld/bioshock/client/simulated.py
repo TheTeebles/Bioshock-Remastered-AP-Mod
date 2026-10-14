@@ -16,7 +16,8 @@ from ..data import (
     AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
     STORY_MILESTONES, WELCOME_TO_RAPTURE,
 )
-from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied
+from .game_data import MAP_LEVEL
+from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied, TravelRedirected
 
 _GIVE_ITEM = re.compile(r"^GiveItem (\d+) ([A-Za-z_][\w.]*)$")
 _GIVE_WEAPON = re.compile(r"^GiveWeapon ([A-Za-z_][\w.]*)$")
@@ -59,6 +60,8 @@ class SimulatedGame:
         self.garden_lines: dict[str, list[dict[str, Any]]] = {}  # level -> what its Gardens sell, as the client said
         self.movies: dict[str, Any] | None = None  # the folder and files the client said to hand the game instead
         self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
+        self.quests: set[str] = set()  # the game's quests completed, by name
+        self.travel_rules: dict[str, Any] | None = None  # Open Rapture: where the bathysphere goes, as the client said
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -97,6 +100,7 @@ class SimulatedGame:
             weapons=frozenset(self.held_weapons) if self.reports_weapons else None,
             weapons_pending=self.weapons_pending,
             garden_bought={level: frozenset(lines) for level, lines in self.garden_bought.items()},
+            quests=frozenset(self.quests),
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -116,6 +120,10 @@ class SimulatedGame:
         if action.startswith("garden_lines "):  # also a setting: what the Gardens of a level sell
             offer = json.loads(action.partition(" ")[2])
             self.garden_lines[offer["level"]] = offer["lines"]
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("travel_rules "):  # a setting too: where the bathysphere and level changes may go
+            self.travel_rules = json.loads(action.partition(" ")[2])
             self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is
@@ -171,6 +179,29 @@ class SimulatedGame:
         if level not in LEVEL_NAMES:
             raise ValueError(f"Unknown level: {level}")
         self.level = level
+
+    def bathysphere_stops(self) -> list[str]:
+        """The levels the bathysphere offers: all of them, unless the client has said otherwise."""
+        if self.travel_rules is None:
+            return list(LEVEL_NAMES)
+        return [MAP_LEVEL[stop["map"]] for stop in self.travel_rules["stops"]]
+
+    def ride(self, level: str) -> None:
+        """Take the bathysphere to a level, as its menu allows."""
+        if level not in self.bathysphere_stops():
+            raise ValueError(f"The bathysphere does not go to {level}.")
+        self.travel(level)
+
+    def cross(self, level: str) -> str:
+        """Take the story's own way into a level, which the client may have sent elsewhere. Returns where it led."""
+        wanted = next(map_name for map_name, name in MAP_LEVEL.items() if name == level)
+        for redirect in (self.travel_rules or {}).get("redirects", ()):
+            if redirect["to"] == wanted and MAP_LEVEL.get(redirect["from"]) == self.level:
+                self.travel(MAP_LEVEL[redirect["map"]])
+                self._events.append(TravelRedirected(wanted))
+                return self.level
+        self.travel(level)
+        return level
 
     def collect_diary(self, number: int) -> str:
         if not 1 <= number <= len(AUDIO_DIARIES):

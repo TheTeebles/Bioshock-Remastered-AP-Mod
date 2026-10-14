@@ -404,6 +404,13 @@ QUEST_MILESTONES: dict[str, str] = {
 assert set(QUEST_MILESTONES.values()) <= set(MILESTONE_LOCATION), "every quest leads to a real milestone"
 
 
+def quests_of(completed_quests: object) -> frozenset[str] | None:
+    """The names of the quests the agent saw completed. None while it cannot tell."""
+    if not isinstance(completed_quests, (list, tuple)):
+        return None
+    return frozenset(name for name in completed_quests if isinstance(name, str))
+
+
 def milestones_of(completed_quests: object) -> frozenset[str] | None:
     """The story milestones reached, from the names of the quests the agent saw completed. None while it cannot
     tell (it has not looked the quests up yet, or it has no way to)."""

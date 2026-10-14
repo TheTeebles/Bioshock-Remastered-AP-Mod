@@ -11,7 +11,8 @@ Rules it implements:
     or when the player asks. So is the item the game was busy with when it closed: it may be what closed it.
   * A location is sent only when the level it belongs to is unlocked ("soft" level access). Anything collected
     earlier is kept and sent the moment the access item arrives. The goal works the same way.
-  * Level completion comes from how far into the story the player has been.
+  * Level completion comes from how far into the story the player has been. With Open Rapture it comes from the
+    levels visited and the quests that close a chapter, and the agent is told where the bathysphere may go.
   * All of that survives restarts through Archipelago data storage.
 """
 from __future__ import annotations
@@ -23,16 +24,17 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..data import GOAL_LEVEL, ItemKind
-from . import flash_movies, game_data
+from . import flash_movies, game_data, travel
 from .game_data import Delivery
 from .protocol import (
     Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer,
     LittleSisterResolved, Notice, PlayerDied, RunAction, RunCommand, SaveState, ScoutedItem, ScoutLocations,
-    SendChecks, SendDeath, SendGoal,
+    SendChecks, SendDeath, SendGoal, TravelRedirected,
 )
 
 SAVE_VERSION = 1
 SUPPORTED_SLOT_DATA_VERSION = 4  # keep in step with SLOT_DATA_VERSION in world.py
+OPEN_RAPTURE = 2  # level_access in the slot data: LevelAccess.option_open_rapture
 
 COMMAND_TIMEOUT = 5.0  # seconds without an answer before the player is told the game has not confirmed yet
 RETRY_DELAY = 1.0  # pause before retrying a command the game refused
@@ -72,6 +74,7 @@ class BridgeCore:
         self.world_items_shuffled = False
         self.station_touch = False  # stations open no menu: the agent is asked to skip it
         self.shop_checks = False  # Gatherer's Garden lines are checks: they sell stand-ins for multiworld items
+        self.open_rapture = False  # access items open travel itself: the agent is told where the bathysphere goes
         self.scouted: dict[int, ScoutedItem] = {}  # location -> what sits there, for the Garden lines
         self._scouts_asked = False  # asked the server this connection
         self.death_link = False
@@ -86,6 +89,7 @@ class BridgeCore:
         self.delivered = 0  # how many of `items` have been dealt with: given, or set aside in `skipped`
         self.skipped: dict[int, str] = {}  # index in `items` -> UNKNOWN or REFUSED, for items that were not given
         self.furthest = 0  # furthest story index the player has reached
+        self.visited: set[str] = set()  # levels the player has been in
         self.goal_reached = False
         self.collected: set[int] = set()  # every location the game has reported, sent or not
         self._dirty = False
@@ -112,6 +116,9 @@ class BridgeCore:
         self._touch_command_id: int | None = None  # the agent has been asked to skip station menus, under this id
         self._garden_command_id: int | None = None  # the last Garden lines sent to the agent went under this id
         self._garden_sent: str | None = None  # ... and were these, so the same lines are not sent again
+        self._travel_command_id: int | None = None  # the last travel rules sent to the agent went under this id
+        self._travel_sent: str | None = None  # ... and were these
+        self._travel_trouble_shown = False
         # Makes the Garden's menu with the AP icon and returns the folder it is in (None: not for this agent, such as
         # the simulated game). Raises an exception whose message says why it cannot.
         self.prepare_movies: Callable[[], str | None] = lambda: None
@@ -178,6 +185,8 @@ class BridgeCore:
         self.world_items_shuffled = bool(slot_data.get("world_item_checks", 0))
         self.station_touch = bool(slot_data.get("station_touch", False))
         self.shop_checks = bool(slot_data.get("shop_checks", 0))
+        self.open_rapture = slot_data.get("level_access") == OPEN_RAPTURE
+        self._travel_sent = None
         self._scouts_asked = False
         self._garden_sent = None
 
@@ -248,6 +257,8 @@ class BridgeCore:
         self._touch_command_id = None  # a new agent is asked again
         self._garden_command_id = None
         self._garden_sent = None
+        self._travel_command_id = None
+        self._travel_sent = None
         self._movies_asked = False
         self._movies_command_id = None
         # ... and what was about to be sent to the agent that has gone must not reach the next one as well.
@@ -265,7 +276,8 @@ class BridgeCore:
         self._track_goal(state)
 
         found = self._locations_in(state)
-        found.update(game_data.LEVEL_COMPLETION_LOCATION[level] for level in game_data.completed_levels(self.furthest))
+        found.update(game_data.LEVEL_COMPLETION_LOCATION[level] for level in self._completed_levels(state)
+                     if level in game_data.LEVEL_COMPLETION_LOCATION)
         new = found - self.collected
         if new:
             self.collected |= new
@@ -286,6 +298,15 @@ class BridgeCore:
             if not event.ok:
                 self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}.",
                              warning=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._travel_command_id:
+            if not event.ok and not self._travel_trouble_shown:
+                self._travel_trouble_shown = True
+                self._notice(f"The bathysphere and the level changes are not locked to your access items: "
+                             f"{event.reason}.", warning=True)
+        elif isinstance(event, TravelRedirected):
+            text = travel.blocked_notice(event.to or "", self._received_names)
+            if text is not None:
+                self._notice(text, warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._movies_command_id:
             if event.ok:
                 self._notice("Gatherer's Garden lines that sell other players' items show the Archipelago icon from "
@@ -311,6 +332,7 @@ class BridgeCore:
         self._ask_for_touch()
         self._scout_gardens()
         self._send_garden_lines()
+        self._send_travel_rules()
         self._redirect_movies()
         self._pump_delivery(now)
         self._pump_deathlink(now)
@@ -382,6 +404,7 @@ class BridgeCore:
             "delivered": self.delivered,
             "skipped": [[index, reason] for index, reason in sorted(self.skipped.items())],
             "furthest": self.furthest,
+            "visited": sorted(self.visited),
             "goal": self.goal_reached,
             "collected": sorted(self.collected),
         }
@@ -392,6 +415,7 @@ class BridgeCore:
         self.delivered = 0
         self.skipped = {}
         self.furthest = 0
+        self.visited = set()
         self.goal_reached = False
         self.collected = set()
         self.scouted = {}
@@ -415,6 +439,7 @@ class BridgeCore:
             self.delivered = saved_delivered
             self.skipped = self._read_skipped(saved.get("skipped"), saved_delivered)
         self.furthest = max(self.furthest, int(saved.get("furthest", 0)))
+        self.visited |= {level for level in saved.get("visited", ()) if level in game_data.STORY_INDEX}
         self.goal_reached = self.goal_reached or bool(saved.get("goal", False))
         self.collected |= {int(location) for location in saved.get("collected", ())}
         if self.snapshot() != dict(saved):
@@ -461,6 +486,14 @@ class BridgeCore:
         if index > self.furthest:
             self.furthest = index
             self._dirty = True
+        if level not in self.visited:
+            self.visited.add(level)
+            self._dirty = True
+
+    def _completed_levels(self, state: GameState) -> list[str]:
+        if self.open_rapture:  # levels come in any order: what counts is where the player has been, and the story
+            return travel.completed_levels(self.visited, state.quests or ())
+        return game_data.completed_levels(self.furthest)
 
     def _track_goal(self, state: GameState) -> None:
         in_arena = game_data.in_fontaine_arena(state.map, state.level_value)
@@ -726,6 +759,19 @@ class BridgeCore:
         self._garden_command_id = self._next_command_id
         self._next_command_id += 1
         self._out.append(RunAction(self._garden_command_id, action))
+
+    def _send_travel_rules(self) -> None:
+        """With Open Rapture, tell the agent where the bathysphere may go, whenever that changes."""
+        if not (self.open_rapture and self.connected and self.agent_attached):
+            return
+        rules = travel.travel_rules(self._received_names, self.visited)
+        action = "travel_rules " + json.dumps(rules, separators=(",", ":"))
+        if action == self._travel_sent:
+            return
+        self._travel_sent = action
+        self._travel_command_id = self._next_command_id
+        self._next_command_id += 1
+        self._out.append(RunAction(self._travel_command_id, action))
 
     def _redirect_movies(self) -> None:
         """With shop checks, give each agent once the Garden's menu that can show the AP icon."""

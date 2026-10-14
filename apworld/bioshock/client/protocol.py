@@ -34,6 +34,7 @@ class GameState:
     weapons: frozenset[str] | None = None  # classes of the weapons the player holds ("Shotgun"), if the agent can tell
     weapons_pending: bool = False  # the agent can tell which weapons are held but has not looked yet
     garden_bought: Mapping[str, frozenset[int]] | None = None  # level -> Gatherer's Garden lines bought (from 1)
+    quests: frozenset[str] | None = None  # names of the game's quests completed in this save
 
 
 @dataclass(frozen=True)
@@ -71,7 +72,14 @@ class LittleSisterResolved:
     map: str | None
 
 
-AgentEvent = CommandStarted | CommandResult | ActionResult | PlayerDied | AgentMessage | LittleSisterResolved
+@dataclass(frozen=True)
+class TravelRedirected:
+    """The agent sent a level change into a locked chapter somewhere else. `to` is the map it was going to."""
+    to: str | None
+
+
+AgentEvent = (CommandStarted | CommandResult | ActionResult | PlayerDied | AgentMessage | LittleSisterResolved
+              | TravelRedirected)
 
 
 class AgentError(Exception):
