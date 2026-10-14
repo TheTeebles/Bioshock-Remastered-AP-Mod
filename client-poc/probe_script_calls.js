@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.14';
+const PROBE_VERSION = '2026-10-14.15';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -2111,6 +2111,56 @@ globalThis.skipCall = function (functionName) {
     scriptTrace.replaced = true;
   }
   return scriptTrace.skip === null ? 'nothing skipped' : `the game now skips ${scriptTrace.skip}`;
+};
+
+// ---- Choice: which C++ code asks for the weapon when a station upgrade is confirmed ----
+
+// Logs the native call chain each time the game runs the named script function (by default the one the station's
+// confirm asks first). The first frames inside the game's module that are not the script interpreter are the
+// station menu's own C++ confirm: once known, it can be replaced the way Touch replaces the menu opener, so that
+// confirming sends a check instead of applying the vanilla upgrade.
+const callers = { hook: null, wanted: null, seen: 0 };
+
+globalThis.whoCalls = function (functionName = 'GetHoldableByClassName', limit = 3) {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  if (callers.hook !== null) {
+    callers.hook.detach();
+  }
+  callers.wanted = functionName;
+  callers.seen = 0;
+  callers.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      const fn = pointerAt(args[0].add(4));
+      if (fn === null || callers.seen >= limit || nameOfObject(fn) !== callers.wanted) {
+        return;
+      }
+      callers.seen += 1;
+      let frames;
+      try {
+        frames = Thread.backtrace(this.context, Backtracer.ACCURATE);
+      } catch (e) {
+        frames = Thread.backtrace(this.context, Backtracer.FUZZY);
+      }
+      log(`${callers.wanted} on ${nameOfObject(this.context.ecx)} (${classNameOf(this.context.ecx)}), called from:`);
+      frames.slice(0, 16).forEach((frame, k) => log(`  #${k} ${rel(frame)}`));
+      if (callers.seen >= limit) {
+        log(`whoCalls: logged ${limit}; whoCallsStop() or whoCalls() again for more`);
+      }
+    },
+  });
+  return `watching ${functionName}: open a station, pick an upgrade, confirm, then send the log`;
+};
+
+globalThis.whoCallsStop = function () {
+  if (callers.hook === null) {
+    return 'not watching';
+  }
+  callers.hook.detach();
+  callers.hook = null;
+  return 'stopped';
 };
 
 // ---- Touch: a station that sends its check and closes, with no menu ----
