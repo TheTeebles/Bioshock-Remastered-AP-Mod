@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.8';
+const AGENT_VERSION = '2026-10-14.9';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1477,6 +1477,11 @@ function watchObjects(map, now) {
     scan.stations = [];
     stations.list = [];
     scan.weapons = [];
+    weapons.list = []; // the last level's weapons are gone, and which ones the player holds is not known yet
+    weapons.owned = null;
+    weapons.scanned = false;
+    weapons.looked = false;
+    weapons.reported = '';
     scan.gardens = [];
     gardens.list = [];
     scan.classes = new Map();
@@ -1646,8 +1651,11 @@ function readWeapons(pawn) {
       owned.add(nameOfObject(cls));
     }
   }
+  if (!known && weapons.scanned && weapons.list.length === 0) {
+    known = true; // a whole pass found no weapon at all, so the player holds none (a new game, before the wrench)
+  }
   if (!known) {
-    return; // no weapon seen yet, or none with a Holder: the client gives upgrades as before
+    return; // weapons seen, but none with a Holder: the client gives upgrades as before
   }
   weapons.owned = [...owned].sort();
   const text = weapons.owned.join(', ');
@@ -2483,6 +2491,9 @@ function statOf(pawn, trap) {
   const key = `${cls}/${trap.stat}`;
   if (!statProperties.has(key)) {
     const offset = findPropertyOfKind(cls, trap.stat, trap.kind);
+    if (offset === null && !readable(cls)) {
+      return null; // the class could not be read just now (a load); looked up again next time
+    }
     statProperties.set(key, offset);
     log(offset === null ? `the player has no ${trap.kind} ${trap.stat}`
       : `the player's ${trap.stat} is at +0x${offset.toString(16)}`);

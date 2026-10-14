@@ -1481,11 +1481,26 @@ const tests = {
     r.load();
     assert.strictEqual(r.context.rpc.exports.state().weaponsPending, true, 'not looked yet');
     r.frames(2);
-    assert.strictEqual(r.context.rpc.exports.state().weaponsHeld, null, 'no weapon seen yet');
-    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked, and cannot tell yet');
+    assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], [], 'no weapon anywhere: none held');
+    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked');
     model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
     r.frames(3);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
+  },
+  'after a level change the weapons are looked at again before upgrades go in': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.weapon('Shotgun', game.pawn);
+    r.load(); r.frames(3);
+    assert.deepStrictEqual([...state(r).weaponsHeld], ['Shotgun']);
+    const next = r.level('2-fisheries', { extra: 4 }); r.levels.splice(r.levels.indexOf(game.level), 1);
+    r.player(next, { viewport: game.player });
+    r.poke(BASE + 0x1390430, 12000); // a table big enough that a pass over it takes a few ticks
+    r.frame();
+    assert.strictEqual(state(r).weaponsHeld, null, 'the last level\'s weapons no longer count');
+    assert.strictEqual(state(r).weaponsPending, true);
+    r.frames(4);
+    assert.deepStrictEqual([...state(r).weaponsHeld], [], 'the shotgun was the last body\'s');
+    assert.strictEqual(state(r).weaponsPending, false);
   },
   // ---- Gatherer's Gardens ----
   'garden_lines makes each line a copy of chips with its own name, priced from the item': () => {

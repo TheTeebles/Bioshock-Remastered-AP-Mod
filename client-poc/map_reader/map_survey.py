@@ -121,16 +121,19 @@ class Survey(Package):
         return {"message": self.name_of(found.get("scriptMessageClass")),
                 "by": self.name_of(found.get("TriggeredBy")) if isinstance(found.get("TriggeredBy"), Ref) else None}
 
+    def valid(self, ref):
+        return isinstance(ref, int) and -len(self.imports) <= ref <= len(self.exports)
+
     def name_of(self, ref):
-        return self.object_name(int(ref)) if ref is not None else None
+        return self.object_name(int(ref)) if self.valid(ref) else None
 
     def loot(self, i):
         """(item class, smallest stack, largest stack) for each loot specification under export i's LootSlot(s)."""
         rows = []
-        slots = [r for r in (self.props(i).get("LootSlot"),) if isinstance(r, Ref) and r > 0]
+        slots = [r for r in (self.props(i).get("LootSlot"),) if isinstance(r, Ref) and r > 0 and self.valid(r)]
         slots += [c for c in self.children.get(i, []) if self.class_of(self.exports[c - 1]) == "LootSlot"]
         for slot in dict.fromkeys(slots):
-            specs = [r for r in (self.props(slot).get("LootSpec"),) if isinstance(r, Ref) and r > 0]
+            specs = [r for r in (self.props(slot).get("LootSpec"),) if isinstance(r, Ref) and r > 0 and self.valid(r)]
             specs += [c for c in self.children.get(slot, []) + self.children.get(i, [])
                       if self.class_of(self.exports[c - 1]) == "LootItemSpecification"]
             for spec in dict.fromkeys(specs):

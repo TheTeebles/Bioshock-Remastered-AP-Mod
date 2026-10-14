@@ -312,6 +312,16 @@ class TestOptionChecks(PoolTestBase):
                           exclude_locations=["Arcadia - Power to the People 1"])
         self.assertIn("leave room for 11", str(raised.exception))
 
+    def test_access_items_from_the_pool_still_take_room(self) -> None:
+        # The pool is made with every access item in it, and those started with are swapped for filler afterwards,
+        # so they leave no more room for the upgrades.
+        options = dict(story_checks=False, little_sister_checks=False, audio_diary_checks="off",
+                       start_inventory_from_pool={name: 1 for name in ACCESS_ITEMS},
+                       exclude_locations=[f"{level} - Level Complete" for level in self.later_levels])
+        with self.assertRaises(OptionError) as raised:
+            self.generate(**options)
+        self.assertIn("leave room for", str(raised.exception))
+
     def test_filler_only_collectibles_alone_work_without_access_items(self) -> None:
         self.generate(level_access="vanilla", story_checks=False, little_sister_checks=False,
                       power_to_the_people_checks=False, level_completion_checks=False)

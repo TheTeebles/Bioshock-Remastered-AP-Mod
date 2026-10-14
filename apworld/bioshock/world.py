@@ -9,7 +9,7 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.21"
+WORLD_VERSION = "0.1.22"
 SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
 # 4: station_touch, and shop_checks is 0/1/2
 
@@ -70,7 +70,8 @@ class BioShockWorld(World):
                 f"first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
                 "locations in Welcome to Rapture and Medical Pavilion, set Level Access to 'vanilla', or add an "
                 "access item to start_inventory.")
-        room = len(locations.open_locations(self)) - needed
+        # As create_all_items counts it: access items taken back out of the pool still took their place in it.
+        room = len(locations.open_locations(self)) - len(items.progression_item_names(self))
         if items.stations_shuffled(self) and room < len(WEAPON_UPGRADES):
             # The stations give no upgrade then, so an upgrade left out of the pool could never be had.
             raise OptionError(
