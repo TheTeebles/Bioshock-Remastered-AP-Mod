@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.2';
+const AGENT_VERSION = '2026-10-14.3';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1861,16 +1861,42 @@ function linePrice(wanted, map) {
   return Math.round(value);
 }
 
+// Memory for the stand-ins, from the game's own heap: Frida frees what Memory.alloc gives when the agent unloads, and
+// the Garden lines (and anything the game made from a stand-in) would then point at freed memory. Never freed.
+const gameHeap = findGameHeap();
+
+function findGameHeap() {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const getProcessHeap = new NativeFunction(kernel32.getExportByName('GetProcessHeap'), 'pointer', [], 'stdcall');
+    const heapAlloc = new NativeFunction(kernel32.getExportByName('HeapAlloc'), 'pointer',
+      ['pointer', 'uint', 'uint'], 'stdcall');
+    const heap = getProcessHeap();
+    return heap.isNull() ? null : (size) => heapAlloc(heap, 0x8, size); // HEAP_ZERO_MEMORY
+  } catch (e) {
+    return null;
+  }
+}
+
+function lasting(size) {
+  const memory = gameHeap === null ? null : gameHeap(size);
+  return memory === null || memory.isNull() ? Memory.alloc(size) : memory;
+}
+
 function writeText(at, text) {
-  const buffer = Memory.allocUtf16String(text); // kept by the clone that holds it, never freed by the game
+  const buffer = lasting(2 * (text.length + 1)); // kept by the clone that holds it
+  buffer.writeUtf16String(text);
   at.writePointer(buffer);
   at.add(4).writeU32(text.length + 1);
   at.add(8).writeU32(text.length + 1);
   return buffer;
 }
 
-// A copy of the placeholder class with its own default values, showing this name and description.
-function standIn(name, description) {
+// A copy of the placeholder class with its own default values, showing this name and description. Given the class of
+// the item it stands for, it also takes that class's name: the Garden picks a line's icon (a FlashMovie) by the name
+// of the line's class, so the line then shows the real item's icon. A save still records such a line as chips
+// (probe, 2026-10-14).
+function standIn(name, description, iconOf = null) {
   const cls = gardens.placeholder;
   if (cls === null || nameOfObject(cls) !== GARDEN_PLACEHOLDER) {
     gardens.placeholder = null;
@@ -1882,7 +1908,7 @@ function standIn(name, description) {
     gardens.defaults = undefined;
     gardens.defaultsOf.clear();
   }
-  const key = `${name}\n${description}`;
+  const key = `${name}\n${description}\n${iconOf === null ? '' : iconOf}`;
   if (gardens.clones.has(key)) {
     return gardens.clones.get(key).copy;
   }
@@ -1898,14 +1924,18 @@ function standIn(name, description) {
     gardens.trouble = `could not read the class ${GARDEN_PLACEHOLDER}`;
     return null;
   }
-  const copy = Memory.alloc(CLASS_COPY_SIZE);
+  const copy = lasting(CLASS_COPY_SIZE);
   Memory.copy(copy, cls, size);
-  const ownValues = Memory.alloc(defaults.count);
+  const ownValues = lasting(defaults.count);
   Memory.copy(ownValues, defaults.data, defaults.count);
   copy.add(defaults.at).writePointer(ownValues);
   copy.add(defaults.at + 8).writeU32(defaults.count);
   const texts = [writeText(ownValues.add(defaults.name), name),
     writeText(ownValues.add(defaults.description), description)];
+  const iconName = iconOf === null ? null : carefulS32(iconOf.add(objectModel.objectName));
+  if (iconName !== null) {
+    copy.add(objectModel.objectName).writeU32(iconName);
+  }
   gardens.clones.set(key, { copy, ownValues, texts });
   return copy;
 }
@@ -1985,7 +2015,8 @@ function readGardens(map) {
         }
         return;
       }
-      const copy = standIn(wanted.name, wanted.description);
+      const real = wanted.className === null ? undefined : gardens.classes.get(wanted.className);
+      const copy = standIn(wanted.name, wanted.description, real === undefined ? null : real);
       if (copy === null) {
         return;
       }

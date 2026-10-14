@@ -21,6 +21,7 @@ const STEAM_SIZE = 23556096;
 const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
+const HEAP_GET = 0x76000100; const HEAP_ALLOC = 0x76000200; // GetProcessHeap and HeapAlloc
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
@@ -78,6 +79,7 @@ class Ptr {
   writeU32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   writeS32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   compare(other) { return this.value < other.value ? -1 : (this.value > other.value ? 1 : 0); }
+  writeUtf16String(text) { this.runtime.strings.set(this.value, text); return this; }
   writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
@@ -100,6 +102,7 @@ function makeRuntime({
     answers: [], // what the agent's handler answered each time: true would take the exception away from the game
     nextStack: 0x0A000000,
     scriptCalls: [], // what the agent ran through ProcessEvent: object, function, the frame's words
+    heapAllocs: [], // the size of everything the agent took from the game's heap
     onScriptCall: null,
   };
   // ProcessEvent's first instructions, as the agent checks them before calling it
@@ -134,7 +137,7 @@ function makeRuntime({
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') {
           if (!virtualQuery) { throw new Error('unable to find module'); }
-          return { getExportByName: () => ptr(VIRTUAL_QUERY) };
+          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC }[name] || VIRTUAL_QUERY) };
         }
         return {
           base: ptr(BASE), size: moduleSize,
@@ -173,6 +176,12 @@ function makeRuntime({
           runtime.memory.set(buffer.value + 16, ok ? 0x1000 : 0x10000); // State: committed or free
           runtime.memory.set(buffer.value + 20, guard ? 0x104 : (ok ? 0x04 : 0)); // Protect, with PAGE_GUARD
           return 28;
+        };
+      }
+      if (address.value === HEAP_GET) { return () => ptr(0x00A00000); }
+      if (address.value === HEAP_ALLOC) {
+        return (heap, flags, size) => {
+          const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
         };
       }
       if (address.value === BASE + PROCESS_EVENT) {
@@ -1483,6 +1492,7 @@ const tests = {
     assert.strictEqual(r.memory.get(lines[1] + 0xC), 10);
     assert.strictEqual(state(r).gardenLines, 2);
     assert.strictEqual(state(r).gardenTrouble, null);
+    assert.ok(r.heapAllocs.includes(0x1000), 'the copies are on the game\'s heap, which outlives the agent');
   },
   'our own BioShock items cost what the game charges for them': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
@@ -1501,6 +1511,10 @@ const tests = {
     assert.strictEqual(r.memory.get(lines[1] + 0xC), 50, 'Speedy Hacker is not sold here: its value, 20 ADAM');
     assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, 'a class that is not loaded: the client\'s price');
     assert.strictEqual(r.memory.get(lines[3] + 0xC), 50, 'someone else\'s item: the client\'s price');
+    const nameOf = (at) => r.memory.get(at + 0x28);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(enrage), 'Enrage\'s line has its name, for its icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(model.chips), 'no class loaded: the chips icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[3])), nameOf(model.chips));
   },
   'a Garden line bought is reported by map, and sold out in every Garden of the level': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
