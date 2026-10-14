@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.13';
+const PROBE_VERSION = '2026-10-14.14';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1717,6 +1717,75 @@ globalThis.filesStop = function () {
   fileWatch.hooks.forEach((h) => h.detach());
   fileWatch.hooks = [];
   return `stopped; ${fileWatch.seen.length} files opened`;
+};
+
+// Hands the game our own copies of some Flash movies: when it opens a file in a FlashMovies folder whose name is one
+// of the files in `folder`, it gets the file in `folder` instead. Used to give the Garden menu (craftingStationPC.swf)
+// a copy that imports the AP icon from APIcons.swf. Menus are read again on every load, so load a save after this.
+const redirects = { hook: null, names: new Map(), kept: [], count: 0 };
+
+globalThis.redirect = function (folder, names = ['craftingStationPC.swf', 'APIcons.swf']) {
+  if (redirects.hook !== null) {
+    return 'already redirecting; redirectStop() first';
+  }
+  redirects.names = new Map();
+  for (const name of names) {
+    const path = `${folder.replace(/[\\/]+$/, '')}\\${name}`;
+    try {
+      new File(path, 'rb').close();
+      redirects.names.set(name.toLowerCase(), path);
+    } catch (e) {
+      log(`no ${path}: ${e.message}`);
+    }
+  }
+  if (redirects.names.size === 0) {
+    return 'none of those files are in that folder';
+  }
+  let at = null;
+  for (const module of ['kernelbase.dll', 'kernel32.dll']) {
+    try {
+      at = Process.getModuleByName(module).getExportByName('CreateFileW');
+      break;
+    } catch (e) {
+      // try the next
+    }
+  }
+  if (at === null) {
+    return 'no CreateFileW';
+  }
+  redirects.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      let path = null;
+      try {
+        path = args[0].readUtf16String();
+      } catch (e) {
+        return;
+      }
+      if (path === null || !/flashmovies[\\/][^\\/]+$/i.test(path)) {
+        return;
+      }
+      const ours = redirects.names.get(path.split(/[\\/]/).pop().toLowerCase());
+      if (ours !== undefined) {
+        const wide = Memory.allocUtf16String(ours);
+        redirects.kept.push(wide);
+        if (redirects.kept.length > 200) {
+          redirects.kept.shift();
+        }
+        args[0] = wide;
+        redirects.count++;
+        log(`file: ${path} -> ${ours}`);
+      }
+    },
+  });
+  return `redirecting ${[...redirects.names.keys()].join(', ')}; now load a save`;
+};
+
+globalThis.redirectStop = function () {
+  if (redirects.hook !== null) {
+    redirects.hook.detach();
+    redirects.hook = null;
+  }
+  return `stopped after ${redirects.count} redirects`;
 };
 
 globalThis.upgrades = function () {

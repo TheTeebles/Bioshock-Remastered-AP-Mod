@@ -1,16 +1,18 @@
 """
-Builds the Archipelago icon for Gatherer's Garden lines that hold multiworld items, and a copy of the game's
-sharedlibrary.swf with that icon added as one more exported symbol.
+Builds the Archipelago icon for Gatherer's Garden lines that hold multiworld items.
 
-BioShock Remastered draws an item's icon from the symbol of sharedlibrary.swf (ContentBaked/pc/FlashMovies) exported
-under the item class's name. Each such symbol is a sprite holding one 64 x 64 shape filled from a texture sheet; the
-sheets are tag 512, BioShock's own texture tag: id, width, height, format (0 DXT1, 4 DXT5), 0, then the texels.
+BioShock Remastered's Garden menu (craftingStationPC.swf, in ContentBaked/pc/FlashMovies) attaches each line's icon
+by the item class's name, from symbols it imports from sharedlibrary.swf. Each icon is a sprite holding one round
+64 x 64 shape filled from a texture; textures are tag 512, BioShock's own: id, width, height, format (0 DXT1, 4 DXT5),
+0, then the texels. sharedlibrary.swf is only read when the game starts, but the menu movies are read again on every
+load, so the icon goes in a small library of our own (APIcons.swf) that a copy of the menu movie imports.
 
-    python make_ap_icon.py sharedlibrary.swf ap_icon.png out/sharedlibrary.swf [--name APItem] [--preview icon.png]
+    python make_ap_icon.py craftingStationPC.swf icon.png out/ [--name Item]
 
-The original file is only read. Nothing is written into the game's folder.
+The game's file is only read. Nothing is written into the game's folder.
 """
 import argparse
+import math
 import struct
 import sys
 from pathlib import Path
@@ -24,7 +26,7 @@ import dxt  # noqa: E402
 ICON_TEXELS = 128  # the game's icons are 128 x 128 texels, drawn 64 x 64 pixels (scale 10 in twips)
 TEXTURE_TAG = 512
 DXT5 = 4
-TEMPLATE_ICON = 'Chips'  # an icon whose shape has one fill: its outline and records are reused
+LIBRARY = 'APIcons.swf'
 
 
 # ---- the picture -------------------------------------------------------------------------------------------------
@@ -51,22 +53,6 @@ def medallion(logo: Image.Image, size: int = ICON_TEXELS) -> Image.Image:
 
 
 # ---- SWF reading and writing ---------------------------------------------------------------------------------------
-
-class Bits:
-    def __init__(self, data: bytes, byte: int = 0):
-        self.data, self.pos = data, byte * 8
-
-    def u(self, n: int) -> int:
-        value = 0
-        for _ in range(n):
-            value = (value << 1) | ((self.data[self.pos >> 3] >> (7 - (self.pos & 7))) & 1)
-            self.pos += 1
-        return value
-
-    def align(self) -> int:
-        self.pos = (self.pos + 7) & ~7
-        return self.pos >> 3
-
 
 class BitWriter:
     def __init__(self):
@@ -112,18 +98,6 @@ def matrix_bytes(scale: float, tx: int, ty: int) -> bytes:
     return w.bytes()
 
 
-def skip_matrix(bits: Bits):
-    bits.align()
-    if bits.u(1):
-        n = bits.u(5)
-        bits.u(2 * n)
-    if bits.u(1):
-        n = bits.u(5)
-        bits.u(2 * n)
-    n = bits.u(5)
-    bits.u(2 * n)
-
-
 def tag(code: int, body: bytes) -> bytes:
     if len(body) < 0x3f and code not in (TEXTURE_TAG,):
         return struct.pack('<H', (code << 6) | len(body)) + body
@@ -154,71 +128,97 @@ DEFINING = {2, 6, 7, 10, 11, 14, 20, 21, 22, 32, 33, 34, 35, 36, 37, 39, 46, 48,
             TEXTURE_TAG}
 
 
-def patch(library: bytes, icon: Image.Image, name: str) -> bytes:
-    if library[:3] != b'FWS':
-        raise SystemExit('expected an uncompressed SWF (FWS)')
-    tags = list(read_tags(library, first_tag(library), len(library)))
-    defs, exports = {}, {}
-    for code, body, _ in tags:
-        if code in DEFINING and len(body) >= 2:
-            defs[struct.unpack('<H', body[:2])[0]] = (code, body)
-        if code == 56:
-            count, p = struct.unpack('<H', body[:2])[0], 2
-            for _ in range(count):
-                cid = struct.unpack('<H', body[p:p + 2])[0]
-                end = body.index(b'\0', p + 2)
-                exports[body[p + 2:end].decode('latin1')] = cid
-                p = end + 1
-    if name in exports:
-        raise SystemExit(f'{name} is already exported')
-    # the template icon: its sprite places one shape; that shape's outline and records are reused as they are
-    sprite = defs[exports[TEMPLATE_ICON]][1]
-    shape_id = next(struct.unpack('<H', b[3:5])[0] for c, b, _ in read_tags(sprite, 4, len(sprite)) if c == 26)
-    shape_code, shape = defs[shape_id]
-    bits = Bits(shape, 2)
-    n = bits.u(5)
-    bits.u(4 * n)
-    p = bits.align()
-    if shape[p] != 1 or shape[p + 1] not in (0x40, 0x41, 0x42, 0x43):
-        raise SystemExit(f'{TEMPLATE_ICON} is not one bitmap fill')
-    bits = Bits(shape, p + 4)  # count, type, bitmap id
-    skip_matrix(bits)
-    rest = shape[bits.align():]  # line styles, fill and line bit counts, shape records
+def circle_records(radius: int = 640) -> bytes:
+    """Line styles, bit counts and records of a round shape like the game's icons: one fill (fill style 1 on the right
+    of the path), eight curves going clockwise on screen from the right-most point."""
+    w = BitWriter()
+    w.u(0, 8)  # no line styles
+    w.u(1, 4)  # fill bits
+    w.u(0, 4)  # line bits
+    points = [(round(radius * math.cos(a)), round(radius * math.sin(a)))
+              for a in (i * math.pi / 4 for i in range(9))]
+    control = radius / math.cos(math.pi / 8)
+    w.u(0, 1)
+    w.u(0b00101, 5)  # fill style 1 and a move
+    n = signed_bits(*points[0])
+    w.u(n, 5)
+    w.s(points[0][0], n)
+    w.s(points[0][1], n)
+    w.u(1, 1)
+    x, y = points[0]
+    for i in range(8):
+        a = (i + 0.5) * math.pi / 4
+        cx, cy = round(control * math.cos(a)), round(control * math.sin(a))
+        ex, ey = points[i + 1]
+        deltas = (cx - x, cy - y, ex - cx, ey - cy)
+        n = max(signed_bits(*deltas), 2)
+        w.u(1, 1)
+        w.u(0, 1)  # a curve
+        w.u(n - 2, 4)
+        for d in deltas:
+            w.s(d, n)
+        x, y = ex, ey
+    w.u(0, 6)  # end of the shape
+    return w.bytes()
 
-    first_free = max(defs) + 1
-    texture_id, new_shape_id, sprite_id = first_free, first_free + 1, first_free + 2
+
+def icon_library(icon: Image.Image, name: str) -> bytes:
+    """A small SWF holding one icon like the game's, exported under `name`."""
+    texture_id, shape_id, sprite_id = 1, 2, 3
     texels = np.asarray(icon.convert('RGBA'))
     texture = struct.pack('<5H', texture_id, ICON_TEXELS, ICON_TEXELS, DXT5, 0) + dxt.encode_dxt5(texels)
-    # the shape: the template's 64 x 64 square, filled (clipped) from texel 0 of our texture
-    new_shape = (struct.pack('<H', new_shape_id) + rect_bytes(-640, 640, -640, 640) + bytes([1, 0x41]) +
-                 struct.pack('<H', texture_id) + matrix_bytes(10.0, -640, -640) + rest)
-    place = tag(26, bytes([0x06]) + struct.pack('<HH', 1, new_shape_id) + b'\0')  # character + identity matrix
-    new_sprite = struct.pack('<HH', sprite_id, 1) + place + tag(1, b'') + tag(0, b'')
+    shape = (struct.pack('<H', shape_id) + rect_bytes(-640, 640, -640, 640) + bytes([1, 0x41]) +
+             struct.pack('<H', texture_id) + matrix_bytes(10.0, -640, -640) + circle_records())
+    place = tag(26, bytes([0x06]) + struct.pack('<HH', 1, shape_id) + b'\0')  # character + identity matrix
+    sprite = struct.pack('<HH', sprite_id, 1) + place + tag(1, b'') + tag(0, b'')
     export = struct.pack('<HH', 1, sprite_id) + name.encode('latin1') + b'\0'
-    added = (tag(TEXTURE_TAG, texture) + tag(shape_code, new_shape) + tag(39, new_sprite) + tag(56, export))
+    body = (rect_bytes(0, 1280, 0, 1280) + struct.pack('<HH', 30 << 8, 1) +
+            tag(9, b'\0\0\0') + tag(TEXTURE_TAG, texture) + tag(2, shape) + tag(39, sprite) + tag(56, export) +
+            tag(1, b'') + tag(0, b''))
+    return b'FWS' + bytes([6]) + struct.pack('<I', 8 + len(body)) + body
 
-    # everything goes in before the first ShowFrame, with the library's other definitions
-    show = next(start for code, _, start in tags if code == 1)
-    out = bytearray(library[:show] + added + library[show:])
+
+def import_into(movie: bytes, library: str, name: str) -> bytes:
+    """The movie, also importing `name` from another library (as it imports the game's icons from sharedlibrary.swf),
+    so its scripts can attach it by that name."""
+    if movie[:3] != b'FWS':
+        raise SystemExit('expected an uncompressed SWF (FWS)')
+    tags = list(read_tags(movie, first_tag(movie), len(movie)))
+    used = set()
+    for code, body, _ in tags:
+        if code in DEFINING and len(body) >= 2:
+            used.add(struct.unpack('<H', body[:2])[0])
+        if code in (57, 71):  # imported characters take ids too
+            p = body.index(b'\0') + 1 + (2 if code == 71 else 0)
+            count, p = struct.unpack('<H', body[p:p + 2])[0], p + 2
+            for _ in range(count):
+                used.add(struct.unpack('<H', body[p:p + 2])[0])
+                p = body.index(b'\0', p + 2) + 1
+    new_id = max(used) + 1
+    imported = tag(57, library.encode('latin1') + b'\0' + struct.pack('<HH', 1, new_id) + name.encode('latin1') + b'\0')
+    # with the movie's other imports: in front of the last of them
+    last = max(start + 2 + (4 if (struct.unpack('<H', movie[start:start + 2])[0] & 0x3f) == 0x3f else 0) + len(body)
+               for code, body, start in tags if code == 57)
+    out = bytearray(movie[:last] + imported + movie[last:])
     struct.pack_into('<I', out, 4, len(out))
     return bytes(out)
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument('library')
-    parser.add_argument('logo')
-    parser.add_argument('out')
-    parser.add_argument('--name', default='APItem')
-    parser.add_argument('--preview')
+    parser.add_argument('movie', help="the game's craftingStationPC.swf (only read)")
+    parser.add_argument('logo', help='the picture for the icon (the Archipelago logo)')
+    parser.add_argument('out', help='folder for the patched movie and APIcons.swf')
+    parser.add_argument('--name', default='Item', help='the name the icon is exported and imported under')
     args = parser.parse_args()
+    out = Path(args.out)
+    out.mkdir(parents=True, exist_ok=True)
     icon = medallion(Image.open(args.logo))
-    if args.preview:
-        icon.resize((256, 256), Image.LANCZOS).save(args.preview)
-    out = patch(Path(args.library).read_bytes(), icon, args.name)
-    Path(args.out).parent.mkdir(parents=True, exist_ok=True)
-    Path(args.out).write_bytes(out)
-    print(f'{args.out}: {len(out)} bytes, {args.name} exported')
+    icon.resize((256, 256), Image.LANCZOS).save(out / 'ap_icon_preview.png')
+    (out / LIBRARY).write_bytes(icon_library(icon, args.name))
+    movie = Path(args.movie)
+    (out / movie.name).write_bytes(import_into(movie.read_bytes(), f'..\\FlashMovies\\{LIBRARY}', args.name))
+    print(f'{out / LIBRARY} exports {args.name}; {out / movie.name} imports it')
 
 
 if __name__ == '__main__':
