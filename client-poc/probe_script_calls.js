@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.10';
+const PROBE_VERSION = '2026-10-14.11';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1562,6 +1562,32 @@ globalThis.gardenIcon = function (n, className) {
   copy.add(objects.nameOffset).writeU32(u32(wanted.add(objects.nameOffset)));
   log(`line ${n}: the copy's class name ${before} -> ${nameOfObject(copy)}`);
   return 'open the Garden and look at that line\'s icon (and do not save)';
+};
+
+// Every object whose name matches a pattern, with its class and the objects that may hold it (its package): to
+// find how the Garden turns a class name into an icon, and which package a class is in.
+globalThis.named = function (pattern, limit = 300) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern, 'i');
+  const holder = (object, at) => {
+    const outer = pointerAt(object.add(at));
+    return outer === null || outer.isNull() || !readable(outer, 0x40) ? '-' : (nameOfObject(outer) || '?');
+  };
+  const total = u32(objects.table.add(4)) || objects.count;
+  let n = 0;
+  for (let index = 0; index < total && n < limit; index++) {
+    const object = objectAt(index);
+    const name = object === null ? null : nameOfObject(object);
+    if (name === null || !regex.test(name)) {
+      continue;
+    }
+    const outers = [0x1c, 0x20, 0x24].map((at) => `+${hex(at)} ${holder(object, at)}`).join(', ');
+    log(`${index}: ${name} (${classNameOf(object)}) held by? ${outers}`);
+    n++;
+  }
+  return `${n} objects`;
 };
 
 globalThis.upgrades = function () {
