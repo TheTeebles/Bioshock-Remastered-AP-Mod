@@ -63,6 +63,18 @@ class TestOpenRapture(BioShockTestBase):
         return [name for name in names if name in present]
 
 
+class TestOpenRaptureWithoutStartingCamera(BioShockTestBase):
+    options = {"level_access": "open_rapture", "start_with_research_camera": False}
+
+    def test_fort_frolics_photographs_need_the_camera_from_neptunes_bounty(self) -> None:
+        photos = ["Fort Frolic - Story: Photograph Kyle Fitzpatrick", "Fort Frolic - Story: Complete Cohen's Masterpiece",
+                  "Fort Frolic - Level Complete"]
+        self.collect_by_name(ACCESS[4])
+        self.assertFalse(any(self.can_reach_location(name) for name in photos))
+        self.collect_by_name(ACCESS[2])
+        self.assertTrue(all(self.can_reach_location(name) for name in photos))
+
+
 class TestOpenRaptureGenerates(PoolTestBase):
     auto_construct = False
 
