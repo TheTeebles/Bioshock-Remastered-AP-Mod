@@ -302,6 +302,15 @@ class TestOptionChecks(PoolTestBase):
         with self.assertRaises(OptionError):  # one that is merely added to the inventory does not
             self.generate_for_real({**seven_left, "start_inventory": {"Apollo Square Access": 1}})
 
+    def test_shuffled_upgrades_need_room_in_the_pool(self) -> None:
+        stations_only = dict(story_checks=False, little_sister_checks=False, level_completion_checks=False,
+                             audio_diary_checks="off")
+        self.generate(**stations_only, level_access="vanilla")  # 12 stations, 12 upgrades
+        with self.assertRaises(OptionError) as raised:
+            self.generate(**stations_only, level_access="vanilla",
+                          exclude_locations=["Arcadia - Power to the People 1"])
+        self.assertIn("leave room for 11", str(raised.exception))
+
     def test_filler_only_collectibles_alone_work_without_access_items(self) -> None:
         self.generate(level_access="vanilla", story_checks=False, little_sister_checks=False,
                       power_to_the_people_checks=False, level_completion_checks=False)
@@ -454,9 +463,12 @@ class TestSomewhereToStart(PoolTestBase):
         self.generate_for_real({"exclude_locations": first_two})
 
     def test_ways_out(self) -> None:
+        # Later levels' completion checks leave room for the twelve upgrades without being anywhere to start.
+        room = {"level_completion_checks": True,
+                "exclude_locations": ["Welcome to Rapture - Level Complete", "Medical Pavilion - Level Complete"]}
         for way_out in ({"level_access": "vanilla"},
-                        {"start_inventory": {"Fort Frolic Access": 1}},
-                        {"start_inventory_from_pool": {"Arcadia Access": 1}},
+                        {"start_inventory": {"Fort Frolic Access": 1}, **room},
+                        {"start_inventory_from_pool": {"Arcadia Access": 1}, **room},
                         {"little_sister_checks": True},
                         {"audio_diary_checks": "all"}):  # a Medical Pavilion diary can then hold one
             with self.subTest(way_out=way_out):
@@ -476,7 +488,7 @@ class TestSlotData(BioShockTestBase):
 
     def test_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
-        self.assertEqual(slot_data["slot_data_version"], 3)
+        self.assertEqual(slot_data["slot_data_version"], 4)
         self.assertEqual(SLOT_DATA_VERSION, SUPPORTED_SLOT_DATA_VERSION, "the client that ships with the world")
         self.assertEqual(slot_data["death_link"], 1)
         self.assertEqual(slot_data["story_checks"], 1)

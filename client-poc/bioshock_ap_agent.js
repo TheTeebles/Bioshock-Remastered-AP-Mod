@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.5';
+const AGENT_VERSION = '2026-10-14.6';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -593,6 +593,9 @@ function readState() {
     stationTouch: touch.installed,
     // Classes of the weapons the player holds (Pistol, Shotgun, ...); null while the agent cannot tell.
     weaponsHeld: weapons.owned,
+    // True while the agent can tell but has not looked yet (its first pass over the objects is not done). The
+    // client keeps upgrades back until then.
+    weaponsPending: objectModel !== null && virtualQuery !== null && !weapons.looked,
     // Gatherer's Garden lines (from 1) seen bought, by map, and how many lines sell multiworld items.
     gardenBought: Object.fromEntries(
       [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
@@ -1519,6 +1522,7 @@ function watchObjects(map, now) {
     stations.list = scan.stations;
     scan.stations = [];
     weapons.list = scan.weapons;
+    weapons.scanned = true;
     scan.weapons = [];
     gardens.list = scan.gardens;
     scan.gardens = [];
@@ -1608,7 +1612,8 @@ function readStations(map) {
 
 // Every weapon object of the game (classes that extend Weapon), and the classes of those the player holds: their
 // Holder is the player's body. The client gives an upgrade only once its weapon is among them.
-const weapons = { list: [], holders: new Map(), owned: null, reported: '' };
+// scanned: a pass over the objects has listed the weapons; looked: readWeapons has gone through such a list since.
+const weapons = { list: [], holders: new Map(), owned: null, reported: '', scanned: false, looked: false };
 
 function holderOf(weapon) {
   const cls = classOfObject(weapon);
@@ -1624,6 +1629,7 @@ function holderOf(weapon) {
 }
 
 function readWeapons(pawn) {
+  weapons.looked = weapons.scanned;
   const owned = new Set();
   let known = false;
   for (const weapon of weapons.list) {
@@ -1881,13 +1887,13 @@ function findGameHeap() {
   }
 }
 
+// null when the game's heap cannot give it: Frida's own memory would be freed under the game's feet.
 function lasting(size) {
   const memory = gameHeap === null ? null : gameHeap(size);
-  return memory === null || memory.isNull() ? Memory.alloc(size) : memory;
+  return memory === null || memory.isNull() ? null : memory;
 }
 
-function writeText(at, text) {
-  const buffer = lasting(2 * (text.length + 1)); // kept by the clone that holds it
+function writeText(at, buffer, text) {
   buffer.writeUtf16String(text);
   at.writePointer(buffer);
   at.add(4).writeU32(text.length + 1);
@@ -1928,13 +1934,18 @@ function standIn(name, description, iconOf = null) {
     return null;
   }
   const copy = lasting(CLASS_COPY_SIZE);
-  Memory.copy(copy, cls, size);
   const ownValues = lasting(defaults.count);
+  const texts = [name, description].map((text) => lasting(2 * (text.length + 1))); // kept by the clone
+  if (copy === null || ownValues === null || texts.includes(null)) {
+    gardens.trouble = 'the game\'s heap has no memory for a copy of a Garden line';
+    return null;
+  }
+  Memory.copy(copy, cls, size);
   Memory.copy(ownValues, defaults.data, defaults.count);
   copy.add(defaults.at).writePointer(ownValues);
   copy.add(defaults.at + 8).writeU32(defaults.count);
-  const texts = [writeText(ownValues.add(defaults.name), name),
-    writeText(ownValues.add(defaults.description), description)];
+  writeText(ownValues.add(defaults.name), texts[0], name);
+  writeText(ownValues.add(defaults.description), texts[1], description);
   const iconName = iconOf === null ? null : carefulS32(iconOf.add(objectModel.objectName));
   if (iconName !== null) {
     copy.add(objectModel.objectName).writeU32(iconName);

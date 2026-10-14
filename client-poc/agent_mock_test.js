@@ -1468,8 +1468,11 @@ const tests = {
   },
   'weapons held are the ones whose Holder is the player': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.load(); r.frames(2);
+    r.load();
+    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, true, 'not looked yet');
+    r.frames(2);
     assert.strictEqual(r.context.rpc.exports.state().weaponsHeld, null, 'no weapon seen yet');
+    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked, and cannot tell yet');
     model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
     r.frames(3);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);

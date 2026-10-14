@@ -6,11 +6,12 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, LocationData
+from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.17"
-SLOT_DATA_VERSION = 3  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks
+WORLD_VERSION = "0.1.18"
+SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
+# 4: station_touch, and shop_checks is 0/1/2
 
 
 class BioShockWorld(World):
@@ -55,6 +56,14 @@ class BioShockWorld(World):
                 f"first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
                 "locations in Welcome to Rapture and Medical Pavilion, set Level Access to 'vanilla', or add an "
                 "access item to start_inventory.")
+        room = len(locations.open_locations(self)) - needed
+        if items.stations_shuffled(self) and room < len(WEAPON_UPGRADES):
+            # The stations give no upgrade then, so an upgrade left out of the pool could never be had.
+            raise OptionError(
+                f"{self.player_name}: with Power to the People checks on, the 12 weapon upgrades come only from the "
+                f"multiworld and need 12 checks that may hold useful items, but these options leave room for "
+                f"{max(room, 0)}. Filler-only collectibles and locations under exclude_locations do not count. "
+                "Turn on more kinds of checks, set audio diaries to 'all' or exclude fewer locations.")
 
     def _open_from_the_start(self, open_checks: list[LocationData]) -> list[LocationData]:
         """The checks among these that need no access item the player does not start with."""

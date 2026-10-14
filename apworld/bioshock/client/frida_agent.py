@@ -126,6 +126,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         diaries=diaries_of(raw.get("logsReceived")),
         stations=stations_of(raw.get("stationsUsed")),
         weapons=weapons_of(raw.get("weaponsHeld")),
+        weapons_pending=raw.get("weaponsPending") is True,
         garden_bought=gardens_of(raw.get("gardenBought")),
     )
 

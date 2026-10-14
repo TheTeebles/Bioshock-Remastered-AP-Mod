@@ -32,7 +32,7 @@ from .protocol import (
 )
 
 SAVE_VERSION = 1
-SUPPORTED_SLOT_DATA_VERSION = 3  # keep in step with SLOT_DATA_VERSION in world.py
+SUPPORTED_SLOT_DATA_VERSION = 4  # keep in step with SLOT_DATA_VERSION in world.py
 
 COMMAND_TIMEOUT = 5.0  # seconds without an answer before the player is told the game has not confirmed yet
 RETRY_DELAY = 1.0  # pause before retrying a command the game refused
@@ -255,9 +255,12 @@ class BridgeCore:
 
     def on_state(self, state: GameState) -> None:
         held_before = self.state.weapons or frozenset()
+        was_pending = self.state.weapons_pending
         self.state = state
         if state.weapons and state.weapons - held_before:
             self._look_for_weapon_upgrades(state.weapons)
+        elif was_pending and not state.weapons_pending and state.weapons is None:
+            self._look_for_weapon_upgrades(None)  # the agent looked and can't tell after all: they go in as before
         self._track_level(state)
         self._track_goal(state)
 
@@ -277,12 +280,12 @@ class BridgeCore:
             self._on_result(event.command_id, event.handled, now, "the game refused the command", retry=True)
         elif isinstance(event, ActionResult) and event.command_id == self._touch_command_id:
             if not event.ok:
-                self._notice(f"Power to the People stations will still open their menu: {event.reason}. Their "
-                             "checks are still sent, but the menu also gives an upgrade.", warning=True)
+                self._notice(f"Power to the People stations will still open their menu, which also gives an "
+                             f"upgrade: {event.reason}.", warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._garden_command_id:
             if not event.ok:
-                self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}. Buying a "
-                             "line still sends its check.", warning=True)
+                self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}.",
+                             warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._movies_command_id:
             if event.ok:
                 self._notice("Gatherer's Garden lines that sell other players' items show the Archipelago icon from "
@@ -632,7 +635,9 @@ class BridgeCore:
                 self._advance()
                 continue
             if self._waits_for_weapon(delivery):
-                self._notice(f"{delivery.description} waits until you have the {delivery.needs_weapon}.")
+                self._notice(f"{delivery.description} waits until you have the {delivery.needs_weapon}."
+                             if not self.state.weapons_pending else
+                             f"{delivery.description} waits until the game has looked at which weapons you hold.")
                 self.skipped[index] = NEEDS_WEAPON
                 self._advance()
                 continue
@@ -645,14 +650,19 @@ class BridgeCore:
             return
 
     def _waits_for_weapon(self, delivery: Delivery) -> bool:
-        """True for an upgrade whose weapon the player doesn't hold. An agent that can't tell gets it as before."""
+        """True for an upgrade whose weapon the player doesn't hold, or while the agent hasn't looked at the weapons
+        yet. An agent that can't tell gets it as before."""
+        if delivery.needs_weapon is None:
+            return False
         held = self.state.weapons
-        return delivery.needs_weapon is not None and held is not None and delivery.needs_weapon not in held
+        if held is None:
+            return self.state.weapons_pending
+        return delivery.needs_weapon not in held
 
-    def _look_for_weapon_upgrades(self, held: frozenset[str]) -> None:
-        """The player has picked up a weapon: the upgrades kept for it go in next."""
+    def _look_for_weapon_upgrades(self, held: frozenset[str] | None) -> None:
+        """The player has picked up a weapon: the upgrades kept for it go in next. None: all the upgrades kept."""
         ready = [index for index, reason in sorted(self.skipped.items()) if reason == NEEDS_WEAPON
-                 and (delivery := self._plan(index)) is not None and delivery.needs_weapon in held]
+                 and (delivery := self._plan(index)) is not None and (held is None or delivery.needs_weapon in held)]
         self._second_tries += [index for index in ready if index not in self._second_tries]
 
     def _ask_for_touch(self) -> None:

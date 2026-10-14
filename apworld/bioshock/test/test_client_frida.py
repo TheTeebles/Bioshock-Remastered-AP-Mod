@@ -932,6 +932,8 @@ class TestTranslation(unittest.TestCase):
                         "unknown is not a reason to wait forever")
         self.assertIsNone(state_from_agent(dict(base, levelValue=0)).level_value)
         self.assertEqual(state_from_agent({}), GameState())
+        self.assertTrue(state_from_agent(dict(base, weaponsPending=True)).weapons_pending)
+        self.assertFalse(state_from_agent(dict(base, weaponsPending=False)).weapons_pending)
 
     def test_state_translation_with_the_newer_agent(self) -> None:
         """What agent 2026-10-06.3 adds: the map's name, and whether the player can be given anything right now."""

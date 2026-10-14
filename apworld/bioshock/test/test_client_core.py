@@ -463,6 +463,34 @@ class TestItemDelivery(unittest.TestCase):
         self.assertEqual(h.game.commands[-1], "AddWeaponStatUpgrade Shotgun RateOfFire")
         self.assertEqual(h.core.skipped, {})
 
+    def test_upgrades_wait_until_the_agent_has_looked_at_the_weapons(self) -> None:
+        for holds_it in (True, False):
+            with self.subTest(holds_it=holds_it):
+                h = Harness().connect().attach()
+                h.game.weapons_pending = True
+                h.receive("Shotgun Rate of Fire")
+                h.settle()
+                self.assertEqual(h.game.commands, [])
+                self.assertTrue(any("waits until the game has looked at which weapons you hold" in notice.text
+                                    for notice in h.notices))
+                h.game.weapons_pending = False
+                h.game.reports_weapons = True
+                if holds_it:
+                    h.game.held_weapons.add("Shotgun")
+                h.settle()
+                self.assertEqual(h.game.commands, ["AddWeaponStatUpgrade Shotgun RateOfFire"] if holds_it else [])
+
+    def test_upgrades_go_in_as_before_when_the_agent_looked_and_cannot_tell(self) -> None:
+        h = Harness().connect().attach()
+        h.game.weapons_pending = True
+        h.receive("Shotgun Rate of Fire")
+        h.settle()
+        self.assertEqual(h.core.skipped, {0: core_module.NEEDS_WEAPON})
+        h.game.weapons_pending = False  # reports_weapons stays False
+        h.settle()
+        self.assertEqual(h.game.commands, ["AddWeaponStatUpgrade Shotgun RateOfFire"])
+        self.assertEqual(h.core.skipped, {})
+
     def test_a_weapon_and_its_upgrade_arriving_together(self) -> None:
         h = Harness().connect().attach()
         h.game.reports_weapons = True
