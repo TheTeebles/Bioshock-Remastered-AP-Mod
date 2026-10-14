@@ -454,7 +454,8 @@ that; an injected agent can.
    object name and position. *(2026-10-14: the map files already hold all of it. `client-poc/map_reader/map_survey.py`
    lists every plasmid, tonic and weapon pickup and every safe with its Label, position and loot, read offline from
    the .bsm files. Neptune's Bounty has Security Bullseye, three tonics, the Grenade Launcher and four safes plus a
-   lockbox.)* That becomes the real location table and its IDs, with no guide errors. Turning object
+   lockbox. `world_items.py` turns that survey into the candidate location table with the IDs
+   below; weapons count once each, at the level where one first lies, since the maps hold many copies.)* That becomes the real location table and its IDs, with no guide errors. Turning object
    names into text needs the engine's name table (GNames), which can be found by its fixed first entries ("None",
    "ByteProperty", …).
 2. **Find the one chokepoint.** Every item reaches the player's inventory through some grant path, whether it was lying
