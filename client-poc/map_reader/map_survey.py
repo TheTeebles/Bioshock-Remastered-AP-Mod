@@ -8,6 +8,8 @@ Reads BioShock Remastered map files (.bsm) and lists what the randomizer could u
 - quests: each quest the map's scripts start or complete, with what starts the script;
 - diaries: the audio diaries lying in the map (LogPickup actors), by item class;
 - given: what the map's scripts hand the player (ActionGiveItemsToPlayer): radio messages, story items and so on;
+- world: plasmid and tonic pickups, weapon pickups and safes, one by one with their Label and position: what
+  world-item and safe checks (design section 5) would be made of;
 - pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each.
 
 Only reads; Python 3.8+, nothing to install. Needs map_stock.py next to it.
@@ -155,10 +157,25 @@ def text(value):
     return (raw.decode("latin1") if n < 0 else raw.decode("utf-16-le")).rstrip("\0")
 
 
+# Actors that could become checks of their own (design section 5): plasmid and tonic pickups, weapons (a weapon's
+# pickup class names it with its first ammo, "ShotgunAnd00BuckPickup"), the Research Camera, and safes.
+SAFES = ("SecurityCrate_Safe", "Lockbox")
+
+
+def is_world_item(cls):
+    return cls.endswith("PlasmidPickup") or ("And" in cls and cls.endswith("Pickup")) or cls in SAFES
+
+
+def position(value):
+    if isinstance(value, bytes) and len(value) == 12:
+        return [round(v) for v in struct.unpack("<3f", value)]
+    return None
+
+
 def survey(path):
     pkg = Survey(path.read_bytes())
     result = {"map": path.name, "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [],
-              "menus": 0}, "quests": [], "diaries": [], "given": [], "pickups": {}}
+              "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}}
     pickups = Counter()
     for i, e in enumerate(pkg.exports, 1):
         cls = pkg.class_of(e)
@@ -188,7 +205,13 @@ def survey(path):
         elif cls == "LogPickup":
             result["diaries"] += [item for item, _, _ in pkg.loot(i)]
         elif e["outer"] == 0 and cls not in ("LootSlot", "LootItemSpecification"):
-            for item, low, high in pkg.loot(i):
+            loot = pkg.loot(i)
+            if is_world_item(cls):
+                found = pkg.props(i)
+                result["world"].append({"class": cls, "actor": e["name"], "label": found.get("Label"),
+                                        "at": position(found.get("Location")),
+                                        "items": sorted({item for item, _, _ in loot if item})})
+            for item, low, high in loot:
                 pickups[item] += 1
     result["given"].sort()
     result["diaries"].sort()
