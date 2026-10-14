@@ -56,6 +56,7 @@ class SimulatedGame:
         self.held_weapons: set[str] = set()  # weapon classes the player holds ("Crossbow")
         self.reports_weapons = False  # whether the state says which weapons the player holds, as the agent does
         self.garden_lines: dict[str, list[dict[str, Any]]] = {}  # level -> what its Gardens sell, as the client said
+        self.movies: dict[str, Any] | None = None  # the folder and files the client said to hand the game instead
         self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
 
         # For tests: what arrived, and ways to misbehave.
@@ -113,6 +114,10 @@ class SimulatedGame:
         if action.startswith("garden_lines "):  # also a setting: what the Gardens of a level sell
             offer = json.loads(action.partition(" ")[2])
             self.garden_lines[offer["level"]] = offer["lines"]
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is
+            self.movies = json.loads(action.partition(" ")[2])
             self._events.append(ActionResult(command_id, True))
             return
         self.actions.append(action)

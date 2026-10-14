@@ -22,6 +22,7 @@ const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
 const HEAP_GET = 0x76000100; const HEAP_ALLOC = 0x76000200; // GetProcessHeap and HeapAlloc
+const CREATE_FILE = 0x76000300; // CreateFileW
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
@@ -137,10 +138,11 @@ function makeRuntime({
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') {
           if (!virtualQuery) { throw new Error('unable to find module'); }
-          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC }[name] || VIRTUAL_QUERY) };
+          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE }[name] ||
+            VIRTUAL_QUERY) };
         }
         return {
-          base: ptr(BASE), size: moduleSize,
+          base: ptr(BASE), size: moduleSize, path: 'E:\\Game\\Build\\Final\\BioshockHD.exe',
           enumerateRanges: () => [{ base: ptr(BASE + 0x1000), size: 0x1000000 }],
         };
       },
@@ -236,7 +238,7 @@ function makeRuntime({
     runtime.time += ms;
     const levels = runtime.levels.length > 0 ? runtime.levels : [0x12340000]; // or for something unreadable
     for (const level of levels) {
-      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT)
+      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT && h.address !== CREATE_FILE)
         .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(level) } }));
     }
   };
@@ -246,6 +248,13 @@ function makeRuntime({
     const stack = runtime.object(0x40); poke(stack + 4, frame);
     runtime.hooks.filter((h) => h.address === BASE + PROCESS_EVENT)
       .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(self), esp: ptr(stack) } }));
+  };
+  // The game opening a file: the path it ends up opening, after the hooks on CreateFileW.
+  runtime.openFile = (path) => {
+    const at = runtime.object(0x10); runtime.text.set(at, path);
+    const args = [ptr(at)];
+    runtime.hooks.filter((h) => h.address === CREATE_FILE).forEach((h) => h.callbacks.onEnter.call({}, args));
+    return runtime.strings.has(args[0].value) ? runtime.strings.get(args[0].value) : runtime.text.get(args[0].value);
   };
   runtime.frames = (count, ms = 100) => { for (let i = 0; i < count; i++) { runtime.frame(ms); } };
 
@@ -495,7 +504,7 @@ function makeRuntime({
     poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
     runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
     return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1515,6 +1524,36 @@ const tests = {
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(enrage), 'Enrage\'s line has its name, for its icon');
     assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(model.chips), 'no class loaded: the chips icon');
     assert.strictEqual(nameOf(r.memory.get(lines[3])), nameOf(model.chips));
+  },
+  'redirect_movies hands the game the client\'s menu, whose lines then take the AP icon': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const enrage = model.itemClass('BerserkRage', 30);
+    const { lines } = model.garden(2);
+    r.load(); r.frames(2);
+    assert.strictEqual(state(r).exe, 'E:\\Game\\Build\\Final\\BioshockHD.exe', 'for the client to find the menu');
+    const redirect = (id, offer) => r.context.rpc.exports.action(id, `redirect_movies ${JSON.stringify(offer)}`);
+    redirect(1, { folder: 'C:\\cache\\FlashMovies\\', files: ['craftingStationPC.swf', 'APIcons.swf'] });
+    redirect(2, { folder: '', files: [] });
+    assert.strictEqual(JSON.stringify(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok])),
+      '[[1,true],[2,false]]');
+    gardenLines(r, 3, [{ line: 1, name: 'Hookshot', description: '', price: 80 },
+      { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false }]);
+    r.frames(8);
+    const nameOf = (at) => r.memory.get(at + 0x28);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.chips), 'the menu open now is the game\'s own');
+    assert.strictEqual(state(r).apIcon, false);
+    const game = 'E:\\Game\\Build\\Final\\BakedScripts\\PC\\..\\FlashMovies\\';
+    assert.strictEqual(r.openFile(`${game}craftingstationPC.swf`), 'C:\\cache\\FlashMovies\\craftingStationPC.swf');
+    assert.strictEqual(r.openFile(`${game}APIcons.swf`), 'C:\\cache\\FlashMovies\\APIcons.swf');
+    assert.strictEqual(r.openFile(`${game}PlasmiNow.swf`), `${game}PlasmiNow.swf`, 'other movies are the game\'s');
+    assert.strictEqual(r.openFile('E:\\Saves\\craftingStationPC.swf'), 'E:\\Saves\\craftingStationPC.swf');
+    assert.strictEqual(state(r).apIcon, true);
+    r.frames(8);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.item), 'someone else\'s item: named Item, for the AP icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[1])), nameOf(enrage), 'our own item keeps its real icon');
+    redirect(4, { folder: 'D:\\other', files: ['APIcons.swf'] });
+    assert.strictEqual(r.hooks.filter((h) => h.address === CREATE_FILE).length, 1, 'one hook, whatever is asked');
+    assert.strictEqual(r.openFile(`${game}APIcons.swf`), 'D:\\other\\APIcons.swf');
   },
   'a Garden line bought is reported by map, and sold out in every Garden of the level': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();

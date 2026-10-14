@@ -467,6 +467,7 @@ class FridaAgent:
 
     def __init__(self, candidates: Iterable[Sequence[str]], env: Mapping[str, str] | None = None) -> None:
         self.description = "BioShock Remastered"
+        self.game_path: str | None = None  # BioshockHD.exe, as the agent sees it once attached
         self.command: Command = ()  # the Python that turned out to have Frida
         self.python = ""
         self.frida_version = ""
@@ -624,6 +625,7 @@ class FridaAgent:
                 state = raw if isinstance(raw, dict) else {}
                 self._take_state(state)
                 self.description = f"BioShock Remastered ({state.get('build', 'unknown build')})"
+                self.game_path = state.get("exe") if isinstance(state.get("exe"), str) else None
                 self._phase = _ATTACHED
                 self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}."))
         elif event == "state":

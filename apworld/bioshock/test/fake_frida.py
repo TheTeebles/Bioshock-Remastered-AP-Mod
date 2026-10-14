@@ -48,7 +48,8 @@ _FOLDER = os.environ["FAKE_FRIDA_DIR"]
 _RECORD_LOCK = threading.Lock()
 
 DEFAULT_STATE = {
-    "agent": "fake", "build": "Steam 1.0.127355", "execAvailable": True, "hookInstalled": True, "engineReady": True,
+    "agent": "fake", "build": "Steam 1.0.127355", "exe": "E:\\BioShock Remastered\\Build\\Final\\BioshockHD.exe",
+    "execAvailable": True, "hookInstalled": True, "engineReady": True,
     "pending": 0, "levelValue": 1030, "loading": False, "inGame": True, "fontainePhase": None,
     "playerPath": "ready", "playerReady": True, "map": "1-Medical.bsm",
 }

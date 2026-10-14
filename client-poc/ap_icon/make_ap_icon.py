@@ -9,7 +9,8 @@ load, so the icon goes in a small library of our own (APIcons.swf) that a copy o
 
     python make_ap_icon.py craftingStationPC.swf icon.png out/ [--name Item]
 
-The game's file is only read. Nothing is written into the game's folder.
+The game's file is only read. Nothing is written into the game's folder. The client ships the APIcons.swf this makes
+(apworld/bioshock/client/APIcons.swf) and patches the player's own menu itself, with flash_movies.import_into.
 """
 import argparse
 import math
@@ -21,7 +22,9 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path.insert(0, str(Path(__file__).resolve().parents[2] / 'apworld' / 'bioshock' / 'client'))
 import dxt  # noqa: E402
+from flash_movies import import_into  # noqa: E402  # what the client does to the player's menu
 
 ICON_TEXELS = 128  # the game's icons are 128 x 128 texels, drawn 64 x 64 pixels (scale 10 in twips)
 TEXTURE_TAG = 512
@@ -104,30 +107,6 @@ def tag(code: int, body: bytes) -> bytes:
     return struct.pack('<HI', (code << 6) | 0x3f, len(body)) + body
 
 
-def read_tags(data: bytes, pos: int, end: int):
-    while pos < end:
-        header = struct.unpack('<H', data[pos:pos + 2])[0]
-        start = pos
-        pos += 2
-        code, length = header >> 6, header & 0x3f
-        if length == 0x3f:
-            length = struct.unpack('<I', data[pos:pos + 4])[0]
-            pos += 4
-        yield code, data[pos:pos + length], start
-        pos += length
-        if code == 0:
-            return
-
-
-def first_tag(data: bytes) -> int:
-    n = data[8] >> 3
-    return 8 + (5 + 4 * n + 7) // 8 + 4
-
-
-DEFINING = {2, 6, 7, 10, 11, 14, 20, 21, 22, 32, 33, 34, 35, 36, 37, 39, 46, 48, 60, 75, 83, 84, 87, 90, 91,
-            TEXTURE_TAG}
-
-
 def circle_records(radius: int = 640) -> bytes:
     """Line styles, bit counts and records of a round shape like the game's icons: one fill (fill style 1 on the right
     of the path), eight curves going clockwise on screen from the right-most point."""
@@ -176,32 +155,6 @@ def icon_library(icon: Image.Image, name: str) -> bytes:
             tag(9, b'\0\0\0') + tag(TEXTURE_TAG, texture) + tag(2, shape) + tag(39, sprite) + tag(56, export) +
             tag(1, b'') + tag(0, b''))
     return b'FWS' + bytes([6]) + struct.pack('<I', 8 + len(body)) + body
-
-
-def import_into(movie: bytes, library: str, name: str) -> bytes:
-    """The movie, also importing `name` from another library (as it imports the game's icons from sharedlibrary.swf),
-    so its scripts can attach it by that name."""
-    if movie[:3] != b'FWS':
-        raise SystemExit('expected an uncompressed SWF (FWS)')
-    tags = list(read_tags(movie, first_tag(movie), len(movie)))
-    used = set()
-    for code, body, _ in tags:
-        if code in DEFINING and len(body) >= 2:
-            used.add(struct.unpack('<H', body[:2])[0])
-        if code in (57, 71):  # imported characters take ids too
-            p = body.index(b'\0') + 1 + (2 if code == 71 else 0)
-            count, p = struct.unpack('<H', body[p:p + 2])[0], p + 2
-            for _ in range(count):
-                used.add(struct.unpack('<H', body[p:p + 2])[0])
-                p = body.index(b'\0', p + 2) + 1
-    new_id = max(used) + 1
-    imported = tag(57, library.encode('latin1') + b'\0' + struct.pack('<HH', 1, new_id) + name.encode('latin1') + b'\0')
-    # with the movie's other imports: in front of the last of them
-    last = max(start + 2 + (4 if (struct.unpack('<H', movie[start:start + 2])[0] & 0x3f) == 0x3f else 0) + len(body)
-               for code, body, start in tags if code == 57)
-    out = bytearray(movie[:last] + imported + movie[last:])
-    struct.pack_into('<I', out, 4, len(out))
-    return bytes(out)
 
 
 def main():

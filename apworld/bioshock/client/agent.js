@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.3';
+const AGENT_VERSION = '2026-10-14.4';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -563,6 +563,7 @@ function readState() {
   return {
     agent: AGENT_VERSION,
     build: build.name,
+    exe: mod.path, // where the game is, for the client to find its Flash movies
     execAvailable: execInfo !== null && !disabled,
     hookInstalled: deltaFunction !== null,
     engineReady,
@@ -597,6 +598,8 @@ function readState() {
       [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
     gardenLines: gardens.config === null ? 0 : gardens.config.lines.size,
     gardenTrouble: gardens.trouble,
+    // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
+    apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
     // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
     completedQuests: quests.flag === null ? null : quests.completed,
@@ -1503,7 +1506,7 @@ function watchObjects(map, now) {
       const name = nameOfObject(object);
       if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
         scan.placeholder = object;
-      } else if (gardens.wanted.has(name)) {
+      } else if (gardens.wanted.has(name) || name === AP_ICON_CLASS) {
         scan.classes.set(name, object);
       }
     }
@@ -1940,6 +1943,15 @@ function standIn(name, description, iconOf = null) {
   return copy;
 }
 
+// The class whose name a line's stand-in takes, for its icon: the real item's for one of our own BioShock items, and
+// for anything else the AP icon's, once the Garden's menu that can show it has been loaded. null: the chips icon.
+function iconFor(wanted) {
+  if (wanted.className !== null) {
+    return gardens.classes.get(wanted.className) || null;
+  }
+  return movies.served.has(AP_ICON_MENU) ? gardens.classes.get(AP_ICON_CLASS) || null : null;
+}
+
 function setGardenLines(config) {
   if (objectModel === null || virtualQuery === null) {
     return `changing Garden lines is not supported on the ${build.name} build yet`;
@@ -2015,8 +2027,7 @@ function readGardens(map) {
         }
         return;
       }
-      const real = wanted.className === null ? undefined : gardens.classes.get(wanted.className);
-      const copy = standIn(wanted.name, wanted.description, real === undefined ? null : real);
+      const copy = standIn(wanted.name, wanted.description, iconFor(wanted));
       if (copy === null) {
         return;
       }
@@ -2029,6 +2040,74 @@ function readGardens(map) {
       }
     });
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Flash movies from another folder: the Garden's menu with the AP icon
+// ---------------------------------------------------------------------------------------------------------------
+
+// The client builds a copy of the Garden's menu (craftingStationPC.swf) that also imports an icon exported as
+// AP_ICON_CLASS from APIcons.swf, and puts both in a folder of its own. Nothing in the game's folder changes: the
+// game is handed those files instead when it opens them. It opens the menus each time a save or level is loaded, so a
+// line takes the AP icon only once the menu has been opened from the client's folder. A line whose class is named
+// AP_ICON_CLASS then shows that icon, as the Garden picks a line's icon by the name of its class (probe, 2026-10-14).
+const AP_ICON_CLASS = 'Item';
+const AP_ICON_MENU = 'craftingstationpc.swf';
+const movies = { hook: null, files: new Map(), kept: [], served: new Set() };
+
+function redirectMovies(config) {
+  const folder = typeof config.folder === 'string' ? config.folder.replace(/[\\/]+$/, '') : '';
+  const names = (Array.isArray(config.files) ? config.files : [])
+    .filter((name) => typeof name === 'string' && /^[\w.]{1,64}$/.test(name));
+  if (folder === '' || names.length === 0) {
+    return 'no folder or files to use';
+  }
+  const files = new Map(names.map((name) => [name.toLowerCase(), `${folder}\\${name}`]));
+  if (movies.hook === null) {
+    let at = null;
+    for (const module of ['kernelbase.dll', 'kernel32.dll']) {
+      try {
+        at = Process.getModuleByName(module).getExportByName('CreateFileW');
+        break;
+      } catch (e) {
+        // try the next
+      }
+    }
+    if (at === null) {
+      return 'the game has no CreateFileW to watch';
+    }
+    movies.hook = Interceptor.attach(at, {
+      onEnter(args) {
+        let path = null;
+        try {
+          path = args[0].readUtf16String();
+        } catch (e) {
+          return;
+        }
+        if (path === null || !/flashmovies[\\/][^\\/]+$/i.test(path)) {
+          return;
+        }
+        const name = path.split(/[\\/]/).pop().toLowerCase();
+        const ours = movies.files.get(name);
+        if (ours === undefined) {
+          return;
+        }
+        const wide = Memory.allocUtf16String(ours);
+        movies.kept.push(wide); // CreateFileW is done with it on return; a few are kept in case
+        if (movies.kept.length > 16) {
+          movies.kept.shift();
+        }
+        args[0] = wide;
+        if (!movies.served.has(name)) {
+          log(`the game opens ${ours} for ${path}`);
+        }
+        movies.served.add(name);
+      },
+    });
+  }
+  movies.files = files;
+  log(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2499,23 +2578,26 @@ rpc.exports = {
     return readState();
   },
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
-  // 'touch_stations' (stations open no menu) and 'garden_lines {json}' (what the Gardens sell) at once.
+  // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
+  // 'redirect_movies {json}' (Flash movies from the client's folder) at once.
   // The traps are not built yet.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
       return;
     }
-    if (typeof name === 'string' && name.startsWith('garden_lines ')) {
-      let trouble;
-      try {
-        trouble = setGardenLines(JSON.parse(name.slice('garden_lines '.length)));
-      } catch (e) {
-        trouble = e.message;
+    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
+      if (typeof name === 'string' && name.startsWith(`${action} `)) {
+        let trouble;
+        try {
+          trouble = carryOut(JSON.parse(name.slice(action.length + 1)));
+        } catch (e) {
+          trouble = e.message;
+        }
+        send(trouble === null ? { type: 'action_result', id, name: action, ok: true }
+          : { type: 'action_result', id, name: action, ok: false, reason: trouble });
+        return;
       }
-      send(trouble === null ? { type: 'action_result', id, name: 'garden_lines', ok: true }
-        : { type: 'action_result', id, name: 'garden_lines', ok: false, reason: trouble });
-      return;
     }
     if (name === 'touch_stations') {
       let trouble;

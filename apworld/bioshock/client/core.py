@@ -18,12 +18,12 @@ from __future__ import annotations
 
 import json
 
-from collections.abc import Collection, Iterable, Mapping, Sequence
+from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
 from ..data import GOAL_LEVEL, ItemKind
-from . import game_data
+from . import flash_movies, game_data
 from .game_data import Delivery
 from .protocol import (
     Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer,
@@ -112,6 +112,11 @@ class BridgeCore:
         self._touch_command_id: int | None = None  # the agent has been asked to skip station menus, under this id
         self._garden_command_id: int | None = None  # the last Garden lines sent to the agent went under this id
         self._garden_sent: str | None = None  # ... and were these, so the same lines are not sent again
+        # Makes the Garden's menu with the AP icon and returns the folder it is in (None: not for this agent, such as
+        # the simulated game). Raises an exception whose message says why it cannot.
+        self.prepare_movies: Callable[[], str | None] = lambda: None
+        self._movies_asked = False  # this agent has been given the menu with the AP icon, or it could not be made
+        self._movies_command_id: int | None = None
         self._announced_locked: set[int] = set()
         self._announced_goal_locked = False
 
@@ -243,6 +248,8 @@ class BridgeCore:
         self._touch_command_id = None  # a new agent is asked again
         self._garden_command_id = None
         self._garden_sent = None
+        self._movies_asked = False
+        self._movies_command_id = None
         # ... and what was about to be sent to the agent that has gone must not reach the next one as well.
         self._out = [action for action in self._out if not isinstance(action, (RunCommand, RunAction, KillPlayer))]
 
@@ -276,6 +283,13 @@ class BridgeCore:
             if not event.ok:
                 self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}. Buying a "
                              "line still sends its check.", warning=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._movies_command_id:
+            if event.ok:
+                self._notice("Gatherer's Garden lines that sell other players' items show the Archipelago icon from "
+                             "the next time you load a save or a level.")
+            else:
+                self._notice(f"Gatherer's Garden lines that sell other players' items show a bag of chips: "
+                             f"{event.reason}.", warning=True)
         elif isinstance(event, ActionResult):
             # The agent either supports an action or it doesn't, so asking again would not help.
             self._on_result(event.command_id, event.ok, now, event.reason or "the game could not do it",
@@ -294,6 +308,7 @@ class BridgeCore:
         self._ask_for_touch()
         self._scout_gardens()
         self._send_garden_lines()
+        self._redirect_movies()
         self._pump_delivery(now)
         self._pump_deathlink(now)
         if self._dirty and self.connected:
@@ -693,6 +708,25 @@ class BridgeCore:
         self._garden_command_id = self._next_command_id
         self._next_command_id += 1
         self._out.append(RunAction(self._garden_command_id, action))
+
+    def _redirect_movies(self) -> None:
+        """With shop checks, give each agent once the Garden's menu that can show the AP icon."""
+        if not (self.shop_checks and self.connected and self.agent_attached) or self._movies_asked:
+            return
+        self._movies_asked = True
+        try:
+            folder = self.prepare_movies()
+        except Exception as error:  # the icon is a nicety: the lines work without it
+            self._notice(f"Gatherer's Garden lines that sell other players' items show a bag of chips: {error}.",
+                         warning=True)
+            return
+        if folder is None:
+            return
+        self._movies_command_id = self._next_command_id
+        self._next_command_id += 1
+        offer = {"folder": folder, "files": list(flash_movies.FILES)}
+        self._out.append(RunAction(self._movies_command_id,
+                                   "redirect_movies " + json.dumps(offer, separators=(",", ":"))))
 
     def _start(self, index: int, delivery: Delivery, now: float) -> None:
         self._in_flight = _InFlight(index, delivery)

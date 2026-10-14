@@ -1325,6 +1325,47 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual(h.scouts, [])
         self.assertEqual(h.game.garden_lines, {})
 
+    def test_the_game_is_given_the_menu_with_the_ap_icon_once_per_connection(self) -> None:
+        h = self.shop()
+        made = []
+        h.core.prepare_movies = lambda: made.append(1) or "C:\\cache\\FlashMovies"
+        h.connect().attach()
+        h.settle()
+        h.settle()
+        self.assertEqual(h.game.movies, {"folder": "C:\\cache\\FlashMovies",
+                                         "files": ["craftingStationPC.swf", "APIcons.swf"]})
+        self.assertEqual(len(made), 1)
+        self.assertTrue(any("Archipelago icon" in notice.text for notice in h.notices))
+        h.detach()
+        h.game = SimulatedGame()
+        h.attach()
+        h.settle()
+        self.assertEqual(len(made), 2, "a new game connection is given it again")
+        self.assertIsNotNone(h.game.movies)
+
+    def test_a_menu_that_cannot_be_made_leaves_the_chips_icon(self) -> None:
+        h = self.shop()
+
+        def fail() -> str:
+            raise OSError("no room")
+        h.core.prepare_movies = fail
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertIsNone(h.game.movies)
+        self.assertTrue(any("bag of chips: no room" in notice.text and notice.warning for notice in h.notices))
+        self.assertEqual(len(self.offer(h)), 16, "the lines still work")
+
+    def test_no_menu_for_a_game_without_files_or_without_shop_checks(self) -> None:
+        h = self.shop().connect().attach()  # prepare_movies answers None, as for the simulated game
+        h.settle()
+        self.assertIsNone(h.game.movies)
+        h = Harness(access_items=False)
+        h.core.prepare_movies = lambda: "C:\\cache"
+        h.connect().attach()
+        h.settle()
+        self.assertIsNone(h.game.movies)
+
     def test_levels_without_mapped_gardens_get_no_lines(self) -> None:
         h = self.shop().connect().attach()
         h.game.travel(MEDICAL_PAVILION)

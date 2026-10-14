@@ -401,6 +401,7 @@ class TestFridaAgent(FridaAgentTestBase):
         self.assertFalse(agent.busy)
         self.assertTrue(agent.alive)
         self.assertEqual(agent.description, "BioShock Remastered (Steam 1.0.127355)")
+        self.assertEqual(agent.game_path, "E:\\BioShock Remastered\\Build\\Final\\BioshockHD.exe")
         self.assertEqual(agent.command, PYTHON)
         self.assertEqual(agent.frida_version, "17.0.0-fake")
         self.assertEqual(fake.calls("create_script")[0]["length"], len(frida_agent.load_agent_source()),

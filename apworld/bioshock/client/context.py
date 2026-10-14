@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pkgutil
 import time
 from argparse import Namespace
+from pathlib import Path
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -22,7 +24,7 @@ from NetUtils import ClientStatus
 from Utils import async_start, gui_enabled
 
 from ..data import GAME_NAME
-from . import frida_agent
+from . import flash_movies, frida_agent
 from .core import BridgeCore
 from .frida_agent import AgentUnusable, FridaAgent
 from .protocol import (
@@ -204,6 +206,7 @@ class BioShockContext(CommonContext):
         super().__init__(server_address, password)
         self.tags = set(self.tags)  # the class-level set is shared by every context
         self.core = BridgeCore()
+        self.core.prepare_movies = self.prepare_movies
         self.agent: GameAgent | None = None
         self.auto_attach = True
         self.game_task: asyncio.Task[None] | None = None
@@ -295,6 +298,17 @@ class BioShockContext(CommonContext):
         self.drop_agent()
         self.agent = agent
         self.core.on_agent_attached(agent.description)
+
+    def prepare_movies(self) -> str | None:
+        """Make the Garden's menu that can show the AP icon for the game the client is attached to, outside the game's
+        folder, and return the folder it is in. None for a game that has no files, such as the simulated one."""
+        exe = getattr(self.agent, "game_path", None)
+        if not exe:
+            return None
+        library = pkgutil.get_data(__package__, flash_movies.LIBRARY)
+        if library is None:
+            raise flash_movies.MoviesUnavailable(f"{flash_movies.LIBRARY} is missing from the apworld")
+        return str(flash_movies.prepare(exe, Path(Utils.cache_path("bioshock", "FlashMovies")), library))
 
     def drop_agent(self, reason: str = "") -> None:
         if self.agent is None:
