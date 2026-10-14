@@ -15,10 +15,10 @@ from typing import Any, ClassVar
 from BaseClasses import CollectionState
 from Fill import distribute_items_restrictive
 
-from ..client import game_data
+from ..client import game_data, travel
 from ..client.protocol import Action, SendGoal
 from ..data import (
-    ARCADIA, FARMERS_MARKET, FORT_FROLIC, GOAL_LOCATION, LEVEL_NAMES, LOCATION_TABLE, WELCOME_TO_RAPTURE, ItemKind,
+    ARCADIA, CHAPTERS, FARMERS_MARKET, FORT_FROLIC, GOAL_LOCATION, LEVEL_NAMES, LOCATION_TABLE, WELCOME_TO_RAPTURE, ItemKind,
     LocationCategory,
 )
 from ..items import ITEM_KIND
@@ -302,3 +302,68 @@ class TestSkippingCollectiblesPlaythrough(PlaythroughBase):
                                       for location in harness.valid - harness.server_checked)
                 self.assertEqual(set(left_behind), {ItemKind.FILLER})
                 self.assertEqual(sum(left_behind.values()), 122)
+
+
+class TestOpenRapturePlaythrough(PlaythroughBase):
+    """Open Rapture: the player goes wherever the bathysphere and the story's crossings let them, a chapter at a time,
+    and plays it out. Archipelago's logic is the referee, as for the story order."""
+    options = {"level_access": "open_rapture"}
+    seeds = (1, 2, 3, 4, 5)
+
+    def play_open_rapture(self, harness: SeedHarness) -> list[int]:
+        game = harness.game
+        harness.connect().attach()
+        for level in (WELCOME_TO_RAPTURE, "Medical Pavilion"):
+            play_level(game, level)
+            game.quests |= travel.CLOSING_QUESTS.get(level, frozenset())
+            harness.settle()
+        done = {1}
+        order = []
+        while len(done) < len(CHAPTERS):
+            for chapter in CHAPTERS:
+                if chapter.number in done or not self.enter(harness, chapter, done):
+                    continue
+                for level in chapter.levels:
+                    play_level(game, level)
+                    game.quests |= travel.CLOSING_QUESTS.get(level, frozenset())
+                    harness.settle()
+                done.add(chapter.number)
+                order.append(chapter.number)
+                break
+            else:
+                self.fail(f"stuck with chapters {sorted(done)} done; the bathysphere offers {game.bathysphere_stops()}")
+        game.defeat_fontaine()
+        harness.settle()
+        return order
+
+    @staticmethod
+    def enter(harness: SeedHarness, chapter, done: set[int]) -> bool:
+        """Go to the start of a chapter if the game lets the player, the way the game would."""
+        game = harness.game
+        first = chapter.levels[0]
+        if chapter.number == 6:  # the story's way, out of Ryan's office
+            if 5 not in done:
+                return False
+            game.travel("Rapture Central Control")
+            harness.settle()
+            if game.cross(first) != first:
+                harness.settle()
+                return False
+            return True
+        if chapter.number == 7 and 6 not in done:
+            return False
+        stop = "Apollo Square" if chapter.number == 6 else first
+        if stop not in game.bathysphere_stops():
+            return False
+        game.ride(stop)
+        return True
+
+    def test_any_order_the_items_allow(self) -> None:
+        orders = set()
+        for seed in self.seeds:
+            with self.subTest(seed=seed):
+                harness = self.new_seed(seed)
+                orders.add(tuple(self.play_open_rapture(harness)))
+                self.assertEqual(harness.out_of_logic, [], "sent before the world's rules allow it")
+                self.check_finished(harness, expected_warnings=("Arcadia is locked", "Olympus Heights is locked"))
+        self.assertGreater(len(orders), 1, "these seeds all opened the chapters in the same order")

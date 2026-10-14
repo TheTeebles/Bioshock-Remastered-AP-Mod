@@ -94,3 +94,39 @@ class TestOpenRaptureGenerates(PoolTestBase):
         with self.assertRaises(OptionError) as raised:
             self.generate_for_real(stations_only)
         self.assertIn("open from the start", str(raised.exception))
+
+
+class TestOpenRaptureOptionSweep(PoolTestBase):
+    """Many seeds over random mixes of the other options: each one either generates and is beatable, or is refused
+    with an OptionError that says why. A fill that fails is a bug."""
+    auto_construct = False
+    SEEDS = 40
+
+    def random_options(self, rng) -> dict:
+        return {
+            "level_access": "open_rapture",
+            "story_checks": rng.random() < 0.8,
+            "little_sister_checks": rng.random() < 0.7,
+            "power_to_the_people_checks": rng.random() < 0.6,
+            "level_completion_checks": rng.random() < 0.7,
+            "audio_diary_checks": rng.choice(["off", "filler_only", "all"]),
+            "shop_checks": rng.choice(["off", "first_appearances", "all"]),
+            "start_with_research_camera": rng.random() < 0.5,
+            "trap_chance": rng.choice([0, 10, 50]),
+        }
+
+    def test_random_option_mixes(self) -> None:
+        import random
+        rng = random.Random(2026_10_14)
+        made = refused = 0
+        for seed in range(self.SEEDS):
+            players = [self.random_options(rng) for _ in range(rng.choice([1, 1, 2]))]
+            with self.subTest(seed=seed, players=players):
+                try:
+                    multiworld = self.generate_for_real(*players, seed=seed)
+                except OptionError:
+                    refused += 1
+                    continue
+                self.assertTrue(multiworld.can_beat_game(multiworld.state), "every player can reach the goal")
+                made += 1
+        self.assertGreater(made, self.SEEDS // 2, f"most mixes should generate ({refused} refused)")

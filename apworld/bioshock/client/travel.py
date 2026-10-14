@@ -64,9 +64,11 @@ CROSSINGS: tuple[Crossing, ...] = (
 
 # Open Rapture's Level Complete: a level is finished when the next level of its chapter has been reached, or, for the
 # last level of a chapter, when the quest that closes its story is completed (quest names from the map files'
-# ActionCompleteQuest; the client reads completed quests from the game). Medical Pavilion is finished once any later
-# chapter has been reached: the bathysphere ride out of it is the end of its story.
+# ActionCompleteQuest; the client reads completed quests from the game). Medical Pavilion is finished with Steinman's
+# key, or once any later chapter has been reached: the bathysphere ride out of it is the end of its story. The key
+# matters when the first chapter item is on Medical's own Level Complete: no ride out is open before it is sent.
 CLOSING_QUESTS: dict[str, frozenset[str]] = {
+    MEDICAL_PAVILION: frozenset({"QuarantineKey"}),
     SMUGGLERS_HIDEOUT: frozenset({"RunToSubmarine"}),
     ARCADIA: frozenset({"DefendMPRAmbush"}),
     FARMERS_MARKET: frozenset({"DefendMPRAmbush"}),  # back in Arcadia, as the story goes

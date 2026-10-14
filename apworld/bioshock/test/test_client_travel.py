@@ -79,6 +79,8 @@ class TestOpenRaptureCompletion(unittest.TestCase):
     def test_the_last_level_of_a_chapter_completes_with_its_closing_quest(self) -> None:
         self.assertNotIn("Fort Frolic", travel.completed_levels({"Fort Frolic", "Hephaestus"}, ()))
         self.assertIn("Fort Frolic", travel.completed_levels({"Fort Frolic"}, {"ReplaceThreeMorePhotos"}))
+        self.assertIn("Medical Pavilion", travel.completed_levels({"Medical Pavilion"}, {"QuarantineKey"}),
+                      "Medical completes before any ride out, which its own check may be what opens")
         done = travel.completed_levels({"Arcadia", "Farmer's Market"}, {"DefendMPRAmbush"})
         self.assertIn("Arcadia", done)
         self.assertIn("Farmer's Market", done)
