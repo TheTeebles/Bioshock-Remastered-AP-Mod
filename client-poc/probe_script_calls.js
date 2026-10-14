@@ -92,7 +92,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.18';
+const PROBE_VERSION = '2026-10-14.19';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -3890,6 +3890,40 @@ globalThis.levels = function () {
 // route(0, '2-Fisheries', 'PlayerStart'): level change 0 of levels() loads that map at that PlayerStart instead.
 // Rewrites the strings (in their own buffers if they fit, else a new one from the process heap) and the
 // resolveInfoList rows that feed them, if those hold names. Save first, then trigger the level change.
+// Strings the game allocated that nothing reads while playing: the scripts' editor notes and log lines. route()
+// swaps a string it must lengthen with one of these (pointer, count and room travel together, so every buffer
+// keeps exactly one owner and the game frees it as usual).
+const DONOR_STRINGS = [['ActionScriptNote', 'Label'], ['ActionLog', 'Text'], ['ActionDisplayOnScreenDebugMessage', 'Text']];
+const borrowed = new Set();
+
+function borrowString(room) {
+  for (const [className, property] of DONOR_STRINGS) {
+    const learned = learnAnyClass(className);
+    const p = learned.error ? undefined : learned.properties.get(property);
+    if (p === undefined) {
+      continue;
+    }
+    for (const object of matchingObjects(`^${className}$`).get(className) || []) {
+      const at = object.add(p.offset);
+      const key = at.toString();
+      const data = pointerAt(at);
+      const max = u32(at.add(8)) || 0;
+      if (borrowed.has(key) || data === null || data.isNull() || max < room || max > 4096) {
+        continue;
+      }
+      borrowed.add(key);
+      return { at, owner: `${className} ${nameOfObject(object)}.${property}` };
+    }
+  }
+  return null;
+}
+
+function swapStrings(a, b) {
+  const first = a.readByteArray(12);
+  a.writeByteArray(b.readByteArray(12));
+  b.writeByteArray(first);
+}
+
 globalThis.route = function (n, mapName, label) {
   const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
   const action = actions[n];
@@ -3905,15 +3939,18 @@ globalThis.route = function (n, mapName, label) {
     }
     const at = action.add(p.offset);
     const capacity = u32(at.add(8)) || 0;
-    if (text.length + 1 <= capacity) {
-      writeInPlace(at, text);
-    } else if (heapApi !== null) {
-      const buffer = heapApi.alloc(heapApi.heap, 8, (text.length + 1) * 2);
-      buffer.writeUtf16String(text);
-      at.writePointer(buffer);
-      at.add(4).writeU32(text.length + 1);
-      at.add(8).writeU32(text.length + 1);
+    if (text.length + 1 > capacity) {
+      // Memory of our own crashes the game once the level change runs (round 3, 2026-10-14), so borrow a long
+      // enough buffer the game made itself: swap this string with an editor note nobody reads while playing.
+      const donor = borrowString(text.length + 1);
+      if (donor === null) {
+        log(`route: no string of the game's long enough for ${JSON.stringify(text)}; ${name} left alone`);
+        continue;
+      }
+      swapStrings(at, donor.at);
+      log(`route: ${name} now uses the buffer of ${donor.owner} (room for ${u32(at.add(8))})`);
     }
+    writeInPlace(at, text);
     log(`route: ${name} now ${JSON.stringify(stringAt(at))}`);
   }
   const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
