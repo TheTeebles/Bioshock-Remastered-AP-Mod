@@ -43,6 +43,8 @@
  *   gardenCost(7, 20) set line 7's CostAdjustment (the price multiplier) to 20, to see how the price follows it
  *                     and which currency the line asks for
  *   defaults('chips') the text properties of a class's default values (what a new chips object starts with)
+ *   placeholders()    every loaded item class (Item and below) with its shown name and how many objects of it exist,
+ *                     to pick placeholder items for Garden lines
  *   rename('chips', 'FriendlyName', 'Archipelago Item')  rewrite one of them, to see whether the Garden shows it
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
@@ -75,7 +77,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.5';
+const PROBE_VERSION = '2026-10-14.6';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1257,14 +1259,15 @@ function textsAt(base, strings) {
   return strings.map(([name, p]) => [name, p, readable(base.add(p.offset), 12) ? stringAt(base.add(p.offset)) : '']);
 }
 
-function classDefaults(className) {
+function classDefaults(className, quiet = false) {
+  const say = quiet ? () => {} : log;
   const learned = learnAnyClass(className);
   const cls = learned.error ? null : findClass(className);
   if (cls === null) {
     return { error: learned.error || `no class named ${className}` };
   }
   const strings = [...learned.properties.entries()].filter(([, p]) => p.kind === 'StrProperty');
-  log(`${className}: ${learned.lineage.join(' < ')}; text properties: ` +
+  say(`${className}: ${learned.lineage.join(' < ')}; text properties: ` +
       `${strings.map(([name, p]) => `${name} +${hex(p.offset)} (${p.owner})`).join(', ') || 'none'}`);
   if (strings.length === 0) {
     return { error: `${className} has no text properties` };
@@ -1279,7 +1282,7 @@ function classDefaults(className) {
       continue;
     }
     const name = nameOfObject(object) || '';
-    log(`  object ${name} of class ${className} at ${object}`);
+    say(`  object ${name} of class ${className} at ${object}`);
     instances.push(object);
     if (/^Default/i.test(name)) {
       candidates.push({ where: `default object ${name}`, data: object });
@@ -1301,7 +1304,7 @@ function classDefaults(className) {
   for (const candidate of candidates) {
     const texts = textsAt(candidate.data, strings);
     const filled = texts.filter(([, , text]) => text.length > 0).length;
-    log(`  ${candidate.where}: ${filled} of ${texts.length} text properties hold text` +
+    say(`  ${candidate.where}: ${filled} of ${texts.length} text properties hold text` +
         `${filled > 0 ? ` (${texts.filter(([, , t]) => t).map(([n, , t]) => `${n} ${JSON.stringify(t.slice(0, 40))}`).join(', ')})` : ''}`);
     if (filled > 0 && (best === null || filled > best.filled)) {
       best = { ...candidate, texts, filled };
@@ -1356,6 +1359,39 @@ globalThis.rename = function (className, propertyName, text) {
     log(`${className}.${propertyName} in ${label}: ${JSON.stringify(before)} -> ${JSON.stringify(stringAt(at))}`);
   }
   return 'open the Garden (or look at a chips pickup) to see it';
+};
+
+globalThis.placeholders = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const cache = new Map();
+  const counts = new Map();
+  const classes = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null) {
+      continue;
+    }
+    if (classNameOf(object) === 'Class') {
+      if (extendsClass(object, 'Item', cache)) {
+        classes.push(object);
+      }
+    } else {
+      const key = cls.toString();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  for (const cls of classes) {
+    const name = nameOfObject(cls);
+    const found = classDefaults(name, true);
+    const friendly = found.error ? '?' : (found.texts.find(([n]) => n === 'FriendlyName') || [, , ''])[2];
+    const lineage = learnAnyClass(name).lineage || [];
+    log(`${name}: ${JSON.stringify(friendly)}, ${counts.get(cls.toString()) || 0} objects (${lineage.slice(1, -1).join(' < ')})`);
+  }
+  return `${classes.length} item classes`;
 };
 
 // ---- weapon upgrades, for taking back what a Power to the People station gave ----
