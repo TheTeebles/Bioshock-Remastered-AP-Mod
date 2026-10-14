@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.12';
+const PROBE_VERSION = '2026-10-14.13';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1673,6 +1673,50 @@ globalThis.movie = function (name = 'AirBlast') {
     }
   }
   return 'done';
+};
+
+// Which files the game opens, and when: to see whether the Garden's Flash movies (and sharedlibrary.swf, where the
+// item icons are) are read again on a level load or when the Garden opens, which is when a changed copy could be
+// handed over instead. files() starts watching CreateFileW, filesStop() stops.
+const fileWatch = { hooks: [], seen: [] };
+
+globalThis.files = function (pattern = 'swf|gsc|gfx|FlashMovies') {
+  if (fileWatch.hooks.length > 0) {
+    return 'already watching; filesStop() first';
+  }
+  const regex = new RegExp(pattern, 'i');
+  fileWatch.seen = [];
+  for (const [module, fname, wide] of [['kernel32.dll', 'CreateFileW', true], ['kernel32.dll', 'CreateFileA', false],
+    ['kernelbase.dll', 'CreateFileW', true], ['kernelbase.dll', 'CreateFileA', false]]) {
+    let at = null;
+    try {
+      at = Process.getModuleByName(module).getExportByName(fname);
+    } catch (e) {
+      continue;
+    }
+    fileWatch.hooks.push(Interceptor.attach(at, {
+      onEnter(args) {
+        let path = null;
+        try {
+          path = wide ? args[0].readUtf16String() : args[0].readAnsiString();
+        } catch (e) {
+          return;
+        }
+        if (path !== null && regex.test(path)) {
+          const line = `${module}!${fname} ${path}`;
+          fileWatch.seen.push(line);
+          log(`file: ${line}`);
+        }
+      },
+    }));
+  }
+  return `watching ${fileWatch.hooks.length} functions; load a save, open the Garden, then filesStop()`;
+};
+
+globalThis.filesStop = function () {
+  fileWatch.hooks.forEach((h) => h.detach());
+  fileWatch.hooks = [];
+  return `stopped; ${fileWatch.seen.length} files opened`;
 };
 
 globalThis.upgrades = function () {
