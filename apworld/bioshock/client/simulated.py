@@ -7,8 +7,10 @@ starts it and `/sim` plays it.
 """
 from __future__ import annotations
 
+import json
 import re
 from collections import Counter
+from typing import Any
 
 from ..data import (
     AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
@@ -53,6 +55,8 @@ class SimulatedGame:
         self.station_touch = False  # stations open no menu, as the client asks when they are touch checks
         self.held_weapons: set[str] = set()  # weapon classes the player holds ("Crossbow")
         self.reports_weapons = False  # whether the state says which weapons the player holds, as the agent does
+        self.garden_lines: dict[str, list[dict[str, Any]]] = {}  # level -> what its Gardens sell, as the client said
+        self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -89,6 +93,7 @@ class SimulatedGame:
             stations=dict(self.stations),
             milestones=frozenset(self.milestones),
             weapons=frozenset(self.held_weapons) if self.reports_weapons else None,
+            garden_bought={level: frozenset(lines) for level, lines in self.garden_bought.items()},
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -103,6 +108,11 @@ class SimulatedGame:
     def run_action(self, command_id: int, action: str) -> None:
         if action == "touch_stations":  # a setting, not something that happens in the game: not in `actions`
             self.station_touch = True
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("garden_lines "):  # also a setting: what the Gardens of a level sell
+            offer = json.loads(action.partition(" ")[2])
+            self.garden_lines[offer["level"]] = offer["lines"]
             self._events.append(ActionResult(command_id, True))
             return
         self.actions.append(action)
@@ -175,6 +185,17 @@ class SimulatedGame:
         if self.stations[level] >= limit:
             raise ValueError(f"{level} has no more Power to the People stations ({limit} in total).")
         self.stations[level] += 1
+
+    def buy_from_garden(self, line: int) -> str:
+        """Buy line `line` (from 1) of the Gatherer's Garden here. Returns what the line was selling."""
+        offer = {entry["line"]: entry for entry in self.garden_lines.get(self.level, ())}
+        if line not in offer:
+            raise ValueError(f"The Gardens in {self.level} have no line {line} that is a check"
+                             + (f" (lines: {', '.join(str(n) for n in sorted(offer))})." if offer else "."))
+        if line in self.garden_bought.get(self.level, set()) or offer[line]["bought"]:
+            raise ValueError(f"Line {line} has been bought already.")
+        self.garden_bought.setdefault(self.level, set()).add(line)
+        return f"{offer[line]['name']} for {offer[line]['price']} ADAM"
 
     def reach_milestone(self, level: str | None = None) -> str:
         """Do the next story milestone of a level. Returns what it was."""

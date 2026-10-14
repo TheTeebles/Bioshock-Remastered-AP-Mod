@@ -32,6 +32,7 @@ class GameState:
     stations: Mapping[str, int] | None = None  # level -> Power to the People stations used there
     milestones: frozenset[str] | None = None  # story milestones reached in this save (keys of STORY_MILESTONES)
     weapons: frozenset[str] | None = None  # classes of the weapons the player holds ("Shotgun"), if the agent can tell
+    garden_bought: Mapping[str, frozenset[int]] | None = None  # level -> Gatherer's Garden lines bought (from 1)
 
 
 @dataclass(frozen=True)
@@ -103,6 +104,21 @@ class SendChecks:
 
 
 @dataclass(frozen=True)
+class ScoutLocations:
+    """Ask the server what sits at these locations; the answer comes back through BridgeCore.on_scouted."""
+    locations: tuple[int, ...]
+
+
+@dataclass(frozen=True)
+class ScoutedItem:
+    """What the server says sits at one location."""
+    item: str  # the item's name
+    player: str  # the name of the player it is for
+    flags: int  # Archipelago's item flags: 1 progression, 2 useful, 4 trap
+    own: bool  # True when it is a BioShock item for this very slot
+
+
+@dataclass(frozen=True)
 class SendGoal:
     pass
 
@@ -140,4 +156,4 @@ class Notice:
     warning: bool = False
 
 
-Action = SendChecks | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice
+Action = SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice

@@ -25,7 +25,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, diaries_of, milestones_of, normalize_map, stations_of
+from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, stations_of
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
     LittleSisterResolved, PlayerDied,
@@ -126,6 +126,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         diaries=diaries_of(raw.get("logsReceived")),
         stations=stations_of(raw.get("stationsUsed")),
         weapons=weapons_of(raw.get("weaponsHeld")),
+        garden_bought=gardens_of(raw.get("gardenBought")),
     )
 
 

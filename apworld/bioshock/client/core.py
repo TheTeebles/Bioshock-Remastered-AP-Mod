@@ -16,6 +16,8 @@ Rules it implements:
 """
 from __future__ import annotations
 
+import json
+
 from collections.abc import Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
@@ -25,7 +27,8 @@ from . import game_data
 from .game_data import Delivery
 from .protocol import (
     Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer,
-    LittleSisterResolved, Notice, PlayerDied, RunAction, RunCommand, SaveState, SendChecks, SendDeath, SendGoal,
+    LittleSisterResolved, Notice, PlayerDied, RunAction, RunCommand, SaveState, ScoutedItem, ScoutLocations,
+    SendChecks, SendDeath, SendGoal,
 )
 
 SAVE_VERSION = 1
@@ -68,6 +71,9 @@ class BridgeCore:
         self.access_items: dict[str, str | None] = {}
         self.world_items_shuffled = False
         self.station_touch = False  # stations open no menu: the agent is asked to skip it
+        self.shop_checks = False  # Gatherer's Garden lines are checks: they sell stand-ins for multiworld items
+        self.scouted: dict[int, ScoutedItem] = {}  # location -> what sits there, for the Garden lines
+        self._scouts_asked = False  # asked the server this connection
         self.death_link = False
         self.valid_locations: frozenset[int] = frozenset()
         self.checked: set[int] = set()  # confirmed by the server
@@ -104,6 +110,8 @@ class BridgeCore:
         self._kill_deadline: float | None = None
         self._ignore_death_until = 0.0
         self._touch_command_id: int | None = None  # the agent has been asked to skip station menus, under this id
+        self._garden_command_id: int | None = None  # the last Garden lines sent to the agent went under this id
+        self._garden_sent: str | None = None  # ... and were these, so the same lines are not sent again
         self._announced_locked: set[int] = set()
         self._announced_goal_locked = False
 
@@ -164,6 +172,9 @@ class BridgeCore:
         self.access_items = dict(slot_data.get("level_access_items") or {})
         self.world_items_shuffled = bool(slot_data.get("world_item_checks", 0))
         self.station_touch = bool(slot_data.get("station_touch", False))
+        self.shop_checks = bool(slot_data.get("shop_checks", 0))
+        self._scouts_asked = False
+        self._garden_sent = None
 
         self._merge_saved(saved)
         self._look_for_second_tries = True
@@ -181,6 +192,10 @@ class BridgeCore:
 
     def on_checked(self, checked_locations: Iterable[int]) -> None:
         self.checked.update(checked_locations)
+
+    def on_scouted(self, items: Mapping[int, ScoutedItem]) -> None:
+        """The server's answer to ScoutLocations: what sits at each location."""
+        self.scouted.update(items)
 
     def on_deathlink(self) -> None:
         # With no game running there is nobody to kill, and a death hours later would make no sense.
@@ -226,6 +241,8 @@ class BridgeCore:
         self._in_flight = None  # an item that was on its way starts again from its first command
         self._pending_kill = False
         self._touch_command_id = None  # a new agent is asked again
+        self._garden_command_id = None
+        self._garden_sent = None
         # ... and what was about to be sent to the agent that has gone must not reach the next one as well.
         self._out = [action for action in self._out if not isinstance(action, (RunCommand, RunAction, KillPlayer))]
 
@@ -255,6 +272,10 @@ class BridgeCore:
             if not event.ok:
                 self._notice(f"Power to the People stations will still open their menu: {event.reason}. Their "
                              "checks are still sent, but the menu also gives an upgrade.", warning=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._garden_command_id:
+            if not event.ok:
+                self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}. Buying a "
+                             "line still sends its check.", warning=True)
         elif isinstance(event, ActionResult):
             # The agent either supports an action or it doesn't, so asking again would not help.
             self._on_result(event.command_id, event.ok, now, event.reason or "the game could not do it",
@@ -271,6 +292,8 @@ class BridgeCore:
         self._send_ready_checks()
         self._send_goal_if_ready()
         self._ask_for_touch()
+        self._scout_gardens()
+        self._send_garden_lines()
         self._pump_delivery(now)
         self._pump_deathlink(now)
         if self._dirty and self.connected:
@@ -353,6 +376,7 @@ class BridgeCore:
         self.furthest = 0
         self.goal_reached = False
         self.collected = set()
+        self.scouted = {}
         self._second_tries = []
         self._pending_resync = 0
         self._local_reset = False
@@ -471,6 +495,9 @@ class BridgeCore:
         for key in state.milestones or ():
             if key in game_data.MILESTONE_LOCATION:
                 found.add(game_data.MILESTONE_LOCATION[key])
+        for level, lines in (state.garden_bought or {}).items():
+            found.update(game_data.GARDEN_LOCATION[level, line] for line in lines
+                         if (level, line) in game_data.GARDEN_LOCATION)
         return found
 
     def _send_ready_checks(self) -> None:
@@ -620,6 +647,46 @@ class BridgeCore:
         self._touch_command_id = self._next_command_id
         self._next_command_id += 1
         self._out.append(RunAction(self._touch_command_id, "touch_stations"))
+
+    def _garden_locations(self) -> list[int]:
+        return [location for location in game_data.GARDEN_LOCATION.values() if location in self.valid_locations]
+
+    def _scout_gardens(self) -> None:
+        """With shop checks, ask the server once per connection what every Garden line holds."""
+        if not (self.shop_checks and self.connected) or self._scouts_asked:
+            return
+        self._scouts_asked = True
+        wanted = tuple(location for location in self._garden_locations() if location not in self.scouted)
+        if wanted:
+            self._out.append(ScoutLocations(wanted))
+
+    def _send_garden_lines(self) -> None:
+        """Tell the agent what the Gardens of the level the player is in should sell, once all of it is known."""
+        if not (self.shop_checks and self.connected and self.agent_attached) or self.level is None:
+            return
+        lines = []
+        for (level, line), location in sorted(game_data.GARDEN_LOCATION.items()):
+            if level != self.level or location not in self.valid_locations:
+                continue
+            item = self.scouted.get(location)
+            if item is None:
+                return  # wait for the server's answer
+            name, description = game_data.garden_text(item.item, item.player, item.flags, item.own)
+            lines.append({
+                "line": line, "name": name, "description": description,
+                "price": game_data.garden_price(item.item, item.flags, item.own),
+                "bought": location in self.checked or location in self.sent or location in self.collected,
+            })
+        if not lines:
+            return
+        offer = {"level": self.level, "map": self.state.map, "lines": lines}
+        action = "garden_lines " + json.dumps(offer, separators=(",", ":"))
+        if action == self._garden_sent:
+            return
+        self._garden_sent = action
+        self._garden_command_id = self._next_command_id
+        self._next_command_id += 1
+        self._out.append(RunAction(self._garden_command_id, action))
 
     def _start(self, index: int, delivery: Delivery, now: float) -> None:
         self._in_flight = _InFlight(index, delivery)

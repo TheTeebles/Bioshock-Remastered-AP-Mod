@@ -78,6 +78,9 @@ If the game was started as administrator, Archipelago has to be started as admin
   - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
     game. The client asks the game to skip the station's upgrade menu (Steam), so using one only sends its check
     and closes it.
+  - *Gatherer's Garden lines (Shop Checks, Steam):* Neptune's Bounty only so far. Each line that is a check is renamed
+    after the multiworld item it holds and priced from it; buying it sends the check. Lines already checked are sold
+    out. After loading a save the lines show as Potato Chips for a moment until the client renames them again.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
@@ -105,6 +108,7 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 - `/sim travel arcadia` moves to a level (part of the name is enough)
 - `/sim story` does the next story objective in the level you are in
 - `/sim sister` and `/sim station` do the next one of those in the level you are in
+- `/sim buy 3` buys line 3 of the Gatherer's Garden in the level you are in
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
 - `/sim fontaine` beats the final boss
 - `/sim die` dies, to try DeathLink

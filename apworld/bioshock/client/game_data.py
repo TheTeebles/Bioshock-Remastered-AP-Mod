@@ -26,9 +26,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..data import (
-    ARCADIA, FARMERS_MARKET, FORT_FROLIC, ITEM_TABLE, LEVEL_COMPLETION_LEVELS, LEVEL_NAMES, LOCATION_TABLE, PLASMIDS,
-    PROVING_GROUNDS, STORY_MILESTONES, TONICS, ItemKind, LocationCategory, Source, level_completion_location_name,
-    story_location_name,
+    ARCADIA, FARMERS_MARKET, FORT_FROLIC, GATHERERS_GARDEN_LINES_PER_LEVEL, ITEM_TABLE, LEVEL_COMPLETION_LEVELS,
+    LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, STORY_MILESTONES, TONICS, ItemKind, LocationCategory,
+    Source, level_completion_location_name, story_location_name,
 )
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -352,6 +352,12 @@ LEVEL_COMPLETION_LOCATION: dict[str, int] = {
 MILESTONE_LOCATION: dict[str, int] = {
     milestone.key: _LOCATION_ID[story_location_name(milestone)] for milestone in STORY_MILESTONES
 }
+# (level, line) -> location ID of a Gatherer's Garden line. Lines count from 1 in the order of the Garden's stock list.
+GARDEN_LOCATION: dict[tuple[str, int], int] = {
+    (location.level, location.id - 8000 - GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(location.level)):
+        location.id
+    for location in LOCATION_TABLE if location.category == LocationCategory.GATHERERS_GARDEN
+}
 
 
 # Which of the game's quests (its objectives, by object name) completes which story milestone. Read from the running
@@ -555,6 +561,18 @@ def stations_of(used_by_map: object) -> dict[str, int] | None:
     return result
 
 
+def gardens_of(bought_by_map: object) -> dict[str, frozenset[int]] | None:
+    """Gatherer's Garden lines bought, by level, from the agent's lines by map. None while it cannot tell."""
+    if not isinstance(bought_by_map, dict):
+        return None
+    result: dict[str, frozenset[int]] = {}
+    for map_name, lines in bought_by_map.items():
+        level = level_of(normalize_map(map_name), None)
+        if level is not None and isinstance(lines, list):
+            result[level] = result.get(level, frozenset()) | {line for line in lines if isinstance(line, int)}
+    return result
+
+
 def diary_location(number: int) -> int | None:
     return 1000 + number if 1 <= number <= DIARY_COUNT else None
 
@@ -731,3 +749,39 @@ def in_fontaine_arena(map_name: str | None, level_value: int | None) -> bool | N
     if level_value == 0 or level_value in LEVEL_FROM_VALUE:
         return False
     return None
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Gatherer's Garden lines that hold multiworld items
+# --------------------------------------------------------------------------------------------------------------------
+
+# Each line of a Garden that is a check sells a stand-in item named after what the check holds. Its price in ADAM:
+# a BioShock gene for this slot costs what it costs in the base game, anything else goes by how important it is.
+# Vanilla prices seen in the Neptune's Bounty Garden (probe, 2026-10-14). Genes not listed yet go by importance.
+GENE_PRICES: dict[str, int] = {
+    "Plasmid Slot": 100, "Health Upgrade": 80, "EVE Upgrade": 80, "Enrage!": 60, "Sonic Boom": 40,
+    "Target Dummy": 60, "Winter Blast": 60, "Armored Shell": 20, "EVE Link": 20, "Extra Nutrition": 20,
+    "Machine Buster": 20,
+}
+PROGRESSION_PRICE = 80  # Teebs, 2026-10-14: 80 for a key item, 20 for filler
+USEFUL_PRICE = 40  # not set by Teebs: halfway
+FILLER_PRICE = 20
+_GENE_KINDS = (ItemKind.PLASMID, ItemKind.TONIC, ItemKind.CHARACTER_UPGRADE)
+
+
+def garden_price(item: str, flags: int, own: bool) -> int:
+    if own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES:
+        return GENE_PRICES[item]
+    if flags & 0b001:
+        return PROGRESSION_PRICE
+    if flags & 0b010:
+        return USEFUL_PRICE
+    return FILLER_PRICE
+
+
+def garden_text(item: str, player: str, flags: int, own: bool) -> tuple[str, str]:
+    """The name and description a Garden line shows for the multiworld item it holds."""
+    kind = "a key item" if flags & 0b001 else "a useful item" if flags & 0b010 else "an item"
+    if own:
+        return item, f"Yours: {item}. Buying it sends this check to the multiworld."
+    return item, f"For {player}: {kind} from the multiworld. Buying it sends this check."

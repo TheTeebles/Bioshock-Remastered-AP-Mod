@@ -5,9 +5,9 @@ import unittest
 from ..client import core as core_module
 from ..client import game_data
 from ..client.core import REFUSED, UNKNOWN, BridgeCore
-from ..client.protocol import CommandResult, CommandStarted
+from ..client.protocol import CommandResult, CommandStarted, ScoutedItem
 from ..client.simulated import SimulatedGame
-from ..data import ITEM_TABLE, PLASMIDS, TONICS, ItemKind
+from ..data import ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
 from .client_harness import IDENTITY, Harness, item, loc, not_known_yet, play_level
 
 
@@ -1236,3 +1236,91 @@ class TestSavedState(unittest.TestCase):
         text = "\n".join(h.core.status_lines())
         self.assertIn("Items: 1 of 2 given, 1 the client cannot give yet", text)
         self.assertIn("1 held until you receive Arcadia Access", text)
+
+
+class TestGatherersGarden(unittest.TestCase):
+    """With shop checks, each Garden line sells a stand-in named after what its check holds."""
+
+    def shop(self) -> Harness:
+        h = Harness(access_items=False)
+        h.slot_data["shop_checks"] = 1
+        return h
+
+    def offer(self, h: Harness) -> dict[int, dict]:
+        return {entry["line"]: entry for entry in h.game.garden_lines.get(NEPTUNES_BOUNTY, ())}
+
+    def test_lines_are_scouted_once_and_sent_for_the_level_the_player_is_in(self) -> None:
+        h = self.shop().connect().attach()
+        h.settle()
+        self.assertEqual(len(h.scouts), 1)
+        self.assertEqual(set(h.scouts[0]), set(game_data.GARDEN_LOCATION.values()))
+        self.assertEqual(h.game.garden_lines, {}, "no Garden lines for Welcome to Rapture")
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual(sorted(offer), list(range(1, 17)))
+        self.assertEqual(offer[4]["name"], "Hookshot")
+        self.assertIn("Halthrax", offer[4]["description"])
+        self.assertEqual(offer[4]["price"], game_data.PROGRESSION_PRICE)
+        self.assertFalse(offer[4]["bought"])
+        self.assertEqual(h.game.actions, [], "the lines are a setting, not something to carry out")
+
+    def test_buying_a_line_sends_its_check_and_marks_it_bought(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        h.game.buy_from_garden(4)
+        h.settle()
+        self.assertIn(game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, 4], h.server_checked)
+        self.assertTrue(self.offer(h)[4]["bought"])
+
+    def test_prices_follow_the_item(self) -> None:
+        h = self.shop()
+        line = {n: game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, n] for n in (1, 2, 3, 5)}
+        h.placed = {
+            line[1]: ScoutedItem("Sonic Boom", "Teebs", 2, True),  # a gene of ours: its vanilla price
+            line[2]: ScoutedItem("Potion", "Link", 2, False),
+            line[3]: ScoutedItem("Rupee", "Link", 0, False),
+            line[5]: ScoutedItem("Sonic Boom 2", "Teebs", 2, True),  # a gene whose price is not known yet
+        }
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual([offer[n]["price"] for n in (1, 2, 3, 5)], [40, game_data.USEFUL_PRICE,
+                                                                     game_data.FILLER_PRICE, game_data.USEFUL_PRICE])
+        self.assertIn("Yours", offer[1]["description"])
+
+    def test_checks_already_on_the_server_are_marked_bought(self) -> None:
+        h = self.shop()
+        h.server_checked.add(game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, 7])
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertTrue(self.offer(h)[7]["bought"])
+        self.assertFalse(self.offer(h)[8]["bought"])
+
+    def test_a_new_game_connection_is_sent_the_lines_again(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        h.detach()
+        h.game = SimulatedGame()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.attach()
+        h.settle()
+        self.assertEqual(len(self.offer(h)), 16)
+        self.assertEqual(len(h.scouts), 1, "what the lines hold is not asked again")
+
+    def test_without_shop_checks_nothing_is_scouted_or_sent(self) -> None:
+        h = Harness(access_items=False).connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertEqual(h.scouts, [])
+        self.assertEqual(h.game.garden_lines, {})
+
+    def test_levels_without_mapped_gardens_get_no_lines(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(MEDICAL_PAVILION)
+        h.settle()
+        self.assertEqual(h.game.garden_lines, {})

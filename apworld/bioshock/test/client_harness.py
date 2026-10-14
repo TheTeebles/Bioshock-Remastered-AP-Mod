@@ -12,7 +12,8 @@ from unittest import mock
 from ..client import game_data
 from ..client.core import SUPPORTED_SLOT_DATA_VERSION, BridgeCore
 from ..client.protocol import (
-    Action, KillPlayer, Notice, RunAction, RunCommand, SaveState, SendChecks, SendDeath, SendGoal,
+    Action, KillPlayer, Notice, RunAction, RunCommand, SaveState, ScoutedItem, ScoutLocations, SendChecks,
+    SendDeath, SendGoal,
 )
 from ..client.simulated import SimulatedGame
 from ..data import (
@@ -96,6 +97,9 @@ class Harness:
         self.notices: list[Notice] = []
         self.attached = False
         self.activity = 0  # how many things the core has asked for, notices aside
+        self.scouts: list[tuple[int, ...]] = []  # every ScoutLocations the core sent
+        # What the server says sits at a location; anything not listed is someone else's key item.
+        self.placed: dict[int, ScoutedItem] = {}
 
     # -- the two connections ----------------------------------------------------------------------------------------
 
@@ -173,6 +177,10 @@ class Harness:
                 self.deaths_sent.append(action.cause)
             elif isinstance(action, SaveState):
                 self.storage = action.data
+            elif isinstance(action, ScoutLocations):
+                self.scouts.append(action.locations)
+                self.core.on_scouted({location: self.placed.get(location, ScoutedItem("Hookshot", "Halthrax", 1, False))
+                                      for location in action.locations})
 
     def server_receives(self, locations: Sequence[int]) -> None:
         """The server confirms the checks it receives."""
