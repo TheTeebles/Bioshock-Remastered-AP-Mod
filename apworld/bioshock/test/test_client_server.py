@@ -698,7 +698,9 @@ class TestThroughTheHelper(ServerTestBase):
             received = self.received("Jack")
             commands, actions = expected_deliveries(received)
             self.assertEqual([call["command"] for call in fake.calls("exec")], commands)
-            self.assertEqual([call["name"] for call in fake.calls("action")], actions)
+            names = [call["name"] for call in fake.calls("action")]
+            self.assertEqual(names.count("touch_stations"), 1, "stations are touch checks: asked once")
+            self.assertEqual([name for name in names if name != "touch_stations"], actions)
             self.assertIn("GiveItem 1 ShockDesignerClasses.ArmoredBodyTwo", commands)
             self.assertIn("GiveWeapon ShockGame.Crossbow", commands)
             self.assertIn("StartSecurityAlarm", commands)

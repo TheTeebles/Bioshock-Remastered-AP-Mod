@@ -33,6 +33,37 @@
  *   goto('PlaceableWeaponUpgradeStation', 0)  move the player next to the first of them (save first: this
  *                     writes the player's position straight into memory). goto(pattern, n, 150) stands 150 units
  *                     off its front instead of 80; a negative distance stands behind it
+ *   stock()           every shop loaded in the level (vending machines, Gatherer's Gardens, Power to the People
+ *                     stations): where it is and the values of its own properties, arrays and structs opened up.
+ *                     stock('Vend') lists the objects of the classes matching 'Vend' instead
+ *   garden()          the nearest Gatherer's Garden's lines, numbered: what each gives, how many are left, bought
+ *   gardenItem(7, 'chips')  make line 7 of garden() give the class named 'chips' instead, to see whether buying it
+ *                     then gives that (and not the gene) while AmountPurchased still counts the purchase.
+ *                     gardenItem(7) puts the line's own class back
+ *   gardenCost(7, 20) set line 7's CostAdjustment (the price multiplier) to 20, to see how the price follows it
+ *                     and which currency the line asks for
+ *   defaults('chips') the text properties of a class's default values (what a new chips object starts with)
+ *   placeholders()    every loaded item class (Item and below) with its shown name and how many objects of it exist,
+ *                     to pick placeholder items for Garden lines
+ *   gardenClone(7, 'Hookshot')  make line 7 give a copy of the chips class made in memory, named 'Hookshot', so
+ *                     each line can have its own name without renaming real items (save first: the game has
+ *                     never seen this class, so buying it, saving or changing levels may crash)
+ *   rename('chips', 'FriendlyName', 'Archipelago Item')  rewrite one of them, to see whether the Garden shows it
+ *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
+ *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
+ *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
+ *   stationHooks()    print when the station's begin, confirm and cancel run
+ *   blockConfirm()    make confirming an upgrade do what cancelling does
+ *   stationCode()     print the machine code of the station's begin, confirm and cancel, and of the C++ functions
+ *                     they call; then print a line each time one of those C++ functions runs
+ *   blockDeep()       after stationCode(): confirming runs the C++ cancel instead of the C++ confirm
+ *   deadStat(2)       give upgrade line 2 a stat name no weapon uses, so claiming it upgrades nothing
+ *   traceCalls()      print every script function the game runs from now on that it did not run in the first
+ *                     three seconds (so not the ones it runs every frame); traceStop() ends it with a count of each
+ *   skipCall('AddStatUpgrade')  the game skips that script function whenever it would run it; skipCall() undoes it
+ *                     (crashed the game when tried on GetHoldableByClassName: do not use)
+ *   touch()           after events(): using a Power to the People station no longer opens its menu; the station
+ *                     finishes its interaction at once (FinishInteraction) and should close, with no upgrade given
  *   events()          find the function the game calls script functions through (UObject::ProcessEvent): watches
  *                     the player's virtual functions for one second (the game must be running, not paused)
  *   hurt(10)          after events(): the player takes 10 damage through the game's own TakeSimpleDamage, as a
@@ -49,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.8';
+const PROBE_VERSION = '2026-10-14.14';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -103,10 +134,13 @@ function readablePage(value) {
       const access = protect & 0xFF;
       verdict = state === 0x1000 && (protect & 0x100) === 0 && access !== 0 && access !== 0x01 && access !== 0x10;
     }
-    if (pageVerdicts.size > 16384) {
-      pageVerdicts.clear();
+    // Only good pages are remembered: one not yet in use (say, on the main menu) may hold objects after a load.
+    if (verdict) {
+      if (pageVerdicts.size > 16384) {
+        pageVerdicts.clear();
+      }
+      pageVerdicts.set(page, verdict);
     }
-    pageVerdicts.set(page, verdict);
   }
   return verdict;
 }
@@ -122,8 +156,18 @@ function readable(pointer, length) {
   return readablePage(value) && readablePage(value + (length || 4) - 1);
 }
 
+// Pages are judged once and remembered, so one freed since then still reads as fine: such a read fails, and the
+// page is judged again next time.
 function u32(pointer) {
-  return readable(pointer, 4) ? pointer.readU32() : null;
+  if (!readable(pointer, 4)) {
+    return null;
+  }
+  try {
+    return pointer.readU32();
+  } catch (e) {
+    pageVerdicts.delete(pointer.toUInt32() >>> 12);
+    return null;
+  }
 }
 
 function pointerAt(pointer) {
@@ -210,7 +254,9 @@ function nameOf(index) {
     if (text !== null && !IDENTIFIER.test(text)) {
       text = null;
     }
-    nameCache.set(index, text);
+    if (text !== null) {
+      nameCache.set(index, text); // a name not readable yet is looked up again next time
+    }
   }
   return text;
 }
@@ -723,7 +769,7 @@ function learnAnyClass(className) {
         }
         const fieldName = nameOfObject(field);
         if (!properties.has(fieldName)) {
-          properties.set(fieldName, { offset: at, kind, mask, owner: name });
+          properties.set(fieldName, { offset: at, kind, mask, owner: name, field });
         }
       }
       field = pointerAt(field.add(objects.layout.nextOffset));
@@ -849,6 +895,1335 @@ globalThis.goto = function (pattern, n = 0, distance = 80) {
   return 'moved';
 };
 
+// ---- what the shops sell, for item purchases ----
+
+// The fields of a struct (or a class's own fields), laid out the way classes are.
+function structFields(struct) {
+  const list = [];
+  const bools = new Map();
+  let field = pointerAt(struct.add(objects.layout.childrenOffset));
+  for (let n = 0; field !== null && !field.isNull() && n < 500 && readable(field, 0x80); n++) {
+    const kind = classNameOf(field) || '';
+    if (/Property$/.test(kind)) {
+      const offset = u32(field.add(objects.propertyOffset));
+      let mask = null;
+      if (kind === 'BoolProperty') {
+        const sharing = bools.get(offset) || 0;
+        bools.set(offset, sharing + 1);
+        mask = 1 << sharing;
+      }
+      list.push({ name: nameOfObject(field), offset, kind, mask, field });
+    }
+    field = pointerAt(field.add(objects.layout.nextOffset));
+  }
+  return list;
+}
+
+// A pointer kept in a property after its offset: an array's inner property (it has the array's name), or a struct
+// property's struct.
+function linkedTo(field, wanted) {
+  for (let at = objects.propertyOffset + 4; at <= objects.propertyOffset + 0x40; at += 4) {
+    const target = pointerAt(field.add(at));
+    if (target !== null && !target.isNull() && readable(target, 0x80) && wanted(target)) {
+      return target;
+    }
+  }
+  return null;
+}
+
+function innerOf(field) {
+  const name = nameOfObject(field);
+  return linkedTo(field, (t) => /Property$/.test(classNameOf(t) || '') && nameOfObject(t) === name);
+}
+
+function structOf(field) {
+  return linkedTo(field, (t) => /^(Script)?Struct$/.test(classNameOf(t) || ''));
+}
+
+const KIND_SIZE = {
+  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 4, ObjectProperty: 4,
+  ClassProperty: 4, StrProperty: 12, ArrayProperty: 12,
+};
+
+function sizeOf(property, depth = 0) {
+  if (property.kind === 'StructProperty') {
+    const struct = structOf(property.field);
+    if (struct === null || depth > 4) {
+      return null;
+    }
+    let end = 0;
+    for (const f of structFields(struct)) {
+      const size = sizeOf(f, depth + 1);
+      if (size === null) {
+        return null;
+      }
+      end = Math.max(end, f.offset + size);
+    }
+    return (end + 3) & ~3;
+  }
+  return KIND_SIZE[property.kind] || null;
+}
+
+function objectText(value) {
+  if (value === 0) {
+    return 'None';
+  }
+  const object = ptr(value);
+  if (!readable(object, 0x40)) {
+    return hex(value);
+  }
+  const name = nameOfObject(object);
+  const className = classNameOf(object);
+  if (name === null || className === null) {
+    return hex(value);
+  }
+  return className === 'Class' ? `class ${name}` : `${name} (${className})`;
+}
+
+// One value, read the way its property says. Structs and arrays are opened up a few levels deep.
+function valueText(at, property, depth = 0) {
+  const word = u32(at);
+  if (word === null) {
+    return '?';
+  }
+  switch (property.kind) {
+    case 'BoolProperty':
+      return property.mask === null ? hex(word) : String((word & property.mask) !== 0);
+    case 'ByteProperty':
+      return String(at.readU8());
+    case 'IntProperty':
+      return String(word | 0);
+    case 'FloatProperty':
+      return String(Math.round(at.readFloat() * 100) / 100);
+    case 'NameProperty':
+      return nameOf(word) || `#${word}`;
+    case 'StrProperty':
+      return JSON.stringify(stringAt(at));
+    case 'ObjectProperty':
+    case 'ClassProperty':
+      return objectText(word);
+    case 'StructProperty': {
+      const struct = structOf(property.field);
+      if (struct === null || depth > 3) {
+        return `{${hexWords(at, 0, 12)} ...}`;
+      }
+      return `{${structFields(struct).map((f) => `${f.name}: ${valueText(at.add(f.offset), f, depth + 1)}`).join(', ')}}`;
+    }
+    case 'ArrayProperty': {
+      const count = u32(at.add(4));
+      if (word === 0 || count === null || count === 0) {
+        return '[]';
+      }
+      const inner = innerOf(property.field);
+      const kind = inner === null ? null : classNameOf(inner);
+      const element = inner === null ? null : { kind, field: inner, mask: kind === 'BoolProperty' ? 1 : null };
+      const size = element === null ? null : sizeOf(element);
+      if (count > 500 || size === null || depth > 3 || !readable(ptr(word), count * size)) {
+        return `[${count} of ${kind || '?'}${size === null ? '' : `, ${size} bytes each`}]`;
+      }
+      const shown = [];
+      for (let i = 0; i < Math.min(count, 60); i++) {
+        shown.push(valueText(ptr(word).add(i * size), element, depth + 1));
+      }
+      return `[${count}: ${shown.join(', ')}${count > 60 ? ', ...' : ''}]`;
+    }
+    default:
+      return hex(word);
+  }
+}
+
+// The properties a class adds below Actor (or below Object, for things that are not actors), with their values.
+function ownValues(object, indent, depth) {
+  const cls = classOf(object);
+  const learned = learnAnyClass(classNameOf(object));
+  if (cls === null || learned.error) {
+    log(`${indent}${learned.error || 'no class'}`);
+    return [];
+  }
+  const below = new Set(learned.lineage.slice(0, Math.max(0, learned.lineage.indexOf('Actor'))));
+  if (learned.lineage.indexOf('Actor') < 0) {
+    learned.lineage.filter((name) => name !== 'Object').forEach((name) => below.add(name));
+  }
+  const followed = [];
+  const sorted = [...learned.properties.entries()].filter(([, p]) => below.has(p.owner))
+    .sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted) {
+    const text = valueText(object.add(p.offset), p);
+    log(`${indent}${name} (${p.owner}) = ${text}`);
+    if (p.kind === 'ObjectProperty' && depth < 1) {
+      const target = pointerAt(object.add(p.offset));
+      if (target !== null && !target.isNull() && readable(target, 0x40) &&
+          /Vend|Loot|Stock|Upgrade|Shop|Store/i.test(classNameOf(target) || '')) {
+        followed.push(target);
+      }
+    }
+  }
+  for (const target of followed) {
+    log(`${indent}-> ${nameOfObject(target)} (${classNameOf(target)}):`);
+    ownValues(target, `${indent}    `, depth + 1);
+  }
+  return sorted;
+}
+
+const SHOP_CLASSES = ['VendingStation', 'WeaponUpgradeStation'];
+
+globalThis.stock = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
+  const regex = pattern ? new RegExp(pattern, 'i') : null;
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const caches = new Map(SHOP_CLASSES.map((shop) => [shop, new Map()]));
+  const total = u32(objects.table.add(4)) || objects.count;
+  let n = 0;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    const className = cls === null ? null : nameOfObject(cls);
+    if (className === null || className === 'Class') {
+      continue;
+    }
+    const wanted = regex !== null ? regex.test(className) :
+      SHOP_CLASSES.some((shop) => extendsClass(cls, shop, caches.get(shop)));
+    if (!wanted) {
+      continue;
+    }
+    const place = actorPlace(object);
+    const away = from === null || from.error || place.error ? '' :
+      `, ${Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z).toFixed(0)} away`;
+    log(`${n}: ${nameOfObject(object)} (${learnAnyClass(className).lineage.join(' < ')})` +
+        `${place.error ? '' : ` at ${placeText(place)}`}${away}`);
+    ownValues(object, '    ', 0);
+    n++;
+  }
+  return n === 0 ? 'no shops loaded here' : `${n} shops`;
+};
+
+// ---- a Gatherer's Garden's lines, and what buying one gives ----
+
+const gardenSwaps = new Map();  // line address -> the ItemClass it had
+
+function nearestGarden() {
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const cache = new Map();
+  let best = null;
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null || classNameOf(object) === 'Class' || !extendsClass(cls, 'GrowthStation', cache)) {
+      continue;
+    }
+    const place = actorPlace(object);
+    const away = from === null || from.error || place.error ? 0 :
+      Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
+    if (best === null || away < best.away) {
+      best = { object, away };
+    }
+  }
+  return best;
+}
+
+// The lines of a Garden's VendingLootSpec array: where each sits and its fields.
+function gardenLines(garden) {
+  const station = learnAnyClass(classNameOf(garden));
+  const tableProperty = station.error ? undefined : station.properties.get('VendingTable');
+  if (tableProperty === undefined) {
+    return { error: station.error || 'no VendingTable property' };
+  }
+  const table = pointerAt(garden.add(tableProperty.offset));
+  if (table === null || table.isNull()) {
+    return { error: 'the Garden has no VendingTable' };
+  }
+  const lootTable = learnAnyClass('VendingLootTable');
+  const specs = lootTable.error ? undefined : lootTable.properties.get('VendingLootSpec');
+  if (specs === undefined) {
+    return { error: lootTable.error || 'no VendingLootSpec array' };
+  }
+  const inner = innerOf(specs.field);
+  const struct = inner === null ? null : structOf(inner);
+  const size = inner === null ? null : sizeOf({ kind: 'StructProperty', field: inner });
+  if (struct === null || size === null) {
+    return { error: 'the VendingLootSpec struct could not be read' };
+  }
+  const fields = new Map(structFields(struct).map((f) => [f.name, f]));
+  const data = pointerAt(table.add(specs.offset));
+  const count = u32(table.add(specs.offset + 4)) || 0;
+  const lines = [];
+  for (let n = 0; data !== null && !data.isNull() && n < count && n < 100; n++) {
+    lines.push(data.add(n * size));
+  }
+  return { table, lines, fields };
+}
+
+function lineText(line, fields) {
+  return [...fields.values()].map((f) => `${f.name}: ${valueText(line.add(f.offset), f)}`).join(', ');
+}
+
+globalThis.garden = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  if (found === null) {
+    return "no Gatherer's Garden loaded here";
+  }
+  const read = gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  log(`${nameOfObject(found.object)} ${found.away.toFixed(0)} away, table ${nameOfObject(read.table)}:`);
+  read.lines.forEach((line, n) => {
+    const swapped = gardenSwaps.has(line.toString()) ? ' (swapped)' : '';
+    log(`  ${n}: ${lineText(line, read.fields)}${swapped}`);
+  });
+  return `${read.lines.length} lines`;
+};
+
+globalThis.gardenItem = function (n, className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const itemClass = read.fields.get('ItemClass');
+  if (line === undefined || itemClass === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no ItemClass field';
+  }
+  const at = line.add(itemClass.offset);
+  const key = line.toString();
+  let wanted;
+  if (className === undefined) {
+    if (!gardenSwaps.has(key)) {
+      return 'that line was not swapped';
+    }
+    wanted = ptr(gardenSwaps.get(key));
+    gardenSwaps.delete(key);
+  } else {
+    wanted = findClass(className);
+    if (wanted === null) {
+      return `no class named ${className} is loaded`;
+    }
+    if (!gardenSwaps.has(key)) {
+      gardenSwaps.set(key, u32(at));
+    }
+  }
+  const before = valueText(at, itemClass);
+  at.writePointer(wanted);
+  log(`line ${n}: ItemClass ${before} -> ${valueText(at, itemClass)}`);
+  log(`  now ${lineText(line, read.fields)}`);
+  return className === undefined ? 'put back' : 'open the Garden and buy that line';
+};
+
+globalThis.gardenCost = function (n, adjustment) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const field = read.fields.get('CostAdjustment');
+  if (line === undefined || field === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no CostAdjustment field';
+  }
+  const at = line.add(field.offset);
+  const before = valueText(at, field);
+  if (field.kind === 'FloatProperty') {
+    at.writeFloat(adjustment);
+  } else if (field.kind === 'ByteProperty') {
+    at.writeU8(adjustment);
+  } else {
+    at.writeS32(adjustment);
+  }
+  log(`line ${n}: CostAdjustment (${field.kind}) ${before} -> ${valueText(at, field)}`);
+  log(`  now ${lineText(line, read.fields)}`);
+  return 'open the Garden and look at that line\'s price';
+};
+
+// A class's default values. Either a default object in the object table (an object of the class whose name starts
+// with "Default"), or an array (data, count, capacity) in the class object whose bytes hold the class's properties at
+// their usual offsets. Found by looking for readable text at the class's string properties.
+const keptStrings = [];
+
+function textsAt(base, strings) {
+  return strings.map(([name, p]) => [name, p, readable(base.add(p.offset), 12) ? stringAt(base.add(p.offset)) : '']);
+}
+
+function classDefaults(className, quiet = false) {
+  const say = quiet ? () => {} : log;
+  const learned = learnAnyClass(className);
+  const cls = learned.error ? null : findClass(className);
+  if (cls === null) {
+    return { error: learned.error || `no class named ${className}` };
+  }
+  const strings = [...learned.properties.entries()].filter(([, p]) => p.kind === 'StrProperty');
+  say(`${className}: ${learned.lineage.join(' < ')}; text properties: ` +
+      `${strings.map(([name, p]) => `${name} +${hex(p.offset)} (${p.owner})`).join(', ') || 'none'}`);
+  if (strings.length === 0) {
+    return { error: `${className} has no text properties` };
+  }
+  const candidates = [];
+  const instances = [];
+  // default objects
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null || classOf(object) === null || !classOf(object).equals(cls)) {
+      continue;
+    }
+    const name = nameOfObject(object) || '';
+    say(`  object ${name} of class ${className} at ${object}`);
+    instances.push(object);
+    if (/^Default/i.test(name)) {
+      candidates.push({ where: `default object ${name}`, data: object });
+    }
+  }
+  // arrays in the class object
+  const end = Math.max(...strings.map(([, p]) => p.offset)) + 12;
+  for (let at = 0x30; at < 0x1000; at += 4) {
+    const data = pointerAt(cls.add(at));
+    const count = u32(cls.add(at + 4));
+    const capacity = u32(cls.add(at + 8));
+    if (data === null || data.isNull() || count === null || capacity === null || count < end ||
+        count > 0x40000 || capacity < count || !readable(data, end)) {
+      continue;
+    }
+    candidates.push({ where: `array at class+${hex(at)} (${count} bytes)`, data, at });
+  }
+  let best = null;
+  for (const candidate of candidates) {
+    const texts = textsAt(candidate.data, strings);
+    const filled = texts.filter(([, , text]) => text.length > 0).length;
+    say(`  ${candidate.where}: ${filled} of ${texts.length} text properties hold text` +
+        `${filled > 0 ? ` (${texts.filter(([, , t]) => t).map(([n, , t]) => `${n} ${JSON.stringify(t.slice(0, 40))}`).join(', ')})` : ''}`);
+    if (filled > 0 && (best === null || filled > best.filled)) {
+      best = { ...candidate, texts, filled };
+    }
+  }
+  if (best === null) {
+    return { error: `no default values with text found for ${className} (${candidates.length} places tried)` };
+  }
+  return { ...best, instances };
+}
+
+globalThis.defaults = function (className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = classDefaults(className);
+  if (found.error) {
+    log(found.error);
+    return found.error;
+  }
+  log(`${className}: default values in ${found.where} (${found.data})`);
+  for (const [name, p, text] of found.texts) {
+    log(`  +${hex(p.offset)} ${name} (${p.owner}) = ${JSON.stringify(text)}`);
+  }
+  return `${found.filled} of ${found.texts.length} text properties filled`;
+};
+
+// Every default value of an item class (its price and icon are somewhere in there), or only the properties whose
+// names match a pattern.
+function itemValues(className, pattern, indent = '  ') {
+  const found = classDefaults(className, true);
+  if (found.error) {
+    log(`${indent}${className}: ${found.error}`);
+    return 0;
+  }
+  const learned = learnAnyClass(className);
+  // an array of default values is this many bytes long; a default object is taken to be big enough
+  const count = found.at === undefined ? 0x2000 : (u32(findClass(className).add(found.at + 4)) || 0);
+  const sorted = [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset)
+    .filter(([name, p]) => p.offset < count && (pattern === undefined || pattern.test(name)));
+  for (const [name, p] of sorted) {
+    log(`${indent}+${hex(p.offset)} ${name} (${p.kind}, ${p.owner}) = ${valueText(found.data.add(p.offset), p)}`);
+  }
+  return sorted.length;
+}
+
+globalThis.values = function (className, pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const n = itemValues(className, pattern === undefined ? undefined : new RegExp(pattern, 'i'));
+  return `${n} values`;
+};
+
+// What each line of the nearest Garden sells: the item class, its price and anything that looks like an icon.
+const PRICE_OR_ICON = /price|cost|adam|value|icon|tex|mat|image|hud|inventory|sprite|portrait|picture/i;
+globalThis.gardenGenes = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const field = (line, name) => {
+    const f = read.fields.get(name);
+    return f === undefined ? '?' : valueText(line.add(f.offset), f);
+  };
+  const seen = new Set();
+  read.lines.forEach((line, n) => {
+    const itemClass = pointerAt(line.add(read.fields.get('ItemClass').offset));
+    const className = itemClass === null || itemClass.isNull() ? null : nameOfObject(itemClass);
+    log(`${n}: ${className} CostAdjustment ${field(line, 'CostAdjustment')} cost ${field(line, 'cost')} ` +
+        `PickupClass ${field(line, 'PickupClass')}`);
+    if (className !== null && !seen.has(className)) {
+      seen.add(className);
+      itemValues(className, PRICE_OR_ICON, '    ');
+    }
+  });
+  log('chips:');
+  itemValues('chips', PRICE_OR_ICON, '    ');
+  return `${read.lines.length} lines; open the Garden first so cost is filled`;
+};
+
+globalThis.rename = function (className, propertyName, text) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = classDefaults(className);
+  if (found.error) {
+    log(found.error);
+    return found.error;
+  }
+  const entry = found.texts.find(([name]) => name === propertyName);
+  if (entry === undefined) {
+    return `${className} has no text property ${propertyName}`;
+  }
+  // A new buffer the game did not allocate; kept alive here, and never handed to the game to free. Written into the
+  // class's default values and into every object of the class (Items are objects, and the game may show one of them).
+  const buffer = Memory.allocUtf16String(text);
+  keptStrings.push(buffer);
+  const places = [['defaults', found.data], ...found.instances.map((o) => [`object at ${o}`, o])];
+  for (const [label, base] of places) {
+    const at = base.add(entry[1].offset);
+    const before = readable(at, 12) ? stringAt(at) : '?';
+    at.writePointer(buffer);
+    at.add(4).writeU32(text.length + 1);
+    at.add(8).writeU32(text.length + 1);
+    log(`${className}.${propertyName} in ${label}: ${JSON.stringify(before)} -> ${JSON.stringify(stringAt(at))}`);
+  }
+  return 'open the Garden (or look at a chips pickup) to see it';
+};
+
+globalThis.placeholders = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const cache = new Map();
+  const counts = new Map();
+  const classes = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null) {
+      continue;
+    }
+    if (classNameOf(object) === 'Class') {
+      if (extendsClass(object, 'Item', cache)) {
+        classes.push(object);
+      }
+    } else {
+      const key = cls.toString();
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+  }
+  for (const cls of classes) {
+    const name = nameOfObject(cls);
+    const found = classDefaults(name, true);
+    const friendly = found.error ? '?' : (found.texts.find(([n]) => n === 'FriendlyName') || [, , ''])[2];
+    const lineage = learnAnyClass(name).lineage || [];
+    log(`${name}: ${JSON.stringify(friendly)}, ${counts.get(cls.toString()) || 0} objects (${lineage.slice(1, -1).join(' < ')})`);
+  }
+  return `${classes.length} item classes`;
+};
+
+// A copy of an item class made in memory: the class object's bytes copied, with its own copy of the default values
+// so its texts can differ. The copy is not in the object table; it keeps the original's name and index.
+const CLASS_COPY_SIZE = 0x1000; // at most; the class object is at least 0xb58 bytes (arrays at +0x54c and +0xb4c)
+const CLASS_MIN_SIZE = 0xb58;
+const clones = [];
+
+function cloneClass(className, friendlyName, description) {
+  const found = classDefaults(className, true);
+  const cls = findClass(className);
+  if (found.error || cls === null || found.at === undefined) {
+    return { error: found.error || `${className}'s default values are not in the class` };
+  }
+  // As much of the class as can be read, up to CLASS_COPY_SIZE: the memory after it may belong to nobody.
+  let size = CLASS_COPY_SIZE;
+  while (size >= CLASS_MIN_SIZE && !readable(cls, size)) {
+    size -= 0x10;
+  }
+  if (size < Math.max(CLASS_MIN_SIZE, found.at + 12)) {
+    return { error: `cannot read ${hex(CLASS_MIN_SIZE)} bytes of class ${className}` };
+  }
+  const copy = Memory.alloc(CLASS_COPY_SIZE);
+  Memory.copy(copy, cls, size);
+  const count = u32(cls.add(found.at + 4));
+  const defaults = Memory.alloc(count);
+  Memory.copy(defaults, found.data, count);
+  copy.add(found.at).writePointer(defaults);
+  copy.add(found.at + 8).writeU32(count);
+  const kept = { copy, defaults, texts: [] };
+  for (const [name, text] of [['FriendlyName', friendlyName], ['Description', description]]) {
+    const entry = found.texts.find(([n]) => n === name);
+    if (entry === undefined || text === undefined) {
+      continue;
+    }
+    const buffer = Memory.allocUtf16String(text);
+    kept.texts.push(buffer);
+    const at = defaults.add(entry[1].offset);
+    at.writePointer(buffer);
+    at.add(4).writeU32(text.length + 1);
+    at.add(8).writeU32(text.length + 1);
+  }
+  clones.push(kept);
+  return kept;
+}
+
+globalThis.gardenClone = function (n, friendlyName, description, className = 'chips') {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const itemClass = read.fields.get('ItemClass');
+  if (line === undefined || itemClass === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no ItemClass field';
+  }
+  const clone = cloneClass(className, friendlyName || `AP Item ${n}`, description || 'Sends a check to the multiworld.');
+  if (clone.error) {
+    log(clone.error);
+    return clone.error;
+  }
+  const at = line.add(itemClass.offset);
+  const key = line.toString();
+  if (!gardenSwaps.has(key)) {
+    gardenSwaps.set(key, u32(at));
+  }
+  at.writePointer(clone.copy);
+  log(`line ${n}: ItemClass -> a copy of ${className} at ${clone.copy}, named ${JSON.stringify(friendlyName || `AP Item ${n}`)}`);
+  return 'open the Garden and look at that line; gardenItem(n) puts the line back';
+};
+
+// ---- weapon upgrades, for taking back what a Power to the People station gave ----
+
+function weaponStats() {
+  return [...matchingObjects('^UpgradeableWeaponStat$').values()].flat();
+}
+
+// The Item class has an Icon property, but every Garden item leaves it None, so the Garden may pick the icon by the
+// class's name. This renames the copy on line n (made by gardenClone) after another class, to see whose icon shows.
+// Do not save while a copy carries another class's name: the save would name that class for the line.
+globalThis.gardenIcon = function (n, className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  if (line === undefined) {
+    return `pick n from 0 to ${read.lines.length - 1}`;
+  }
+  const copy = pointerAt(line.add(read.fields.get('ItemClass').offset));
+  if (copy === null || !clones.some((c) => c.copy.equals(copy))) {
+    return 'that line does not hold a copy: run gardenClone(n) first';
+  }
+  const wanted = findClass(className);
+  if (wanted === null) {
+    return `no class named ${className} is loaded`;
+  }
+  const before = nameOfObject(copy);
+  copy.add(objects.nameOffset).writeU32(u32(wanted.add(objects.nameOffset)));
+  log(`line ${n}: the copy's class name ${before} -> ${nameOfObject(copy)}`);
+  return 'open the Garden and look at that line\'s icon (and do not save)';
+};
+
+// Every object whose name matches a pattern, with its class and the objects that may hold it (its package): to
+// find how the Garden turns a class name into an icon, and which package a class is in.
+globalThis.named = function (pattern, limit = 300) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern, 'i');
+  const holder = (object, at) => {
+    const outer = pointerAt(object.add(at));
+    return outer === null || outer.isNull() || !readable(outer, 0x40) ? '-' : (nameOfObject(outer) || '?');
+  };
+  const total = u32(objects.table.add(4)) || objects.count;
+  let n = 0;
+  for (let index = 0; index < total && n < limit; index++) {
+    const object = objectAt(index);
+    const name = object === null ? null : nameOfObject(object);
+    if (name === null || !regex.test(name)) {
+      continue;
+    }
+    const outers = [0x1c, 0x20, 0x24].map((at) => `+${hex(at)} ${holder(object, at)}`).join(', ');
+    log(`${index}: ${name} (${classNameOf(object)}) held by? ${outers}`);
+    n++;
+  }
+  return `${n} objects`;
+};
+
+// ---- the Garden's icons: FlashMovie objects named after the item class ----
+
+function objectNamedOfClass(name, className) {
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && nameOfObject(object) === name && classNameOf(object) === className) {
+      return object;
+    }
+  }
+  return null;
+}
+
+function bytesText(at, length) {
+  if (!readable(at, length)) {
+    return '?';
+  }
+  const bytes = new Uint8Array(at.readByteArray(length));
+  const hexText = [...bytes].map((b) => b.toString(16).padStart(2, '0')).join(' ');
+  const ascii = [...bytes].map((b) => (b >= 0x20 && b < 0x7f ? String.fromCharCode(b) : '.')).join('');
+  return `${hexText}  ${ascii}`;
+}
+
+// Every FlashMovie loaded, by name.
+globalThis.movies = function (pattern = '.', limit = 300) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const regex = new RegExp(pattern, 'i');
+  const total = u32(objects.table.add(4)) || objects.count;
+  const names = [];
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object !== null && classNameOf(object) === 'FlashMovie') {
+      const name = nameOfObject(object) || '?';
+      if (regex.test(name)) {
+        names.push(`${name} (${object}, in ${pointerAt(object.add(0x1c)) === null ? '?' :
+          nameOfObject(pointerAt(object.add(0x1c)))})`);
+      }
+    }
+  }
+  names.slice(0, limit).forEach((n) => log(`  ${n}`));
+  return `${names.length} FlashMovies`;
+};
+
+// One FlashMovie: its class's properties and values, then every word of the object that could be an array
+// (data, count, capacity), with the first bytes of its data, to find the movie file (SWF/GFX) it holds.
+globalThis.movie = function (name = 'AirBlast') {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const object = objectNamedOfClass(name, 'FlashMovie');
+  if (object === null) {
+    return `no FlashMovie named ${name} is loaded; open the Garden first`;
+  }
+  const learned = learnAnyClass('FlashMovie');
+  log(`FlashMovie ${name} at ${object}: ${learned.error || learned.lineage.join(' < ')}`);
+  if (!learned.error) {
+    [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset).forEach(([field, p]) => {
+      log(`  +${hex(p.offset)} ${field} (${p.kind}, ${p.owner}) = ${valueText(object.add(p.offset), p)}`);
+    });
+  }
+  log(`  words: ${hexWords(object, 0, 0x100)}`);
+  for (let at = 0x30; at < 0x200; at += 4) {
+    const data = pointerAt(object.add(at));
+    const count = u32(object.add(at + 4));
+    const capacity = u32(object.add(at + 8));
+    if (data === null || data.isNull() || count === null || capacity === null || count < 4 ||
+        count > 0x4000000 || capacity < count || !readable(data, 16)) {
+      continue;
+    }
+    log(`  array? at +${hex(at)}: ${count} items, data ${data}: ${bytesText(data, 32)}`);
+  }
+  for (let at = 0x30; at < 0x200; at += 4) {
+    const target = pointerAt(object.add(at));
+    if (target !== null && !target.isNull() && readable(target, 16)) {
+      const first = bytesText(target, 4);
+      if (/ (FWS|CWS|GFX|CFX|ZWS)/.test(` ${first.split('  ')[1] || ''}`)) {
+        log(`  +${hex(at)} points at a movie file: ${bytesText(target, 32)}`);
+      }
+    }
+  }
+  return 'done';
+};
+
+// Which files the game opens, and when: to see whether the Garden's Flash movies (and sharedlibrary.swf, where the
+// item icons are) are read again on a level load or when the Garden opens, which is when a changed copy could be
+// handed over instead. files() starts watching CreateFileW, filesStop() stops.
+const fileWatch = { hooks: [], seen: [] };
+
+globalThis.files = function (pattern = 'swf|gsc|gfx|FlashMovies') {
+  if (fileWatch.hooks.length > 0) {
+    return 'already watching; filesStop() first';
+  }
+  const regex = new RegExp(pattern, 'i');
+  fileWatch.seen = [];
+  for (const [module, fname, wide] of [['kernel32.dll', 'CreateFileW', true], ['kernel32.dll', 'CreateFileA', false],
+    ['kernelbase.dll', 'CreateFileW', true], ['kernelbase.dll', 'CreateFileA', false]]) {
+    let at = null;
+    try {
+      at = Process.getModuleByName(module).getExportByName(fname);
+    } catch (e) {
+      continue;
+    }
+    fileWatch.hooks.push(Interceptor.attach(at, {
+      onEnter(args) {
+        let path = null;
+        try {
+          path = wide ? args[0].readUtf16String() : args[0].readAnsiString();
+        } catch (e) {
+          return;
+        }
+        if (path !== null && regex.test(path)) {
+          const line = `${module}!${fname} ${path}`;
+          fileWatch.seen.push(line);
+          log(`file: ${line}`);
+        }
+      },
+    }));
+  }
+  return `watching ${fileWatch.hooks.length} functions; load a save, open the Garden, then filesStop()`;
+};
+
+globalThis.filesStop = function () {
+  fileWatch.hooks.forEach((h) => h.detach());
+  fileWatch.hooks = [];
+  return `stopped; ${fileWatch.seen.length} files opened`;
+};
+
+// Hands the game our own copies of some Flash movies: when it opens a file in a FlashMovies folder whose name is one
+// of the files in `folder`, it gets the file in `folder` instead. Used to give the Garden menu (craftingStationPC.swf)
+// a copy that imports the AP icon from APIcons.swf. Menus are read again on every load, so load a save after this.
+const redirects = { hook: null, names: new Map(), kept: [], count: 0 };
+
+globalThis.redirect = function (folder, names = ['craftingStationPC.swf', 'APIcons.swf']) {
+  if (redirects.hook !== null) {
+    return 'already redirecting; redirectStop() first';
+  }
+  redirects.names = new Map();
+  for (const name of names) {
+    const path = `${folder.replace(/[\\/]+$/, '')}\\${name}`;
+    try {
+      new File(path, 'rb').close();
+      redirects.names.set(name.toLowerCase(), path);
+    } catch (e) {
+      log(`no ${path}: ${e.message}`);
+    }
+  }
+  if (redirects.names.size === 0) {
+    return 'none of those files are in that folder';
+  }
+  let at = null;
+  for (const module of ['kernelbase.dll', 'kernel32.dll']) {
+    try {
+      at = Process.getModuleByName(module).getExportByName('CreateFileW');
+      break;
+    } catch (e) {
+      // try the next
+    }
+  }
+  if (at === null) {
+    return 'no CreateFileW';
+  }
+  redirects.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      let path = null;
+      try {
+        path = args[0].readUtf16String();
+      } catch (e) {
+        return;
+      }
+      if (path === null || !/flashmovies[\\/][^\\/]+$/i.test(path)) {
+        return;
+      }
+      const ours = redirects.names.get(path.split(/[\\/]/).pop().toLowerCase());
+      if (ours !== undefined) {
+        const wide = Memory.allocUtf16String(ours);
+        redirects.kept.push(wide);
+        if (redirects.kept.length > 200) {
+          redirects.kept.shift();
+        }
+        args[0] = wide;
+        redirects.count++;
+        log(`file: ${path} -> ${ours}`);
+      }
+    },
+  });
+  return `redirecting ${[...redirects.names.keys()].join(', ')}; now load a save`;
+};
+
+globalThis.redirectStop = function () {
+  if (redirects.hook !== null) {
+    redirects.hook.detach();
+    redirects.hook = null;
+  }
+  return `stopped after ${redirects.count} redirects`;
+};
+
+globalThis.upgrades = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const stats = weaponStats();
+  stats.forEach((stat, n) => {
+    log(`${n}: ${nameOfObject(stat)} in ${outerNameOf(stat)} at ${stat}`);
+    ownValues(stat, '    ', 1);
+  });
+  return `${stats.length} weapon stats`;
+};
+
+globalThis.setUpgrade = function (n, points) {
+  const stats = weaponStats();
+  const stat = stats[n];
+  const learned = stat === undefined ? null : learnAnyClass('UpgradeableWeaponStat');
+  const property = learned === null || learned.error ? undefined : learned.properties.get('PointsAllocated');
+  if (property === undefined) {
+    return stat === undefined ? `pick n from 0 to ${stats.length - 1}` : 'PointsAllocated not found';
+  }
+  const at = stat.add(property.offset);
+  const before = at.readS32();
+  at.writeS32(points);
+  log(`${nameOfObject(stat)}: PointsAllocated ${before} -> ${points}`);
+  return 'set';
+};
+
+// ---- a preview in the station: one line that names a multiworld item, and confirm turned into cancel ----
+
+// Writes text into a string's own buffer (an FString: data, count with the terminator, capacity), cut to fit, so
+// the game never has to free memory it did not allocate.
+function writeInPlace(at, text) {
+  const data = pointerAt(at);
+  const capacity = u32(at.add(8));
+  if (data === null || data.isNull() || capacity === null || capacity < 2 || !readable(data, capacity * 2)) {
+    return null;
+  }
+  const kept = text.slice(0, capacity - 1);
+  data.writeUtf16String(kept);
+  at.add(4).writeU32(kept.length + 1);
+  return kept;
+}
+
+// Shows one upgrade line, stat n of upgrades(), retitled; every other line is marked as bought so it is not listed.
+globalThis.preview = function (n, title, text) {
+  const stats = weaponStats();
+  const learned = learnAnyClass('UpgradeableWeaponStat');
+  if (learned.error) {
+    return learned.error;
+  }
+  const points = learned.properties.get('PointsAllocated');
+  const name = learned.properties.get('FriendlyName');
+  const description = learned.properties.get('Description');
+  if (n < 0 || n >= stats.length) {
+    return `pick n from 0 to ${stats.length - 1}`;
+  }
+  stats.forEach((stat, k) => stat.add(points.offset).writeS32(k === n ? 0 : 1));
+  const stat = stats[n];
+  const shownTitle = writeInPlace(stat.add(name.offset), title || 'Archipelago item');
+  const lines = pointerAt(stat.add(description.offset));
+  const shownText = lines === null || lines.isNull() ? null :
+    writeInPlace(lines, text || 'Sends a check to the multiworld.');
+  log(`${nameOfObject(stat)} now reads ${JSON.stringify(shownTitle)}: ${JSON.stringify(shownText)}; ` +
+      `the other ${stats.length - 1} are marked as bought`);
+  return 'open the station';
+};
+
+// A native script function's C++ entry point: the one word, at the same place in every function, that points into
+// the game's code and differs between the three station functions.
+const stationNatives = { found: null, hooks: [] };
+
+function findStationNatives() {
+  const names = ['BeginWeaponUpgradeInteraction', 'ConfirmWeaponUpgrade', 'CancelWeaponUpgrade'];
+  const fns = names.map((fname) => findFunction('ShockPlayer', fname));
+  const missing = fns.find((f) => f.error);
+  if (missing) {
+    return { error: missing.error };
+  }
+  const code = mod.enumerateRanges('r-x').map((r) => [r.base.toUInt32(), r.base.toUInt32() + r.size]);
+  const isCode = (value) => value !== null && code.some(([from, to]) => value >= from && value < to);
+  for (let at = 0x30; at <= 0x100; at += 4) {
+    const words = fns.map((f) => u32(f.function.add(at)));
+    if (words.every(isCode) && new Set(words).size === 3) {
+      const found = {};
+      names.forEach((fname, k) => { found[fname] = ptr(words[k]); });
+      log(`station natives at function+${hex(at)}: ` + names.map((fname) => `${fname} ${rel(found[fname])}`).join(', '));
+      return { found };
+    }
+  }
+  fns.forEach((f, k) => log(`  ${names[k]}: ${hexWords(f.function, 0x30, 0x100)}`));
+  return { error: 'no word points into the code for all three' };
+}
+
+// Logs each call of the three; blockConfirm() then makes confirming do what cancelling does.
+globalThis.stationHooks = function () {
+  if (stationNatives.found === null) {
+    const result = findStationNatives();
+    if (result.error) {
+      return result.error;
+    }
+    stationNatives.found = result.found;
+  }
+  if (stationNatives.hooks.length === 0) {
+    for (const [fname, at] of Object.entries(stationNatives.found)) {
+      stationNatives.hooks.push(Interceptor.attach(at, { onEnter() { log(`${fname} called`); } }));
+    }
+  }
+  return 'watching the station: open it, pick, confirm or cancel';
+};
+
+globalThis.blockConfirm = function () {
+  const hooked = globalThis.stationHooks();
+  if (stationNatives.found === null) {
+    return hooked;
+  }
+  stationNatives.hooks.forEach((hook) => hook.detach());
+  stationNatives.hooks = [];
+  Interceptor.flush();
+  Interceptor.replace(stationNatives.found.ConfirmWeaponUpgrade, stationNatives.found.CancelWeaponUpgrade);
+  for (const fname of ['BeginWeaponUpgradeInteraction', 'CancelWeaponUpgrade']) {
+    stationNatives.hooks.push(Interceptor.attach(stationNatives.found[fname],
+      { onEnter() { log(`${fname} called`); } }));
+  }
+  return 'confirming now cancels (and logs "CancelWeaponUpgrade called")';
+};
+
+// The code each station stub calls: calls and jumps to a fixed address inside the game, followed one level down.
+const stationCalls = { unique: null, hooks: [] };
+
+function callTargets(start, count) {
+  const targets = [];
+  let at = start;
+  for (let n = 0; n < count; n++) {
+    let instruction;
+    try {
+      instruction = Instruction.parse(at);
+    } catch (e) {
+      break;
+    }
+    const op = instruction.operands === undefined ? undefined : instruction.operands[0];
+    if ((instruction.mnemonic === 'call' || instruction.mnemonic === 'jmp') && op !== undefined && op.type === 'imm') {
+      const target = ptr(op.value);
+      if (target.compare(base) >= 0 && target.compare(base.add(mod.size)) < 0) {
+        targets.push(target);
+      }
+    }
+    if (instruction.mnemonic === 'ret' || (instruction.mnemonic === 'jmp' && op !== undefined && op.type !== 'imm')) {
+      break;
+    }
+    if (instruction.mnemonic === 'jmp') {
+      break;
+    }
+    at = instruction.next;
+  }
+  return targets;
+}
+
+globalThis.stationCode = function () {
+  if (stationNatives.found === null) {
+    const result = findStationNatives();
+    if (result.error) {
+      return result.error;
+    }
+    stationNatives.found = result.found;
+  }
+  const calls = {};
+  for (const [fname, at] of Object.entries(stationNatives.found)) {
+    log(`${fname} at ${rel(at)}:`);
+    disassemble(at, 40).forEach((line) => log(`  ${line}`));
+    calls[fname] = callTargets(at, 40).map((t) => t.toString());
+    log(`  calls ${calls[fname].map((t) => rel(ptr(t))).join(', ') || 'nothing at a fixed address'}`);
+  }
+  // A target only one stub calls is that stub's own C++ method; the shared ones are the interpreter's helpers.
+  const counts = new Map();
+  Object.values(calls).forEach((list) => new Set(list).forEach((t) => counts.set(t, (counts.get(t) || 0) + 1)));
+  stationCalls.unique = {};
+  for (const [fname, list] of Object.entries(calls)) {
+    const own = [...new Set(list)].filter((t) => counts.get(t) === 1);
+    stationCalls.unique[fname] = own.map((t) => ptr(t));
+    for (const t of own) {
+      log(`${fname} -> ${rel(ptr(t))}:`);
+      disassemble(ptr(t), 80).forEach((line) => log(`  ${line}`));
+      log(`  calls ${callTargets(ptr(t), 80).map(rel).join(', ')}`);
+    }
+  }
+  stationCalls.hooks.forEach((hook) => hook.detach());
+  stationCalls.hooks = [];
+  for (const [fname, own] of Object.entries(stationCalls.unique)) {
+    own.forEach((t) => stationCalls.hooks.push(Interceptor.attach(t,
+      { onEnter() { log(`${fname}'s ${rel(t)} called`); } })));
+  }
+  return 'printed; now open the station, pick, confirm, and send the log';
+};
+
+globalThis.blockDeep = function () {
+  if (stationCalls.unique === null) {
+    return 'run stationCode() first';
+  }
+  const confirm = stationCalls.unique.ConfirmWeaponUpgrade;
+  const cancel = stationCalls.unique.CancelWeaponUpgrade;
+  if (confirm.length !== 1 || cancel.length !== 1) {
+    return `confirm calls ${confirm.length} and cancel ${cancel.length} functions of their own; ` +
+      'not sure which to swap, send the log';
+  }
+  stationCalls.hooks.forEach((hook) => hook.detach());
+  stationCalls.hooks = [];
+  Interceptor.flush();
+  Interceptor.replace(confirm[0], cancel[0]);
+  stationCalls.hooks.push(Interceptor.attach(cancel[0], { onEnter() { log(`C++ cancel ${rel(cancel[0])} called`); } }));
+  return `C++ confirm ${rel(confirm[0])} now runs C++ cancel ${rel(cancel[0])}`;
+};
+
+// Points stat n's StatName at a name no weapon uses (APCheckNothing, or Testing when that is not a name yet), so whatever the claim upgrades by that
+// name, nothing on the weapon changes.
+globalThis.deadStat = function (n, nameText = 'APCheckNothing') {
+  const stats = weaponStats();
+  const learned = learnAnyClass('UpgradeableWeaponStat');
+  if (learned.error) {
+    return learned.error;
+  }
+  const field = learned.properties.get('StatName');
+  if (n < 0 || n >= stats.length || field === undefined) {
+    return field === undefined ? 'StatName not found' : `pick n from 0 to ${stats.length - 1}`;
+  }
+  let index = indexOfName(nameText);
+  if (index < 0) {
+    index = indexOfName('Testing'); // in the name table: ShockPlayer logs with it
+  }
+  if (index < 0) {
+    return `neither ${nameText} nor Testing is in the name table`;
+  }
+  const at = stats[n].add(field.offset);
+  const before = nameOf(at.readS32());
+  at.writeS32(index);
+  log(`${nameOfObject(stats[n])}: StatName ${before} -> ${nameOf(index)} (put back with deadStat(${n}, '${before}'))`);
+  return 'set';
+};
+
+// Every script function the game runs goes through the function DeathLink calls (module+0x736070): the object in
+// ecx, and one argument, the call's frame, with the function at frame+4.
+const SCRIPT_RUN = 0x736070;
+const SCRIPT_RUN_START = 0x81EC8B55; // push ebp; mov ebp, esp; sub esp, ...
+const scriptTrace = { hook: null, started: 0, warm: null, counts: null, names: new Map(), skip: null, replaced: false };
+
+function scriptRunAt() {
+  const at = base.add(SCRIPT_RUN);
+  return u32(at) === SCRIPT_RUN_START ? at : null;
+}
+
+function functionLabel(fn) {
+  let label = scriptTrace.names.get(fn.toString());
+  if (label === undefined) {
+    label = nameOfObject(fn) || `function at ${fn}`;
+    scriptTrace.names.set(fn.toString(), label);
+  }
+  return label;
+}
+
+globalThis.traceCalls = function () {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  if (scriptTrace.hook !== null) {
+    return 'already tracing; traceStop() first';
+  }
+  scriptTrace.started = Date.now();
+  scriptTrace.warm = new Set();
+  scriptTrace.counts = new Map();
+  scriptTrace.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      const fn = pointerAt(args[0].add(4));
+      if (fn === null) {
+        return;
+      }
+      const label = functionLabel(fn);
+      scriptTrace.counts.set(label, (scriptTrace.counts.get(label) || 0) + 1);
+      if (Date.now() - scriptTrace.started < 3000) {
+        scriptTrace.warm.add(label);
+      } else if (!scriptTrace.warm.has(label) && scriptTrace.counts.get(label) <= 3) {
+        log(`call: ${label} on ${nameOfObject(this.context.ecx)} (${classNameOf(this.context.ecx)})`);
+      }
+    },
+  });
+  setTimeout(() => {
+    if (scriptTrace.hook !== null) {
+      log(`trace: learned ${scriptTrace.warm.size} functions the game runs all the time; open the station now`);
+    }
+  }, 3000);
+  return 'tracing: wait for the "open the station now" line (about three seconds), then open it, pick, confirm';
+};
+
+globalThis.traceStop = function () {
+  if (scriptTrace.hook === null) {
+    return 'not tracing';
+  }
+  scriptTrace.hook.detach();
+  scriptTrace.hook = null;
+  const rare = [...scriptTrace.counts.entries()].filter(([label]) => !scriptTrace.warm.has(label));
+  log(`trace: ${rare.length} functions that were not running at the start:`);
+  rare.forEach(([label, count]) => log(`  ${label}: ${count}`));
+  return 'stopped';
+};
+
+globalThis.skipCall = function (functionName) {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  scriptTrace.skip = functionName || null;
+  if (!scriptTrace.replaced && scriptTrace.skip !== null) {
+    const original = new NativeFunction(at, 'void', ['pointer', 'pointer'], 'thiscall');
+    Interceptor.replace(at, new NativeCallback(function (self, frame) {
+      const fn = pointerAt(frame.add(4));
+      if (scriptTrace.skip !== null && fn !== null && nameOfObject(fn) === scriptTrace.skip) {
+        log(`skipped ${functionLabel(fn)} on ${nameOfObject(self)}`);
+        return;
+      }
+      original(self, frame);
+    }, 'void', ['pointer', 'pointer'], 'thiscall'));
+    scriptTrace.replaced = true;
+  }
+  return scriptTrace.skip === null ? 'nothing skipped' : `the game now skips ${scriptTrace.skip}`;
+};
+
+// ---- Touch: a station that sends its check and closes, with no menu ----
+
+// UShockPlayer::BeginWeaponUpgradeInteraction, which opens the menu (what the script native's stub calls).
+const OPEN_UPGRADE_MENU = 0x1dbf70;
+const OPEN_UPGRADE_MENU_START = 0x64EC8B55; // push ebp; mov ebp, esp; mov eax, fs:[0]
+const touching = { replaced: false, finish: null };
+
+function stationInUse() {
+  const learned = learnAnyClass('PlaceableWeaponUpgradeStation');
+  const current = learned.error ? undefined : learned.properties.get('CurrentPlayer');
+  if (current === undefined) {
+    return null;
+  }
+  const list = matchingObjects('^PlaceableWeaponUpgradeStation$').get('PlaceableWeaponUpgradeStation') || [];
+  return list.find((station) => {
+    const player = pointerAt(station.add(current.offset));
+    return player !== null && !player.isNull();
+  }) || null;
+}
+
+function stationUses(station) {
+  const used = learnAnyClass('PlaceableWeaponUpgradeStation').properties.get('NumTimesUsed');
+  return used === undefined ? null : station.add(used.offset).readS32();
+}
+
+// The state an object is in: its state frame (a pointer in the object's first words) holds the current state, an
+// object of class State, a few words in.
+function stateOf(object) {
+  for (let at = 4; at < objects.nameOffset; at += 4) {
+    const frame = pointerAt(object.add(at));
+    if (frame === null || frame.isNull() || !readable(frame, 0x20)) {
+      continue;
+    }
+    for (let k = 4; k < 0x20; k += 4) {
+      const state = pointerAt(frame.add(k));
+      if (state !== null && !state.isNull() && readable(state, 0x40) && classNameOf(state) === 'State') {
+        return { state, where: `object+${hex(at)} -> +${hex(k)}` };
+      }
+    }
+  }
+  return null;
+}
+
+function finishTouchedStation() {
+  const station = stationInUse();
+  if (station === null) {
+    log('touch: the menu was skipped, but no station has a CurrentPlayer');
+    return;
+  }
+  let { found } = touching.finish;
+  const current = stateOf(station);
+  if (current === null) {
+    log(`touch: could not tell the station's state; its first words: ${hexWords(station, 0, objects.nameOffset)}`);
+  } else {
+    const inState = findFunctionFrom(current.state, 'FinishInteraction');
+    log(`touch: the station is in state ${nameOfObject(current.state)} (${current.where}); ` +
+      `${inState === null ? 'no FinishInteraction of its own' : `its FinishInteraction is at ${inState.function}`} ` +
+      `(the class's is at ${found.function})`);
+    if (inState !== null) {
+      found = inState;
+    }
+  }
+  const size = Math.max(found.size, 0x40);
+  const block = Memory.alloc(size);
+  for (let at = 0; at < size; at += 4) {
+    block.add(at).writeU32(0);
+  }
+  // A success flag, if FinishInteraction has one, is true: the station was used.
+  for (const p of found.parameters.values()) {
+    if (p.kind === 'BoolProperty') {
+      block.add(p.offset).writeU32(1);
+    }
+  }
+  const before = stationUses(station);
+  callScript(station, found.function, block);
+  const after = stateOf(station);
+  log(`touch: FinishInteraction called on the station at ${station}; NumTimesUsed ${before} -> ${stationUses(station)}, ` +
+    `state now ${after === null ? '?' : nameOfObject(after.state)}`);
+  block.isNull();
+  setTimeout(() => {
+    const player = stationInUse();
+    log(`touch: a second later, NumTimesUsed ${stationUses(station)}, ` +
+      `${player === null ? 'no station in use' : 'a station is still in use'}. Is it closed, and are the controls back?`);
+  }, 1000);
+}
+
+globalThis.touch = function () {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const at = base.add(OPEN_UPGRADE_MENU);
+  if (u32(at) !== OPEN_UPGRADE_MENU_START) {
+    return `module+${hex(OPEN_UPGRADE_MENU)} does not start the way it should; is this the Steam build?`;
+  }
+  const found = findFunction('PlaceableWeaponUpgradeStation', 'FinishInteraction');
+  if (found.error) {
+    return found.error;
+  }
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`touch: ${found.owner}.FinishInteraction(${described.join(', ')})`);
+  touching.finish = { found };
+  if (!touching.replaced) {
+    Interceptor.replace(at, new NativeCallback(function () {
+      log('touch: the station tried to open its menu; skipped');
+      runOnGameThread(finishTouchedStation);
+    }, 'void', ['pointer'], 'thiscall'));
+    touching.replaced = true;
+  }
+  return 'use a station now: no menu should open, and it should close';
+};
+
 // ---- calling the game's script functions, for DeathLink ----
 
 // A script function of a class or the classes it extends, and its parameters (offsets into the parameter block).
@@ -859,7 +2234,14 @@ function findFunction(className, functionName) {
   if (objects.superOffset === undefined) {
     objects.superOffset = findSuperOffset();
   }
-  let cls = findClass(className);
+  const found = findFunctionFrom(findClass(className), functionName);
+  return found === null ? { error: `${className} has no function ${functionName}` } : found;
+}
+
+// The same, starting from any class or state and going up through the ones it extends. A state's version of a
+// function is what the game runs while the object is in that state.
+function findFunctionFrom(start, functionName) {
+  let cls = start;
   for (let depth = 0; cls !== null && !cls.isNull() && depth < 30; depth++) {
     let field = pointerAt(cls.add(objects.layout.childrenOffset));
     for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0x80); n++) {
@@ -885,7 +2267,7 @@ function findFunction(className, functionName) {
     }
     cls = pointerAt(cls.add(objects.superOffset));
   }
-  return { error: `${className} has no function ${functionName}` };
+  return null;
 }
 
 const VTABLE_SLOTS = 48;

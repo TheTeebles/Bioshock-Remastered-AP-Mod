@@ -14,6 +14,7 @@ ID scheme (stable once released, never reuse an ID for something else):
     6001-6999  World items, containers   500-505  Character Upgrades
                (reserved, not used yet)  900-910  Filler
     7001-7033  Story                     950-952  Traps
+    8001-8999  Gatherer's Garden: 8000 + 50 * level index + line
 
 Data sources are listed in docs/en_BioShock.md. Values marked "verify" in the design doc should be
 confirmed in-game while building the client.
@@ -331,6 +332,90 @@ def little_sister_location_name(level: str, index: int) -> str:
     return f"{level} - Little Sister {index}"
 
 
+# What each level's Gatherer's Garden sells, in the order of its stock list (VendingLootSpec). Every line can be
+# bought once (the Plasmid Slot sometimes twice), and each line is one check. Each level has one Garden. Read from
+# the map files with client-poc/map_reader/map_stock.py on 2026-10-14 (notes/logs/map_stock_2026-10-14.json); the
+# Neptune's Bounty list matches the probe's read of the running game (2026-10-13).
+GATHERERS_GARDEN_STOCK: dict[str, tuple[str, ...]] = {
+    MEDICAL_PAVILION: (  # 5 lines
+        "Enrage!", "Armored Shell", "EVE Link", "Health Upgrade", "EVE Upgrade",
+    ),
+    NEPTUNES_BOUNTY: (  # 16 lines
+        "Plasmid Slot", "Health Upgrade", "EVE Upgrade", "Enrage!", "Sonic Boom", "Target Dummy", "Winter Blast",
+        "Armored Shell", "EVE Link", "Extra Nutrition", "Machine Buster", "Hacker's Delight", "Security Expert",
+        "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+    ARCADIA: (  # 29 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade", "Enrage!", "Sonic Boom", "Target Dummy", "Winter Blast", "Electro Bolt 2", "Cyclone Trap",
+        "Security Bullseye", "Human Inferno", "EVE Saver", "Vending Expert", "Medical Expert", "Focused Hacker",
+        "Shorten Alarms", "Wrench Lurker", "Armored Shell", "EVE Link", "Extra Nutrition", "Machine Buster",
+        "Hacker's Delight", "Security Expert", "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+    FARMERS_MARKET: (  # 22 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Insect Swarm",
+        "Sonic Boom", "Human Inferno", "EVE Saver", "Vending Expert", "Medical Expert", "Focused Hacker",
+        "Shorten Alarms", "Wrench Lurker", "Armored Shell", "EVE Link", "Extra Nutrition", "Machine Buster",
+        "Hacker's Delight", "Security Expert", "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+    FORT_FROLIC: (  # 34 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade", "Enrage!", "Insect Swarm 2", "Sonic Boom 2", "Target Dummy", "Winter Blast 2",
+        "Electro Bolt 2", "Cyclone Trap", "Security Bullseye", "Incinerate! 2", "Hacking Expert 2",
+        "Security Evasion", "Photographer's Eye", "Human Inferno", "EVE Saver", "Vending Expert", "Medical Expert",
+        "Focused Hacker", "Shorten Alarms", "Wrench Lurker", "Armored Shell", "EVE Link 2", "Extra Nutrition",
+        "Machine Buster", "Hacker's Delight", "Security Expert", "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+    HEPHAESTUS: (  # 39 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade", "Enrage!", "Target Dummy", "Winter Blast 2", "Insect Swarm 2", "Cyclone Trap 2",
+        "Security Bullseye", "Sonic Boom 2", "Electro Bolt 2", "Electro Bolt 3", "Incinerate! 2", "Alarm Expert",
+        "Frozen Field", "Electric Flesh", "Hacking Expert 2", "Security Evasion", "Photographer's Eye",
+        "Human Inferno", "EVE Saver", "Vending Expert", "Vending Expert 2", "Medical Expert 2", "Focused Hacker",
+        "Shorten Alarms", "Wrench Lurker 2", "Armored Shell", "EVE Link 2", "Extra Nutrition 2", "Machine Buster",
+        "Hacker's Delight", "Security Expert", "Speedy Hacker", "Wrench Jockey", "Static Discharge",
+    ),
+    OLYMPUS_HEIGHTS: (  # 41 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade", "Enrage!", "Target Dummy", "Winter Blast 3", "Sonic Boom 2", "Insect Swarm 3",
+        "Electro Bolt 3", "Incinerate! 2", "Incinerate! 3", "Cyclone Trap 2", "Security Bullseye", "Damage Research",
+        "Alarm Expert", "Frozen Field 2", "Electric Flesh", "Hacking Expert 2", "Security Evasion 2",
+        "Photographer's Eye", "Human Inferno", "EVE Saver", "Vending Expert", "Vending Expert 2", "Medical Expert 2",
+        "Focused Hacker", "Shorten Alarms 2", "Wrench Lurker 2", "Armored Shell", "EVE Link 2", "Extra Nutrition 2",
+        "Machine Buster", "Machine Buster 2", "Hacker's Delight", "Security Expert", "Speedy Hacker 2",
+        "Wrench Jockey", "Static Discharge",
+    ),
+    APOLLO_SQUARE: (  # 39 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Enrage!",
+        "Target Dummy", "Winter Blast 3", "Sonic Boom 2", "Insect Swarm 3", "Electro Bolt 3", "Incinerate! 2",
+        "Incinerate! 3", "Cyclone Trap 2", "Security Bullseye", "Damage Research", "Alarm Expert", "Frozen Field 2",
+        "Electric Flesh", "Hacking Expert 2", "Security Evasion 2", "Photographer's Eye", "Human Inferno",
+        "EVE Saver", "Vending Expert", "Vending Expert 2", "Medical Expert 2", "Focused Hacker", "Shorten Alarms 2",
+        "Wrench Lurker 2", "Armored Shell", "EVE Link 2", "Extra Nutrition 2", "Machine Buster", "Machine Buster 2",
+        "Hacker's Delight", "Security Expert", "Speedy Hacker 2", "Wrench Jockey", "Static Discharge",
+    ),
+    POINT_PROMETHEUS: (  # 42 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade", "Enrage!", "Target Dummy", "Winter Blast 3", "Sonic Boom 2", "Insect Swarm", "Insect Swarm 3",
+        "Electro Bolt 3", "Cyclone Trap 2", "Security Bullseye", "Incinerate! 3", "Clever Inventor",
+        "Damage Research", "Alarm Expert", "Frozen Field 2", "Electric Flesh 2", "Hacking Expert 2",
+        "Security Evasion 2", "Photographer's Eye", "Human Inferno 2", "EVE Saver", "Vending Expert",
+        "Vending Expert 2", "Medical Expert 3", "Focused Hacker 2", "Shorten Alarms 2", "Wrench Lurker 2",
+        "Armored Shell", "EVE Link 2", "Extra Nutrition 2", "Machine Buster", "Machine Buster 2", "Hacker's Delight",
+        "Security Expert", "Speedy Hacker 2", "Wrench Jockey", "Static Discharge",
+    ),
+    PROVING_GROUNDS: (  # 6 lines
+        "Plasmid Slot", "Physical Tonic Slot", "Engineering Tonic Slot", "Combat Tonic Slot", "Health Upgrade",
+        "EVE Upgrade",
+    ),
+}
+GATHERERS_GARDEN_LINES_PER_LEVEL = 50  # room in the location IDs for each level's lines
+
+
+def gatherers_garden_location_name(level: str, vanilla_item: str) -> str:
+    return f"{level} - Gatherer's Garden: {vanilla_item}"
+
+
 def power_to_the_people_location_name(level: str, index: int) -> str:
     return f"{level} - Power to the People {index}"
 
@@ -357,8 +442,9 @@ class LocationCategory:
     POWER_TO_THE_PEOPLE = "Power to the People"
     LEVEL_COMPLETION = "Level Completion"
     STORY = "Story"
+    GATHERERS_GARDEN = "Gatherer's Garden"
 
-    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY)
+    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -392,10 +478,33 @@ def _build_location_table() -> tuple[LocationData, ...]:
         table.append(LocationData(story_location_name(milestone), 7000 + milestone.number, milestone.level,
                                   LocationCategory.STORY, False))
 
+    for level, stock in GATHERERS_GARDEN_STOCK.items():
+        assert len(stock) < GATHERERS_GARDEN_LINES_PER_LEVEL and len(set(stock)) == len(stock), level
+        for line, vanilla_item in enumerate(stock, start=1):
+            table.append(LocationData(gatherers_garden_location_name(level, vanilla_item),
+                                      8000 + GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(level) + line,
+                                      level, LocationCategory.GATHERERS_GARDEN, False))
+
     return tuple(table)
 
 
 LOCATION_TABLE: tuple[LocationData, ...] = _build_location_table()
+
+
+def _first_garden_appearances() -> frozenset[int]:
+    """The Garden lines that sell something no earlier level's Garden sells, in story order: 61 of the 273."""
+    seen: set[str] = set()
+    first = set()
+    for level in LEVEL_NAMES:
+        for line, vanilla_item in enumerate(GATHERERS_GARDEN_STOCK.get(level, ()), start=1):
+            if vanilla_item not in seen:
+                seen.add(vanilla_item)
+                first.add(8000 + GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(level) + line)
+    return frozenset(first)
+
+
+# With Shop Checks set to first appearances, only these Garden lines are checks.
+GATHERERS_GARDEN_FIRST_APPEARANCES: frozenset[int] = _first_garden_appearances()
 
 
 # --------------------------------------------------------------------------------------------------------------------

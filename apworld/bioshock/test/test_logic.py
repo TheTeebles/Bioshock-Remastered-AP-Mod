@@ -11,7 +11,8 @@ from worlds.generic.Rules import exclusion_rules
 
 from ..client.core import SUPPORTED_SLOT_DATA_VERSION
 from ..data import (
-    ACCESS_ITEMS, GOAL_LOCATION, LEVELS, LOCATION_TABLE, PLASMIDS, TONICS, ItemKind, LocationCategory, Source,
+    ACCESS_ITEMS, GOAL_LOCATION, LEVELS, LOCATION_TABLE, PLASMIDS, TONICS, WEAPON_UPGRADES, ItemKind, LocationCategory,
+    Source,
 )
 from ..items import ITEM_KIND
 from ..options import AudioDiaryChecks, option_presets
@@ -56,7 +57,7 @@ class PoolTestBase(BioShockTestBase):
 
 
 class TestAccessItems(BioShockTestBase):
-    options = {"level_access": "access_items"}
+    options = {"level_access": "access_items", "shop_checks": True}  # every kind of check, so all are tested
 
     def test_default_pool(self) -> None:
         self.assertEqual(len(self.multiworld.get_unfilled_locations(self.player)) + 1,  # +1 for the goal event
@@ -136,6 +137,7 @@ class TestDefaults(PoolTestBase):
 
     def test_plasmids_and_upgrades_are_kept_before_tonics(self) -> None:
         expected = {
+            **{name: 1 for name in WEAPON_UPGRADES},
             "Progressive Electro Bolt": 2, "Progressive Incinerate!": 2, "Progressive Winter Blast": 3,
             "Progressive Insect Swarm": 3, "Progressive Cyclone Trap": 2, "Progressive Sonic Boom": 2,
             "Progressive Hypnotize Big Daddy": 2, "Enrage!": 1, "Target Dummy": 1,
@@ -144,10 +146,10 @@ class TestDefaults(PoolTestBase):
         }
         for name, count in expected.items():
             self.assertEqual(len(self.get_items_by_name(name)), count, name)
-        self.assertEqual({plasmid.item_name for plasmid in PLASMIDS} - set(expected),
+        self.assertEqual({plasmid.item_name for plasmid in PLASMIDS} - set(expected) - set(WEAPON_UPGRADES),
                          {"Telekinesis", "Security Bullseye"})
         tonics = [item.name for item in self.multiworld.itempool if ITEM_KIND[item.name] == ItemKind.TONIC]
-        self.assertEqual(len(tonics), 65 - 18 - 32, "what room is left goes to tonics")
+        self.assertEqual(len(tonics), 65 - 12 - 18 - 32, "what room is left goes to tonics")
         self.assertEqual(len(tonics), len(set(tonics)), "and never the same tonic twice")
 
     def test_which_tonics_are_left_out_depends_on_the_seed(self) -> None:
@@ -156,7 +158,7 @@ class TestDefaults(PoolTestBase):
         for seed in (1, 2, 3, 1):
             self.world_setup(seed)
             kept.append([item.name for item in self.multiworld.itempool if ITEM_KIND[item.name] == ItemKind.TONIC])
-            self.assertEqual(len(kept[-1]), 15)
+            self.assertEqual(len(kept[-1]), 3)
         self.assertEqual(sorted(kept[0]), sorted(kept[3]), "the same seed makes the same choice")
         self.assertEqual(len({frozenset(names) for names in kept}), 3, "different seeds choose differently")
         self.assertTrue(any(set(names) != set(candidates[:20]) for names in kept), "not simply the first twenty")
@@ -181,7 +183,7 @@ class TestCollectiblesHoldAnything(PoolTestBase):
 
     def test_every_useful_item_fits(self) -> None:
         self.assertEqual(len(self.real_locations()), 195)
-        self.assertEqual(self.pool(), Counter(progression=8, useful=78, filler=109))
+        self.assertEqual(self.pool(), Counter(progression=8, useful=90, filler=97))
 
     def test_welcome_to_rapture_collectibles_still_only_get_filler(self) -> None:
         """Welcome to Rapture cannot be revisited, so what can be missed there never holds anything important.
@@ -323,6 +325,57 @@ class TestOptionChecks(PoolTestBase):
         self.assertEqual(AudioDiaryChecks(AudioDiaryChecks.default).current_option_name, "Filler Only")
 
 
+class TestShopChecks(PoolTestBase):
+    """Gatherer's Garden lines are checks when asked for, and only ever hold useful items or filler: a player may
+    never have the ADAM to buy one."""
+    options = {"shop_checks": True}
+
+    def test_sizes(self) -> None:
+        garden = [location for location in self.real_locations()
+                  if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN]
+        self.assertEqual(len(garden), 273)
+        self.assertEqual(len({location.parent_region.name for location in garden}), 10, "one Garden per level")
+        # The checks make room for every useful item; the rest is filler.
+        self.assertEqual(self.pool(), Counter(progression=8, useful=90, filler=370))
+
+    def test_first_appearances(self) -> None:
+        self.options = {"shop_checks": "first_appearances"}
+        self.world_setup()
+        garden = {location.name for location in self.real_locations()
+                  if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN}
+        self.assertEqual(len(garden), 61)
+        self.assertIn("Medical Pavilion - Gatherer's Garden: Enrage!", garden)
+        self.assertIn("Neptune's Bounty - Gatherer's Garden: Sonic Boom", garden)
+        self.assertNotIn("Neptune's Bounty - Gatherer's Garden: Enrage!", garden, "sold first in Medical Pavilion")
+        self.assertIn("Fort Frolic - Gatherer's Garden: Sonic Boom 2", garden)
+        self.assertNotIn("Fort Frolic - Gatherer's Garden: Sonic Boom", garden)
+
+    def test_no_progression_in_a_shop(self) -> None:
+        self.fill()
+        for location in self.real_locations():
+            if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN:
+                self.assertFalse(location.item.advancement, f"{location.item.name} on {location.name}")
+        self.assertBeatable(True)
+
+    def test_off_by_default(self) -> None:
+        self.assertFalse(self.generate_for_real({"game": "BioShock", "BioShock": {}}).worlds[1].options.shop_checks)
+
+    def test_shops_alone_cannot_hold_access_items(self) -> None:
+        only_shops = {"shop_checks": True, "story_checks": False, "little_sister_checks": False,
+                      "power_to_the_people_checks": False, "level_completion_checks": False,
+                      "audio_diary_checks": "off"}
+        with self.assertRaises(OptionError):
+            self.options = only_shops
+            self.world_setup()
+        self.options = {**only_shops, "level_access": "vanilla"}
+        self.world_setup()
+        self.fill()
+        self.assertBeatable(True)
+
+    def test_slot_data(self) -> None:
+        self.assertEqual(self.world.fill_slot_data()["shop_checks"], 2)
+
+
 class TestEveryCombination(PoolTestBase):
     """All 96 ways to set the check options, each as a one-player game: it either fills and can be finished with
     nothing important on a filler-only check, or it is turned down before generation starts."""
@@ -431,3 +484,28 @@ class TestSlotData(BioShockTestBase):
         self.assertNotIn("directors_commentary_checks", slot_data)
         self.assertEqual(slot_data["level_access_items"]["Arcadia"], "Arcadia Access")
         self.assertIsNone(slot_data["level_access_items"]["Medical Pavilion"])
+
+
+class TestWeaponStations(PoolTestBase):
+    """Station checks, on by default: a station is a check you use once, and the weapon upgrades come from the
+    multiworld."""
+
+    def test_weapon_upgrades_in_the_pool(self) -> None:
+        names = Counter(item.name for item in self.multiworld.itempool)
+        for upgrade in WEAPON_UPGRADES:
+            self.assertEqual(names[upgrade], 1, upgrade)
+
+    def test_stations_may_hold_progression(self) -> None:
+        stations = [location for location in self.real_locations()
+                    if CATEGORY[location.name] == LocationCategory.POWER_TO_THE_PEOPLE]
+        self.assertEqual(len(stations), 12)
+        self.assertTrue(all(location.item_rule(self.world.create_item("Arcadia Access")) for location in stations))
+
+
+class TestWeaponStationsOff(PoolTestBase):
+    """With no station checks the stations stay vanilla, and so do their upgrades."""
+    options = {"power_to_the_people_checks": False}
+
+    def test_no_weapon_upgrades_in_the_pool(self) -> None:
+        names = {item.name for item in self.multiworld.itempool}
+        self.assertFalse(names & set(WEAPON_UPGRADES))

@@ -385,6 +385,29 @@ class TestContext(ContextTestBase):
         self.assertFalse(self.ctx.core.agent_attached)
         self.assertTrue(any("the game closed" in line for line in logs.output))
 
+    async def test_the_menu_with_the_ap_icon_is_made_from_the_attached_game(self) -> None:
+        import tempfile
+        from pathlib import Path
+        from ..client import flash_movies
+        with tempfile.TemporaryDirectory() as folder:
+            root = Path(folder)
+            exe = root / "game" / "Build" / "Final" / "BioshockHD.exe"
+            menu = root / "game" / "ContentBaked" / "pc" / "FlashMovies" / flash_movies.MENU
+            menu.parent.mkdir(parents=True)
+            menu.write_bytes(b"not a movie")
+            game = SimulatedGame()
+            self.ctx.agent = game
+            self.assertIsNone(self.ctx.prepare_movies(), "the simulated game has no files")
+            game.game_path = str(exe)  # type: ignore[attr-defined]
+            with mock.patch("Utils.cache_path", return_value=str(root / "cache")):
+                with self.assertRaisesRegex(flash_movies.MoviesUnavailable, "not a Flash movie"):
+                    self.ctx.prepare_movies()
+                menu.write_bytes(b"FWS\x06" + bytes(4) + bytes([0]) + bytes(4) +
+                                 flash_movies.tag(57, b"lib.swf\0\x01\0\x03\0Chips\0") + flash_movies.tag(0, b""))
+                self.assertEqual(self.ctx.prepare_movies(), str(root / "cache"))
+            self.assertTrue((root / "cache" / flash_movies.LIBRARY).read_bytes().startswith(b"FWS"))
+            self.assertIn(b"APIcons.swf", (root / "cache" / flash_movies.MENU).read_bytes())
+
     async def test_commands(self) -> None:
         await self.connect()
         commands = self.ctx.command_processor(self.ctx)

@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from BaseClasses import Item, ItemClassification
 
 from .data import (
-    ACCESS_ITEMS, CHARACTER_UPGRADES, FILLER_ITEMS, GAME_NAME, ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS, ItemKind,
-    Source,
+    ACCESS_ITEMS, CHARACTER_UPGRADES, FILLER_ITEMS, GAME_NAME, ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS,
+    WEAPON_UPGRADES, ItemKind, Source,
 )
 from .options import LevelAccess
 
@@ -66,17 +66,24 @@ def progression_item_names(world: BioShockWorld) -> list[str]:
     return list(ACCESS_ITEMS) if world.options.level_access == LevelAccess.option_access_items else []
 
 
-def useful_item_groups() -> tuple[list[str], ...]:
+def stations_shuffled(world: BioShockWorld) -> bool:
+    """Whether the weapon upgrades come from the multiworld: then the stations are checks with no upgrade menu."""
+    return bool(world.options.power_to_the_people_checks)
+
+
+def useful_item_groups(world: BioShockWorld | None = None) -> tuple[list[str], ...]:
     """Every useful item this world can add to the pool, most wanted group first.
 
     Pickups the game hands out at a fixed spot (Source.WORLD) stay vanilla for now: the client cannot stop the game
     from giving them, so shuffling them would only create duplicates. Everything bought, crafted, researched or
-    gifted is a candidate.
+    gifted is a candidate. The weapon upgrades come first when the stations no longer give them, since nothing else
+    in the game does.
     """
     plasmids = [plasmid.item_name for plasmid in PLASMIDS for _, source, _ in plasmid.levels if source != Source.WORLD]
     upgrades = [name for name, count in CHARACTER_UPGRADES for _ in range(count)]
     tonics = [tonic.name for tonic in TONICS if tonic.source != Source.WORLD]
-    return plasmids, upgrades, tonics
+    weapon_upgrades = list(WEAPON_UPGRADES) if world is not None and stations_shuffled(world) else []
+    return weapon_upgrades, plasmids, upgrades, tonics
 
 
 def pick_useful_items(world: BioShockWorld, room: int) -> list[str]:
@@ -84,7 +91,7 @@ def pick_useful_items(world: BioShockWorld, room: int) -> list[str]:
     at random. Nothing is lost for the player: whatever is left out can still be bought, crafted or researched in
     the game as usual."""
     kept: list[str] = []
-    for group in useful_item_groups():
+    for group in useful_item_groups(world):
         space = room - len(kept)
         if space <= 0:
             break

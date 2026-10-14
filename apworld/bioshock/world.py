@@ -9,7 +9,7 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.9"
+WORLD_VERSION = "0.1.17"
 SLOT_DATA_VERSION = 3  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks
 
 
@@ -38,8 +38,9 @@ class BioShockWorld(World):
         # Access items that start in the player's inventory are taken out of the pool again, so they need no check.
         from_pool = self.options.start_inventory_from_pool.value
         needed = sum(1 for name in items.progression_item_names(self) if not from_pool.get(name))
-        open_checks = locations.open_locations(self)
-        does_not_count = "Filler-only collectibles and locations under exclude_locations do not count."
+        open_checks = locations.progression_locations(self)
+        does_not_count = ("Filler-only collectibles, shop checks and locations under exclude_locations do not "
+                          "count.")
         if needed > len(open_checks):
             raise OptionError(
                 f"{self.player_name}: Level Access needs {needed} checks that may hold an access item, but these "
@@ -89,9 +90,12 @@ class BioShockWorld(World):
                 "power_to_the_people_checks",
                 "level_completion_checks",
                 "audio_diary_checks",
+                "shop_checks",
                 "trap_chance",
                 "death_link",
             ),
+            # Stations open no menu: using one sends its check and closes it, and the upgrades come from the pool.
+            "station_touch": items.stations_shuffled(self),
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
             "level_access_items": {level.name: level.access_item for level in LEVELS} if access_items else {},
         }

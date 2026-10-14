@@ -23,12 +23,24 @@ These can hold anything, including the items you and other players need:
 - 28 story objectives and bosses, for example defeating Dr. Steinman, photographing the Spider Splicers or completing
   Cohen's masterpiece. All of them are part of finishing the game, so you cannot miss one.
 - Rescuing or harvesting each of the 21 Little Sisters
-- Using each of the 12 Power to the People weapon upgrade stations
+- Using each of the 12 Power to the People weapon upgrade stations. A station opens no upgrade menu: using it sends
+  its check and closes it, and the 12 weapon upgrades are items in the multiworld instead. An upgrade for a weapon
+  you don't have yet waits until you pick the weapon up.
 - Finishing each level for the first time (12 checks)
 
 The 122 Audio Diaries are extras. By default they are checks that only ever hold filler such as ADAM and dollars, or
 traps, so nobody ever has to hunt for one. They can also be switched off, or set to "all" if you do want important
 items on them. Every other kind of check can be switched off as well.
+
+Shop Checks (off by default) make the gene upgrades the Gatherer's Gardens sell checks. They can hold useful items
+but never anything needed to progress, since the ADAM to buy them depends on how you play. With First Appearances,
+a line is a check only in the first Garden that sells its gene (61 checks) and repeats are sold out; with All,
+every line of every level's Garden is a check (273). Each line that is a check is renamed after the multiworld
+item it holds. Your
+own BioShock items cost what the game charges for them; other items cost 80 ADAM if they are useful and 20
+otherwise. Your own items show their own icon (a weapon upgrade shows its weapon) and other items show the
+Archipelago icon. Buying a line sends its
+check and gives you a bag of chips instead of the gene.
 
 Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.
 

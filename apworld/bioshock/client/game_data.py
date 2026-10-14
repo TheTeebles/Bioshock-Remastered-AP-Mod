@@ -26,9 +26,9 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from ..data import (
-    ARCADIA, FARMERS_MARKET, FORT_FROLIC, ITEM_TABLE, LEVEL_COMPLETION_LEVELS, LEVEL_NAMES, LOCATION_TABLE, PLASMIDS,
-    PROVING_GROUNDS, STORY_MILESTONES, TONICS, ItemKind, LocationCategory, Source, level_completion_location_name,
-    story_location_name,
+    ARCADIA, FARMERS_MARKET, FORT_FROLIC, GATHERERS_GARDEN_LINES_PER_LEVEL, ITEM_TABLE, LEVEL_COMPLETION_LEVELS,
+    LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, STORY_MILESTONES, TONICS, ItemKind, LocationCategory,
+    Source, level_completion_location_name, story_location_name,
 )
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -224,6 +224,7 @@ class Delivery:
     commands: tuple[str, ...] = ()  # console commands, run in order
     optional: int = 0  # how many of the last commands may fail without the item failing
     action: str | None = None  # named agent action instead of commands (traps)
+    needs_weapon: str | None = None  # a weapon class the player must hold first (weapon upgrades)
 
     @property
     def is_instant(self) -> bool:
@@ -279,7 +280,9 @@ def plan_delivery(item_name: str, copy_number: int, world_items_shuffled: bool =
 
     if kind == ItemKind.WEAPON_UPGRADE:
         upgrade = WEAPON_UPGRADE.get(item_name)
-        return Delivery(item_name, (f"AddWeaponStatUpgrade {upgrade[0]} {upgrade[1]}",)) if upgrade else None
+        # The game upgrades the weapon the player holds, so an upgrade for one they don't have would be lost.
+        return Delivery(item_name, (f"AddWeaponStatUpgrade {upgrade[0]} {upgrade[1]}",),
+                        needs_weapon=upgrade[0]) if upgrade else None
 
     if item_name in CURRENCY_FILLER:
         count, class_name = CURRENCY_FILLER[item_name]
@@ -348,6 +351,12 @@ LEVEL_COMPLETION_LOCATION: dict[str, int] = {
 }
 MILESTONE_LOCATION: dict[str, int] = {
     milestone.key: _LOCATION_ID[story_location_name(milestone)] for milestone in STORY_MILESTONES
+}
+# (level, line) -> location ID of a Gatherer's Garden line. Lines count from 1 in the order of the Garden's stock list.
+GARDEN_LOCATION: dict[tuple[str, int], int] = {
+    (location.level, location.id - 8000 - GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(location.level)):
+        location.id
+    for location in LOCATION_TABLE if location.category == LocationCategory.GATHERERS_GARDEN
 }
 
 
@@ -552,6 +561,18 @@ def stations_of(used_by_map: object) -> dict[str, int] | None:
     return result
 
 
+def gardens_of(bought_by_map: object) -> dict[str, frozenset[int]] | None:
+    """Gatherer's Garden lines bought, by level, from the agent's lines by map. None while it cannot tell."""
+    if not isinstance(bought_by_map, dict):
+        return None
+    result: dict[str, frozenset[int]] = {}
+    for map_name, lines in bought_by_map.items():
+        level = level_of(normalize_map(map_name), None)
+        if level is not None and isinstance(lines, list):
+            result[level] = result.get(level, frozenset()) | {line for line in lines if isinstance(line, int)}
+    return result
+
+
 def diary_location(number: int) -> int | None:
     return 1000 + number if 1 <= number <= DIARY_COUNT else None
 
@@ -728,3 +749,61 @@ def in_fontaine_arena(map_name: str | None, level_value: int | None) -> bool | N
     if level_value == 0 or level_value in LEVEL_FROM_VALUE:
         return False
     return None
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Gatherer's Garden lines that hold multiworld items
+# --------------------------------------------------------------------------------------------------------------------
+
+# Each line of a Garden that is a check sells a stand-in item named after what the check holds. Its price in ADAM:
+# a BioShock gene for this slot costs what it costs in the base game, anything else goes by how important it is.
+# Vanilla prices seen in the Neptune's Bounty Garden (probe, 2026-10-14). Genes not listed yet go by importance.
+GENE_PRICES: dict[str, int] = {
+    "Plasmid Slot": 100, "Health Upgrade": 80, "EVE Upgrade": 80, "Enrage!": 60,
+    "Progressive Sonic Boom": 40, "Target Dummy": 60, "Progressive Winter Blast": 60, "Armored Shell": 20, "EVE Link": 20, "Extra Nutrition": 20,
+    "Machine Buster": 20,
+}
+PROGRESSION_PRICE = 80  # Teebs, 2026-10-14: 80 for a key item, 20 for filler
+USEFUL_PRICE = 80  # Teebs, 2026-10-14: shop checks never hold progression, so useful items take the key-item price
+FILLER_PRICE = 20
+_GENE_KINDS = (ItemKind.PLASMID, ItemKind.TONIC, ItemKind.CHARACTER_UPGRADE)
+
+
+def garden_price(item: str, flags: int, own: bool) -> int:
+    if own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES:
+        return GENE_PRICES[item]
+    if flags & 0b001:
+        return PROGRESSION_PRICE
+    if flags & 0b010:
+        return USEFUL_PRICE
+    return FILLER_PRICE
+
+
+def garden_class(item: str, own: bool) -> str | None:
+    """The game class of one of this slot's own BioShock items, so the agent can read what the game charges for it."""
+    if not own or item not in ITEM_KIND:
+        return None
+    if ITEM_KIND[item] == ItemKind.PLASMID:  # a progressive plasmid: priced as its first level
+        item = plasmid_levels(item)[0]
+    give = GIVE_CLASS.get(item)
+    return None if give is None else give.rpartition(".")[2]
+
+
+def garden_icon(item: str, own: bool) -> str | None:
+    """For one of this slot's own items with no Garden icon of its own, a class whose icon fits it: a weapon upgrade
+    shows its weapon (the Garden's menu imports every weapon's icon under the weapon's class name)."""
+    upgrade = WEAPON_UPGRADE.get(item) if own else None
+    return None if upgrade is None else upgrade[0]
+
+
+def garden_price_known(item: str, own: bool) -> bool:
+    """Whether garden_price is the item's vanilla Garden price rather than one by importance."""
+    return own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES
+
+
+def garden_text(item: str, player: str, flags: int, own: bool) -> tuple[str, str]:
+    """The name and description a Garden line shows for the multiworld item it holds."""
+    kind = "a key item" if flags & 0b001 else "a useful item" if flags & 0b010 else "an item"
+    if own:
+        return item, f"Yours: {item}. Buying it sends this check to the multiworld."
+    return item, f"For {player}: {kind} from the multiworld. Buying it sends this check."

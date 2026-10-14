@@ -21,7 +21,10 @@ const STEAM_SIZE = 23556096;
 const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
+const HEAP_GET = 0x76000100; const HEAP_ALLOC = 0x76000200; // GetProcessHeap and HeapAlloc
+const CREATE_FILE = 0x76000300; // CreateFileW
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
+const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
 const ENGINE = 0x50000000;
 const GUARD_PAGE = 0x00190000; // a page that must never be read
@@ -75,7 +78,9 @@ class Ptr {
   }
   writePointer(p) { this.runtime.memory.set(this.value, p.value); return this; }
   writeU32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
+  writeS32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   compare(other) { return this.value < other.value ? -1 : (this.value > other.value ? 1 : 0); }
+  writeUtf16String(text) { this.runtime.strings.set(this.value, text); return this; }
   writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
@@ -98,10 +103,13 @@ function makeRuntime({
     answers: [], // what the agent's handler answered each time: true would take the exception away from the game
     nextStack: 0x0A000000,
     scriptCalls: [], // what the agent ran through ProcessEvent: object, function, the frame's words
+    heapAllocs: [], // the size of everything the agent took from the game's heap
     onScriptCall: null,
   };
   // ProcessEvent's first instructions, as the agent checks them before calling it
   runtime.memory.set(BASE + PROCESS_EVENT, 0x81EC8B55); runtime.memory.set(BASE + PROCESS_EVENT + 4, 0x000400EC);
+  runtime.memory.set(BASE + OPEN_UPGRADE_MENU, 0x64EC8B55);
+  runtime.replaced = new Map(); // address -> what the agent put there instead
   const ptr = (n) => new Ptr(n, runtime);
   const committed = (address) => {
     const page = address >>> 12;
@@ -130,10 +138,11 @@ function makeRuntime({
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') {
           if (!virtualQuery) { throw new Error('unable to find module'); }
-          return { getExportByName: () => ptr(VIRTUAL_QUERY) };
+          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE }[name] ||
+            VIRTUAL_QUERY) };
         }
         return {
-          base: ptr(BASE), size: moduleSize,
+          base: ptr(BASE), size: moduleSize, path: 'E:\\Game\\Build\\Final\\BioshockHD.exe',
           enumerateRanges: () => [{ base: ptr(BASE + 0x1000), size: 0x1000000 }],
         };
       },
@@ -142,13 +151,23 @@ function makeRuntime({
       alloc: (size) => { const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; return p; },
       allocUtf16String: (text) => { const p = ptr(runtime.nextAlloc); runtime.nextAlloc += 2 * text.length + 16;
         runtime.strings.set(p.value, text); return p; },
+      copy: (to, from, size) => { // every word and text in the range, moved over
+        for (const store of [runtime.memory, runtime.text, runtime.ansi, runtime.strings]) {
+          for (const [at, value] of [...store]) {
+            if (at >= from.value && at < from.value + size) { store.set(to.value + at - from.value, value); }
+          }
+        }
+      },
       scanSync: (address, size, pattern) => {
         if (size === 47) { return deltaAt !== null && address.value === BASE + deltaAt ? [{ address, size }] : []; }
         if (!pattern.startsWith('55 8B EC')) { return pattern.includes('F4 0A') ? [] : [{ address, size: 6 }]; }
         return (scanHits || []).map((rva) => ({ address: ptr(BASE + rva), size: 47 }));
       },
     },
-    NativeCallback: function (callback) { runtime.outputDevice = callback; return ptr(0x66660000); },
+    NativeCallback: function (callback, returns, takes, abi) {
+      if (abi === 'thiscall') { return { callback }; } // a replacement for a function of the game's
+      runtime.outputDevice = callback; return ptr(0x66660000);
+    },
     NativeFunction: function (address, returns, takes, options) {
       runtime.nativeOptions.set(address.value, options);
       if (address.value === VIRTUAL_QUERY) {
@@ -159,6 +178,12 @@ function makeRuntime({
           runtime.memory.set(buffer.value + 16, ok ? 0x1000 : 0x10000); // State: committed or free
           runtime.memory.set(buffer.value + 20, guard ? 0x104 : (ok ? 0x04 : 0)); // Protect, with PAGE_GUARD
           return 28;
+        };
+      }
+      if (address.value === HEAP_GET) { return () => ptr(0x00A00000); }
+      if (address.value === HEAP_ALLOC) {
+        return (heap, flags, size) => {
+          const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
         };
       }
       if (address.value === BASE + PROCESS_EVENT) {
@@ -196,6 +221,7 @@ function makeRuntime({
       };
     },
     Interceptor: {
+      replace: (address, replacement) => { runtime.replaced.set(address.value, replacement.callback); },
       attach: (address, callbacks) => {
         const hook = { address: address.value, callbacks };
         runtime.hooks.push(hook);
@@ -212,7 +238,7 @@ function makeRuntime({
     runtime.time += ms;
     const levels = runtime.levels.length > 0 ? runtime.levels : [0x12340000]; // or for something unreadable
     for (const level of levels) {
-      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT)
+      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT && h.address !== CREATE_FILE)
         .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(level) } }));
     }
   };
@@ -222,6 +248,13 @@ function makeRuntime({
     const stack = runtime.object(0x40); poke(stack + 4, frame);
     runtime.hooks.filter((h) => h.address === BASE + PROCESS_EVENT)
       .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(self), esp: ptr(stack) } }));
+  };
+  // The game opening a file: the path it ends up opening, after the hooks on CreateFileW.
+  runtime.openFile = (path) => {
+    const at = runtime.object(0x10); runtime.text.set(at, path);
+    const args = [ptr(at)];
+    runtime.hooks.filter((h) => h.address === CREATE_FILE).forEach((h) => h.callbacks.onEnter.call({}, args));
+    return runtime.strings.has(args[0].value) ? runtime.strings.get(args[0].value) : runtime.text.get(args[0].value);
   };
   runtime.frames = (count, ms = 100) => { for (let i = 0; i < count; i++) { runtime.frame(ms); } };
 
@@ -395,12 +428,83 @@ function makeRuntime({
     fields(stationClass, [['NumTimesUsed', intProperty, 0x524]]);
     const station = (used = 0) => { const at = make('PlaceableWeaponUpgradeStation0', stationClass, 0x600); poke(at + 0x524, used); return at; };
     const functionClass = cls('Function', objectClass);
+    const objectProperty = cls('ObjectProperty', objectClass);
+    const stateClass = cls('State', objectClass);
+    // A station in use: CurrentPlayer is set, and it is in its Interacting state, which has a FinishInteraction of
+    // its own. The state frame is at +0x10, the state 4 bytes into it.
+    fields(stationClass, [['FinishInteraction', functionClass, 0], ['NumTimesUsed', intProperty, 0x524],
+      ['CurrentPlayer', objectProperty, 0x540]]);
+    const finishInClass = runtime.memory.get(stationClass + 0x5C);
+    const interacting = make('Interacting', stateClass);
+    const finishInState = make('FinishInteraction', functionClass);
+    poke(interacting + 0x5C, finishInState);
+    const inUse = (stationAt, player) => {
+      const frame = runtime.object(0x40); poke(frame + 4, interacting); poke(stationAt + 0x10, frame);
+      poke(stationAt + 0x540, player);
+    };
+    // Weapons: their Holder is whoever has them.
+    const weaponClass = cls('Weapon', actor);
+    fields(weaponClass, [['Holder', objectProperty, 0x400]]);
+    const weapon = (className, holder) => {
+      const at = make(`${className}0`, cls(className, weaponClass), 0x600); poke(at + 0x400, holder); return at;
+    };
     const pawnClass = cls('ShockPawn', actor);
     const onKilled = make('OnKilled', functionClass);
     poke(pawnClass + 0x5C, onKilled);
     const playerClass = cls('ShockPlayer', pawnClass);
     const tick = make('Tick', functionClass);
-    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick };
+    // Gatherer's Gardens: a VendingTable whose VendingLootSpec array holds the lines, 0x20 bytes each. The array
+    // property points to its inner struct property a few words after its offset, and that one to the struct.
+    const strProperty = cls('StrProperty', objectClass);
+    const arrayProperty = cls('ArrayProperty', objectClass);
+    const structProperty = cls('StructProperty', objectClass);
+    const scriptStruct = cls('ScriptStruct', objectClass);
+    const spec = make('VendingLootSpec', scriptStruct);
+    fields(spec, [['ItemClass', objectProperty, 0], ['PickupClass', objectProperty, 4], ['StackSize', intProperty, 8],
+      ['CostAdjustment', intProperty, 0xC], ['DisplayWhenHacked', boolProperty, 0x10],
+      ['DisplayWhenUnHacked', boolProperty, 0x10], ['SupplySize', intProperty, 0x14],
+      ['AmountPurchased', intProperty, 0x18], ['cost', intProperty, 0x1C]]);
+    const tableClass = cls('VendingLootTable', objectClass);
+    fields(tableClass, [['VendingLootSpec', arrayProperty, 0x3C]]);
+    const specsField = runtime.memory.get(tableClass + 0x5C);
+    const inner = make('VendingLootSpec', structProperty); poke(specsField + 0x7C, inner); poke(inner + 0x78, spec);
+    const vendingClass = cls('VendingStation', actor);
+    fields(vendingClass, [['VendingTable', objectProperty, 0x5A0]]);
+    const gardenClass = cls('PlaceableGrowthStation', cls('GrowthStation', vendingClass));
+    const gene = cls('Enrage', objectClass);
+    // A Garden with this many lines, each selling one of a gene. Returns the Garden and its lines' addresses.
+    const garden = (count) => {
+      const at = make('PlaceableGrowthStation0', gardenClass, 0x600);
+      const table = make('VendingLootTable0', tableClass);
+      const data = runtime.object(0x20 * count);
+      poke(at + 0x5A0, table); poke(table + 0x3C, data); poke(table + 0x40, count); poke(table + 0x44, count);
+      const lines = Array.from({ length: count }, (_, n) => data + 0x20 * n);
+      lines.forEach((line) => {
+        [gene, 0, 1, 10, 0, 1, 0, 40].forEach((value, i) => poke(line + 4 * i, value)); // CostAdjustment 1.0
+      });
+      return { at, lines };
+    };
+    // The placeholder: class chips, whose default values (an array in the class at +0x54C) hold its texts.
+    const item = cls('Item', objectClass);
+    const floatProperty = cls('FloatProperty', objectClass);
+    fields(item, [['Description', strProperty, 0x44], ['FriendlyName', strProperty, 0x50],
+      ['CreditValue', floatProperty, 0x60]]);
+    // An item class worth `credit` ADAM, with its default values in an array at +0x54C like chips.
+    const itemClass = (className, credit) => {
+      const at = cls(className, item);
+      const values = runtime.object(0x100);
+      poke(at + 0x54C, values); poke(at + 0x550, 188); poke(at + 0x554, 188);
+      runtime.string(values + 0x50, className); poke(values + 0x60, credit * 10);
+      return at;
+    };
+    const chips = make('chips', classClass, 0x1100); poke(chips + 0x40, cls('Consumable', item));
+    for (let at = 0x1000; at < 0x1100; at += 0x1000) { poke(chips + at, 0); }
+    poke(chips + 0xFFC, 0); poke(chips + 0x10FC, 0);
+    const defaults = runtime.object(0x100);
+    poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
+    runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
+    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+      finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -447,6 +551,8 @@ function makeRuntime({
 
 const exec = (r, id, command) => r.context.rpc.exports.exec(id, command);
 const state = (r) => r.context.rpc.exports.state();
+const gardenLines = (r, id, lines) => r.context.rpc.exports.action(id, 'garden_lines ' +
+  JSON.stringify({ level: 'Medical Pavilion', map: '1-medical', lines }));
 const raisedMessages = (r) => r.messages.filter((m) => m.type === 'exec_raised');
 
 // What the client is told about one exception the game raises while a command runs: the text, or null if nothing.
@@ -1330,6 +1436,169 @@ const tests = {
     r.context.rpc.exports.action(5, 'kill'); r.frames(310);
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[5, false]]);
+  },
+  'touch_stations skips the station menu, then finishes the station through its state': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const station = model.station(0);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'touch_stations');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[1, 'touch_stations', true]]);
+    assert.ok(r.replaced.has(BASE + OPEN_UPGRADE_MENU), 'the native that opens the menu is replaced');
+    assert.strictEqual(r.context.rpc.exports.state().stationTouch, true);
+    model.inUse(station, game.pawn);
+    r.replaced.get(BASE + OPEN_UPGRADE_MENU)(r.context.ptr(game.pawn)); // the player uses the station
+    r.gameEvent(game.hud, model.tick); // a call of the game's to copy
+    r.frames(2);
+    const calls = r.scriptCalls.map((c) => [c.self, c.fn]);
+    assert.deepStrictEqual(calls, [[station, model.finishInState]], "the state's FinishInteraction, on the station");
+    assert.strictEqual(r.memory.get(r.scriptCalls[0].parms), 1, 'SuccessfullyCompleted is true');
+    r.frames(5);
+    assert.strictEqual(r.scriptCalls.length, 1, 'once');
+  },
+  'touch_stations is refused when the game code is not the expected one': () => {
+    const r = makeRuntime(); r.game(); r.objectModel();
+    r.memory.set(BASE + OPEN_UPGRADE_MENU, 0x90909090);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(2, 'touch_stations');
+    const answers = r.messages.filter((m) => m.type === 'action_result');
+    assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[2, false]]);
+    assert.ok(!r.replaced.has(BASE + OPEN_UPGRADE_MENU));
+    assert.strictEqual(r.context.rpc.exports.state().stationTouch, false);
+  },
+  'weapons held are the ones whose Holder is the player': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.load(); r.frames(2);
+    assert.strictEqual(r.context.rpc.exports.state().weaponsHeld, null, 'no weapon seen yet');
+    model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
+    r.frames(3);
+    assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
+  },
+  // ---- Gatherer's Gardens ----
+  'garden_lines makes each line a copy of chips with its own name, priced from the item': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const { lines } = model.garden(3);
+    const sold = r.memory.get(lines[1]);
+    r.load(); r.frames(2);
+    gardenLines(r, 7, [{ line: 1, name: 'Hookshot', description: 'For Halthrax', price: 80, bought: false },
+      { line: 3, name: 'Bomb', description: 'Yours', price: 20, bought: false }]);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[7, 'garden_lines', true]]);
+    r.frames(8);
+    const copy = r.memory.get(lines[0]);
+    assert.ok(copy >= 0x70000000, 'line 1 sells a copy made by the agent');
+    assert.strictEqual(r.memory.get(copy + 0x28), r.memory.get(model.chips + 0x28), 'still named chips');
+    assert.strictEqual(r.memory.get(copy + 0x40), r.memory.get(model.chips + 0x40), 'still a Consumable');
+    const values = r.memory.get(copy + 0x54C);
+    assert.notStrictEqual(values, model.defaults, 'with default values of its own');
+    assert.strictEqual(r.strings.get(r.memory.get(values + 0x50)), 'Hookshot');
+    assert.strictEqual(r.strings.get(r.memory.get(values + 0x44)), 'For Halthrax');
+    assert.strictEqual(r.text.get(r.memory.get(model.defaults + 0x50)), 'Potato Chips', 'chips itself is untouched');
+    assert.strictEqual(r.memory.get(lines[0] + 0xC), 200, '80 ADAM is 20 times the price of chips');
+    assert.notStrictEqual(r.memory.get(lines[2]), copy, 'line 3 has a copy of its own');
+    assert.strictEqual(r.memory.get(lines[2] + 0xC), 50);
+    assert.strictEqual(r.memory.get(lines[1]), sold, 'line 2 is not a check');
+    assert.strictEqual(r.memory.get(lines[1] + 0xC), 10);
+    assert.strictEqual(state(r).gardenLines, 2);
+    assert.strictEqual(state(r).gardenTrouble, null);
+    assert.ok(r.heapAllocs.includes(0x1000), 'the copies are on the game\'s heap, which outlives the agent');
+  },
+  'our own BioShock items cost what the game charges for them': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const enrage = model.itemClass('BerserkRage', 30); model.itemClass('SlowFlow', 20);
+    const { lines } = model.garden(4);
+    r.poke(lines[3], enrage); r.poke(lines[3] + 0xC, 20); // line 4 sells Enrage at twice its value
+    r.load(); r.frames(2);
+    gardenLines(r, 1, [
+      { line: 1, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
+      { line: 2, name: 'Speedy Hacker', description: '', price: 80, class: 'SlowFlow', known: false },
+      { line: 3, name: 'Clever Inventor', description: '', price: 80, class: 'EfficientCrafter', known: false },
+      { line: 4, name: 'Hookshot', description: '', price: 20 },
+    ]);
+    r.frames(8);
+    assert.strictEqual(r.memory.get(lines[0] + 0xC), 150, 'Enrage: 30 x 2 = 60 ADAM, as the Garden sells it here');
+    assert.strictEqual(r.memory.get(lines[1] + 0xC), 50, 'Speedy Hacker is not sold here: its value, 20 ADAM');
+    assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, 'a class that is not loaded: the client\'s price');
+    assert.strictEqual(r.memory.get(lines[3] + 0xC), 50, 'someone else\'s item: the client\'s price');
+    const nameOf = (at) => r.memory.get(at + 0x28);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(enrage), 'Enrage\'s line has its name, for its icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(model.chips), 'no class loaded: the chips icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[3])), nameOf(model.chips));
+  },
+  'redirect_movies hands the game the client\'s menu, whose lines then take the AP icon': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const enrage = model.itemClass('BerserkRage', 30); const thrower = model.itemClass('ChemicalThrower', 0);
+    const { lines } = model.garden(4);
+    r.load(); r.frames(2);
+    assert.strictEqual(state(r).exe, 'E:\\Game\\Build\\Final\\BioshockHD.exe', 'for the client to find the menu');
+    const redirect = (id, offer) => r.context.rpc.exports.action(id, `redirect_movies ${JSON.stringify(offer)}`);
+    redirect(1, { folder: 'C:\\cache\\FlashMovies\\', files: ['craftingStationPC.swf', 'APIcons.swf'] });
+    redirect(2, { folder: '', files: [] });
+    assert.strictEqual(JSON.stringify(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok])),
+      '[[1,true],[2,false]]');
+    gardenLines(r, 3, [{ line: 1, name: 'Hookshot', description: '', price: 80 },
+      { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
+      { line: 3, name: 'Chemical Thrower Range', description: '', price: 80, icon: 'ChemicalThrower' },
+      { line: 4, name: 'Pistol Clip Size', description: '', price: 80, icon: 'Pistol' }]);
+    r.frames(8);
+    const nameOf = (at) => r.memory.get(at + 0x28);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.chips), 'the menu open now is the game\'s own');
+    assert.strictEqual(state(r).apIcon, false);
+    const game = 'E:\\Game\\Build\\Final\\BakedScripts\\PC\\..\\FlashMovies\\';
+    assert.strictEqual(r.openFile(`${game}craftingstationPC.swf`), 'C:\\cache\\FlashMovies\\craftingStationPC.swf');
+    assert.strictEqual(r.openFile(`${game}APIcons.swf`), 'C:\\cache\\FlashMovies\\APIcons.swf');
+    assert.strictEqual(r.openFile(`${game}PlasmiNow.swf`), `${game}PlasmiNow.swf`, 'other movies are the game\'s');
+    assert.strictEqual(r.openFile('E:\\Saves\\craftingStationPC.swf'), 'E:\\Saves\\craftingStationPC.swf');
+    assert.strictEqual(state(r).apIcon, true);
+    r.frames(8);
+    assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.item), 'someone else\'s item: named Item, for the AP icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[1])), nameOf(enrage), 'our own item keeps its real icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(thrower), 'a weapon upgrade shows its weapon');
+    assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, '... at the client\'s price, not the weapon\'s value');
+    assert.strictEqual(nameOf(r.memory.get(lines[3])), nameOf(model.item), 'its weapon not loaded: the AP icon');
+    redirect(4, { folder: 'D:\\other', files: ['APIcons.swf'] });
+    assert.strictEqual(r.hooks.filter((h) => h.address === CREATE_FILE).length, 1, 'one hook, whatever is asked');
+    assert.strictEqual(r.openFile(`${game}APIcons.swf`), 'D:\\other\\APIcons.swf');
+  },
+  'a Garden line bought is reported by map, and sold out in every Garden of the level': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const first = model.garden(2); const second = model.garden(2);
+    r.load(); r.frames(2);
+    gardenLines(r, 1, [{ line: 2, name: 'Hookshot', description: '', price: 80, bought: false }]);
+    r.frames(8);
+    assert.strictEqual(JSON.stringify(state(r).gardenBought), '{"1-medical":[]}');
+    r.poke(first.lines[1] + 0x18, 1); // bought
+    r.frames(8);
+    assert.strictEqual(JSON.stringify(state(r).gardenBought), '{"1-medical":[2]}');
+    assert.strictEqual(r.memory.get(second.lines[1] + 0x18), 1, 'the same line elsewhere is sold out');
+  },
+  'a Garden line the client says is bought is sold out': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const { lines } = model.garden(2);
+    r.load(); r.frames(2);
+    gardenLines(r, 1, [{ line: 1, name: 'Hookshot', description: '', price: 80, bought: true }]);
+    r.frames(8);
+    assert.strictEqual(r.memory.get(lines[0] + 0x18), 1);
+    assert.ok(r.memory.get(lines[0]) < 0x70000000, 'and keeps what it sold');
+  },
+  'Garden lines meant for another map are left alone': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const { lines } = model.garden(2);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'garden_lines ' + JSON.stringify(
+      { level: 'Arcadia', map: '3-arcadia', lines: [{ line: 1, name: 'Hookshot', description: '', price: 80 }] }));
+    r.frames(8);
+    assert.ok(r.memory.get(lines[0]) < 0x70000000);
+    assert.strictEqual(r.memory.get(lines[0] + 0xC), 10);
+  },
+  'Garden lines without the chips class are left alone': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const { lines } = model.garden(2);
+    r.poke(model.chips + 0x28, r.memory.get(lines[0] + 0x28)); // no class of that name is loaded
+    r.load(); r.frames(2);
+    gardenLines(r, 1, [{ line: 1, name: 'Hookshot', description: '', price: 80, bought: false }]);
+    r.frames(8);
+    assert.ok(r.memory.get(lines[0]) < 0x70000000);
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

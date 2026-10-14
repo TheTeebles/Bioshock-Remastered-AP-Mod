@@ -5,9 +5,9 @@ import unittest
 from ..client import core as core_module
 from ..client import game_data
 from ..client.core import REFUSED, UNKNOWN, BridgeCore
-from ..client.protocol import CommandResult, CommandStarted
+from ..client.protocol import CommandResult, CommandStarted, ScoutedItem
 from ..client.simulated import SimulatedGame
-from ..data import ITEM_TABLE, PLASMIDS, TONICS, ItemKind
+from ..data import GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
 from .client_harness import IDENTITY, Harness, item, loc, not_known_yet, play_level
 
 
@@ -449,6 +449,40 @@ class TestItemDelivery(unittest.TestCase):
         h.core.on_state(core_module.GameState(ready=True, level_value=1555))
         h.perform(h.core.drain())
         self.assertEqual(h.warnings(), [])
+
+    def test_a_weapon_upgrade_waits_for_its_weapon(self) -> None:
+        h = Harness().connect().attach()
+        h.game.reports_weapons = True
+        h.receive("Shotgun Rate of Fire", "First Aid Kit")
+        h.settle()
+        self.assertEqual(h.game.commands, ["GiveItem 1 ShockDesignerClasses.MedHypo"], "the rest goes on meanwhile")
+        self.assertEqual(h.core.skipped, {0: core_module.NEEDS_WEAPON})
+        self.assertTrue(any("waits until you have the Shotgun" in notice.text for notice in h.notices))
+        h.game.held_weapons.add("Shotgun")
+        h.settle()
+        self.assertEqual(h.game.commands[-1], "AddWeaponStatUpgrade Shotgun RateOfFire")
+        self.assertEqual(h.core.skipped, {})
+
+    def test_a_weapon_and_its_upgrade_arriving_together(self) -> None:
+        h = Harness().connect().attach()
+        h.game.reports_weapons = True
+        h.receive("Crossbow", "Crossbow Damage Increase")
+        h.settle()
+        self.assertEqual(h.game.commands, ["GiveWeapon ShockGame.Crossbow", "AddWeaponStatUpgrade Crossbow Damage"])
+        self.assertEqual(h.core.skipped, {})
+
+    def test_stations_are_set_to_touch_when_the_seed_says_so(self) -> None:
+        h = Harness()
+        h.slot_data["station_touch"] = True
+        h.connect().attach()
+        h.settle()
+        self.assertTrue(h.game.station_touch)
+        self.assertEqual(h.game.actions, [])
+
+    def test_stations_keep_their_menu_in_older_seeds(self) -> None:
+        h = Harness().connect().attach()
+        h.settle()
+        self.assertFalse(h.game.station_touch)
 
     def test_weapons_upgrades_and_bundles_have_commands_of_their_own(self) -> None:
         h = Harness().connect().attach()
@@ -1202,3 +1236,160 @@ class TestSavedState(unittest.TestCase):
         text = "\n".join(h.core.status_lines())
         self.assertIn("Items: 1 of 2 given, 1 the client cannot give yet", text)
         self.assertIn("1 held until you receive Arcadia Access", text)
+
+
+class TestGatherersGarden(unittest.TestCase):
+    """With shop checks, each Garden line sells a stand-in named after what its check holds."""
+
+    def shop(self) -> Harness:
+        h = Harness(access_items=False)
+        h.slot_data["shop_checks"] = 1
+        return h
+
+    def offer(self, h: Harness) -> dict[int, dict]:
+        return {entry["line"]: entry for entry in h.game.garden_lines.get(NEPTUNES_BOUNTY, ())}
+
+    def test_lines_are_scouted_once_and_sent_for_the_level_the_player_is_in(self) -> None:
+        h = self.shop().connect().attach()
+        h.settle()
+        self.assertEqual(len(h.scouts), 1)
+        self.assertEqual(set(h.scouts[0]), set(game_data.GARDEN_LOCATION.values()))
+        self.assertEqual(h.game.garden_lines, {}, "no Garden lines for Welcome to Rapture")
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual(sorted(offer), list(range(1, 17)))
+        self.assertEqual(offer[4]["name"], "Hookshot")
+        self.assertIn("Halthrax", offer[4]["description"])
+        self.assertEqual(offer[4]["price"], game_data.PROGRESSION_PRICE)
+        self.assertFalse(offer[4]["bought"])
+        self.assertEqual(h.game.actions, [], "the lines are a setting, not something to carry out")
+
+    def test_buying_a_line_sends_its_check_and_marks_it_bought(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        h.game.buy_from_garden(4)
+        h.settle()
+        self.assertIn(game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, 4], h.server_checked)
+        self.assertTrue(self.offer(h)[4]["bought"])
+
+    def test_prices_follow_the_item(self) -> None:
+        h = self.shop()
+        line = {n: game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, n] for n in (1, 2, 3, 5, 6)}
+        h.placed = {
+            line[1]: ScoutedItem("Progressive Sonic Boom", "Teebs", 2, True),  # a gene of ours: its vanilla price
+            line[2]: ScoutedItem("Potion", "Link", 2, False),
+            line[3]: ScoutedItem("Rupee", "Link", 0, False),
+            line[5]: ScoutedItem("Speedy Hacker", "Teebs", 2, True),  # a gene whose price is not known yet
+            line[6]: ScoutedItem("Chemical Thrower Range", "Teebs", 2, True),  # no Garden icon: its weapon's
+        }
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual([offer[n]["price"] for n in (1, 2, 3, 5)], [40, game_data.USEFUL_PRICE,
+                                                                     game_data.FILLER_PRICE, game_data.USEFUL_PRICE])
+        self.assertIn("Yours", offer[1]["description"])
+        self.assertEqual((offer[1]["class"], offer[1]["known"]), ("AirBlast", True))
+        self.assertEqual((offer[5]["class"], offer[5]["known"]), ("SlowFlow", False))
+        self.assertNotIn("class", offer[2], "someone else's item has no class of ours")
+        self.assertNotIn("icon", offer[2])
+        self.assertEqual(offer[6].get("icon"), "ChemicalThrower")
+        self.assertNotIn("class", offer[6], "priced by importance, not as the weapon")
+        self.assertEqual(offer[6]["price"], game_data.USEFUL_PRICE)
+
+    def test_every_gene_price_is_for_an_item(self) -> None:
+        self.assertLessEqual(set(game_data.GENE_PRICES), {entry.name for entry in ITEM_TABLE})
+
+    def test_checks_already_on_the_server_are_marked_bought(self) -> None:
+        h = self.shop()
+        h.server_checked.add(game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, 7])
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertTrue(self.offer(h)[7]["bought"])
+        self.assertFalse(self.offer(h)[8]["bought"])
+
+    def test_a_new_game_connection_is_sent_the_lines_again(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        h.detach()
+        h.game = SimulatedGame()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.attach()
+        h.settle()
+        self.assertEqual(len(self.offer(h)), 16)
+        self.assertEqual(len(h.scouts), 1, "what the lines hold is not asked again")
+
+    def test_lines_that_are_not_checks_are_sold_out(self) -> None:
+        h = self.shop()
+        h.valid -= {location for location in game_data.GARDEN_LOCATION.values()
+                    if location not in GATHERERS_GARDEN_FIRST_APPEARANCES}
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual(len(offer), 16, "every line is sent")
+        self.assertTrue(offer[4]["bought"], "Enrage! is a check in Medical Pavilion: sold out here")
+        self.assertEqual(offer[4]["name"], "")
+        self.assertFalse(offer[5]["bought"], "Sonic Boom is first sold here: a check")
+        self.assertEqual(len(h.scouts[0]), len(GATHERERS_GARDEN_FIRST_APPEARANCES))
+
+    def test_without_shop_checks_nothing_is_scouted_or_sent(self) -> None:
+        h = Harness(access_items=False).connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertEqual(h.scouts, [])
+        self.assertEqual(h.game.garden_lines, {})
+
+    def test_the_game_is_given_the_menu_with_the_ap_icon_once_per_connection(self) -> None:
+        h = self.shop()
+        made = []
+        h.core.prepare_movies = lambda: made.append(1) or "C:\\cache\\FlashMovies"
+        h.connect().attach()
+        h.settle()
+        h.settle()
+        self.assertEqual(h.game.movies, {"folder": "C:\\cache\\FlashMovies",
+                                         "files": ["craftingStationPC.swf", "APIcons.swf"]})
+        self.assertEqual(len(made), 1)
+        self.assertTrue(any("Archipelago icon" in notice.text for notice in h.notices))
+        h.detach()
+        h.game = SimulatedGame()
+        h.attach()
+        h.settle()
+        self.assertEqual(len(made), 2, "a new game connection is given it again")
+        self.assertIsNotNone(h.game.movies)
+
+    def test_a_menu_that_cannot_be_made_leaves_the_chips_icon(self) -> None:
+        h = self.shop()
+
+        def fail() -> str:
+            raise OSError("no room")
+        h.core.prepare_movies = fail
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        self.assertIsNone(h.game.movies)
+        self.assertTrue(any("bag of chips: no room" in notice.text and notice.warning for notice in h.notices))
+        self.assertEqual(len(self.offer(h)), 16, "the lines still work")
+
+    def test_no_menu_for_a_game_without_files_or_without_shop_checks(self) -> None:
+        h = self.shop().connect().attach()  # prepare_movies answers None, as for the simulated game
+        h.settle()
+        self.assertIsNone(h.game.movies)
+        h = Harness(access_items=False)
+        h.core.prepare_movies = lambda: "C:\\cache"
+        h.connect().attach()
+        h.settle()
+        self.assertIsNone(h.game.movies)
+
+    def test_every_level_with_a_garden_gets_its_own_lines(self) -> None:
+        h = self.shop().connect().attach()
+        h.game.travel(MEDICAL_PAVILION)
+        h.settle()
+        lines = h.game.garden_lines[MEDICAL_PAVILION]
+        self.assertEqual(len(lines), 5)
+        self.assertEqual([entry["line"] for entry in lines], [1, 2, 3, 4, 5])
+        self.assertEqual(set(h.game.garden_lines), {MEDICAL_PAVILION}, "only the level the player is in")

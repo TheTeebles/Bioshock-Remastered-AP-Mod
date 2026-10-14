@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-13.1';
+const AGENT_VERSION = '2026-10-14.5';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -124,6 +124,9 @@ const BUILDS = {
     // The function the engine runs every script event through (its ProcessEvent), found with the probe on
     // 2026-10-13. It takes one argument: a stack frame with the function at +4 and the parameters at +0x10.
     processEvent: { rva: 0x736070, start: [0x81EC8B55, 0x000400EC] },
+    // UShockPlayer::BeginWeaponUpgradeInteraction, which opens a Power to the People station's menu (probe,
+    // 2026-10-13). Touch mode skips it and finishes the station's interaction instead.
+    openUpgradeMenu: { rva: 0x1dbf70, start: 0x64EC8B55 },
   },
   23552000: {
     name: 'Epic 1.0.127355',
@@ -560,6 +563,7 @@ function readState() {
   return {
     agent: AGENT_VERSION,
     build: build.name,
+    exe: mod.path, // where the game is, for the client to find its Flash movies
     execAvailable: execInfo !== null && !disabled,
     hookInstalled: deltaFunction !== null,
     engineReady,
@@ -585,6 +589,17 @@ function readState() {
     sistersWatched: sistersKnown.size,
     // Power to the People stations used, by map: the most this agent has seen used there at once.
     stationsUsed: Object.fromEntries(stations.used),
+    // Whether using a station skips its menu (asked for by the client when stations are checks).
+    stationTouch: touch.installed,
+    // Classes of the weapons the player holds (Pistol, Shotgun, ...); null while the agent cannot tell.
+    weaponsHeld: weapons.owned,
+    // Gatherer's Garden lines (from 1) seen bought, by map, and how many lines sell multiworld items.
+    gardenBought: Object.fromEntries(
+      [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
+    gardenLines: gardens.config === null ? 0 : gardens.config.lines.size,
+    gardenTrouble: gardens.trouble,
+    // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
+    apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
     // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
     completedQuests: quests.flag === null ? null : quests.completed,
@@ -1292,6 +1307,21 @@ function findIntProperty(cls, wanted) {
   return null;
 }
 
+// Where an object property (a reference to another object) of a class sits. Null if it has none of that name.
+function findObjectProperty(cls, wanted) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'ObjectProperty') {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0x30 || offset > 0x8000 ? null : { offset };
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Little Sisters
 // ---------------------------------------------------------------------------------------------------------------
@@ -1390,10 +1420,12 @@ function watchSisters(level, map, now) {
 const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
-const scan = { next: 0, quests: [], stations: [], map: null };
+const scan = {
+  next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
+};
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
-const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station' or null
+const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station', 'weapon', 'garden', 'class'
 
 function kindOf(cls) {
   const key = cls.toString();
@@ -1402,7 +1434,9 @@ function kindOf(cls) {
     const name = nameOfObject(cls);
     if (name === 'Quest') {
       kind = 'quest';
-    } else if (name !== null && name !== 'Class') {
+    } else if (name === 'Class') {
+      kind = 'class'; // the object is a class itself
+    } else if (name !== null) {
       const lineage = lineageOf(cls).map((c) => nameOfObject(c));
       if (lineage.includes('QuestLog')) {
         kind = 'log';
@@ -1410,6 +1444,10 @@ function kindOf(cls) {
         kind = 'sister';
       } else if (lineage.includes('PlaceableWeaponUpgradeStation')) {
         kind = 'station';
+      } else if (lineage.includes('Weapon')) {
+        kind = 'weapon';
+      } else if (lineage.includes('GrowthStation')) {
+        kind = 'garden';
       }
     }
     if (classKinds.size > 20000) {
@@ -1435,6 +1473,12 @@ function watchObjects(map, now) {
     scan.quests = [];
     scan.stations = [];
     stations.list = [];
+    scan.weapons = [];
+    scan.gardens = [];
+    gardens.list = [];
+    scan.classes = new Map();
+    gardens.classes = new Map(); // classes can be loaded somewhere else in another level
+    gardens.defaultsOf.clear();
   }
   const table = carefulPtr(base.add(objectModel.objects));
   const count = carefulS32(base.add(objectModel.objects + 4));
@@ -1454,6 +1498,17 @@ function watchObjects(map, now) {
       noteSister(object, cls);
     } else if (kind === 'station') {
       scan.stations.push(object);
+    } else if (kind === 'weapon') {
+      scan.weapons.push(object);
+    } else if (kind === 'garden') {
+      scan.gardens.push(object);
+    } else if (kind === 'class') {
+      const name = nameOfObject(object);
+      if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
+        scan.placeholder = object;
+      } else if (gardens.wanted.has(name) || name === AP_ICON_CLASS) {
+        scan.classes.set(name, object);
+      }
     }
   }
   scan.next = end;
@@ -1463,6 +1518,16 @@ function watchObjects(map, now) {
     scan.quests = [];
     stations.list = scan.stations;
     scan.stations = [];
+    weapons.list = scan.weapons;
+    scan.weapons = [];
+    gardens.list = scan.gardens;
+    scan.gardens = [];
+    if (scan.placeholder !== null) {
+      gardens.placeholder = scan.placeholder;
+      scan.placeholder = null;
+    }
+    gardens.classes = scan.classes;
+    scan.classes = new Map();
     if (quests.flag === null && quests.trouble === null && quests.list.length > 0) {
       quests.flag = findBoolProperty(classOfObject(quests.list[0]), 'Completed');
       if (quests.flag === null) {
@@ -1479,6 +1544,14 @@ function watchObjects(map, now) {
   }
   quests.readAt = now;
   readStations(map);
+  try {
+    readGardens(map);
+  } catch (e) {
+    if (gardens.trouble === null) {
+      gardens.trouble = e.message;
+      log(`problem with the Gatherer's Gardens: ${e.message}`);
+    }
+  }
   if (quests.flag === null) {
     return;
   }
@@ -1527,6 +1600,640 @@ function readStations(map) {
     stations.used.set(map, used);
     log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Weapons the player has: weapon upgrades from the multiworld wait for their weapon
+// ---------------------------------------------------------------------------------------------------------------
+
+// Every weapon object of the game (classes that extend Weapon), and the classes of those the player holds: their
+// Holder is the player's body. The client gives an upgrade only once its weapon is among them.
+const weapons = { list: [], holders: new Map(), owned: null, reported: '' };
+
+function holderOf(weapon) {
+  const cls = classOfObject(weapon);
+  if (cls === null) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!weapons.holders.has(key)) {
+    weapons.holders.set(key, findObjectProperty(cls, 'Holder'));
+  }
+  const holder = weapons.holders.get(key);
+  return holder === null ? null : carefulPtr(weapon.add(holder.offset));
+}
+
+function readWeapons(pawn) {
+  const owned = new Set();
+  let known = false;
+  for (const weapon of weapons.list) {
+    const cls = classOfObject(weapon);
+    if (cls === null || kindOf(cls) !== 'weapon') {
+      continue; // gone since the scan
+    }
+    const holder = holderOf(weapon);
+    if (holder === null) {
+      continue;
+    }
+    known = true;
+    if (same(holder, pawn)) {
+      owned.add(nameOfObject(cls));
+    }
+  }
+  if (!known) {
+    return; // no weapon seen yet, or none with a Holder: the client gives upgrades as before
+  }
+  weapons.owned = [...owned].sort();
+  const text = weapons.owned.join(', ');
+  if (text !== weapons.reported) {
+    weapons.reported = text;
+    log(`weapons held: ${text || 'none'}`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Gatherer's Garden lines that sell multiworld items
+// ---------------------------------------------------------------------------------------------------------------
+
+// With shop checks on, the client tells the agent what each Garden line of the level holds. Every line that is a
+// check is made to sell a stand-in: a copy of the chips class, made in memory with its own name and description, so
+// buying it gives a bag of chips and no gene. The line's CostAdjustment (a multiplier on the item's base price) sets
+// the price. Buying a line counts it in its AmountPurchased, which is what the client turns into the check. Lines
+// already bought are hidden by setting AmountPurchased to SupplySize. All of it confirmed with the probe, 2026-10-14.
+// A save names the stand-in's class as chips, so after loading a save the lines are chips until they are redone.
+const GARDEN_PLACEHOLDER = 'chips';
+const PLACEHOLDER_PRICE = 4; // ADAM for a bag of chips when CostAdjustment is 1
+const CLASS_COPY_SIZE = 0x1000; // bytes copied from the placeholder class at most
+const CLASS_MIN_SIZE = 0xB58; // ... and at least: it has arrays at +0x54C (its default values) and +0xB4C
+const MAX_CLONES = 400;
+const gardens = {
+  list: [],
+  config: null, // { map, lines: Map(line -> { name, description, price, bought }) } from the client
+  layout: undefined, // where the table, its lines and their fields are; null if they could not be found
+  placeholder: null, // the chips class, found by the object scan
+  defaults: undefined, // { at, name, description }: where its default values and texts are; null if not found
+  clones: new Map(), // `${name}\n${description}` -> copy of the placeholder class
+  clonesOf: null, // the placeholder class those copies were made from
+  bought: new Map(), // map -> Set of lines (from 1) seen bought there
+  vanilla: new Map(), // map -> Map(line -> { className, adjustment }): what each line sold before it was changed
+  wanted: new Set(), // classes of our own items the lines hold, to price them as the game does
+  classes: new Map(), // ... and where those classes are, from the object scan
+  defaultsOf: new Map(), // class address -> its default values, or null
+  trouble: null,
+};
+
+function readableRange(pointer, length) {
+  for (let at = 0; at < length; at += 0x1000) {
+    if (!readable(pointer.add(at))) {
+      return false;
+    }
+  }
+  return readable(pointer.add(length - 1));
+}
+
+function normalizeMap(name) {
+  if (typeof name !== 'string') {
+    return null;
+  }
+  let text = name.trim().split('?')[0].replace(/\\/g, '/').split('/').pop().toLowerCase();
+  if (text.endsWith('.bsm')) {
+    text = text.slice(0, -4);
+  }
+  const suffix = ['_chn', '_deu', '_esp', '_fra', '_int', '_ita', '_jpn'].find((s) => text.endsWith(s));
+  return (suffix ? text.slice(0, -suffix.length) : text) || null;
+}
+
+// A property of a class (or of a class it extends) by name and kind: { offset, field }, or null.
+function findProperty(cls, wanted, kind) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === kind) {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0 || offset > 0x8000 ? null : { offset, field };
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+// A property keeps what it is about a few words after its offset: an array its inner property (which has the
+// array's name), a struct property its struct.
+function linkedTo(field, wanted) {
+  for (let at = objectModel.propertyOffset + 4; at <= objectModel.propertyOffset + 0x40; at += 4) {
+    const target = carefulPtr(field.add(at));
+    if (target !== null && !target.isNull() && wanted(target)) {
+      return target;
+    }
+  }
+  return null;
+}
+
+// Where the lines of a Garden are: its VendingTable, that table's VendingLootSpec array, and the fields of a line.
+function gardenLayout(garden) {
+  if (gardens.layout !== undefined) {
+    return gardens.layout;
+  }
+  gardens.layout = null;
+  const table = findProperty(classOfObject(garden), 'VendingTable', 'ObjectProperty');
+  const tableObject = table === null ? null : carefulPtr(garden.add(table.offset));
+  const tableClass = tableObject === null || tableObject.isNull() ? null : classOfObject(tableObject);
+  const specs = tableClass === null ? null : findProperty(tableClass, 'VendingLootSpec', 'ArrayProperty');
+  const name = specs === null ? null : nameOfObject(specs.field);
+  const inner = specs === null ? null : linkedTo(specs.field, (t) => nameOfObject(classOf(t)) === 'StructProperty' &&
+    nameOfObject(t) === name);
+  const struct = inner === null ? null :
+    linkedTo(inner, (t) => /^(Script)?Struct$/.test(nameOfObject(classOf(t)) || ''));
+  if (struct === null) {
+    gardens.trouble = `could not find the lines of a Garden (${table === null ? 'no VendingTable' :
+      specs === null ? 'no VendingLootSpec' : 'no struct for its lines'})`;
+    log(`Garden lines cannot be changed: ${gardens.trouble}`);
+    return null;
+  }
+  const fields = {};
+  let size = 0;
+  let field = carefulPtr(struct.add(objectModel.structChildren));
+  for (let n = 0; field !== null && !field.isNull() && n < 100; n++) {
+    const offset = carefulS32(field.add(objectModel.propertyOffset));
+    if (offset !== null && offset >= 0 && offset < 0x100) {
+      fields[nameOfObject(field)] = offset;
+      size = Math.max(size, offset + 4); // every field of a line takes one word
+    }
+    field = carefulPtr(field.add(objectModel.fieldNext));
+  }
+  const missing = ['ItemClass', 'CostAdjustment', 'SupplySize', 'AmountPurchased'].filter((f) => !(f in fields));
+  if (missing.length > 0) {
+    gardens.trouble = `a Garden line has no ${missing.join(', ')}`;
+    log(`Garden lines cannot be changed: ${gardens.trouble}`);
+    return null;
+  }
+  gardens.layout = { table: table.offset, specs: specs.offset, size, ...fields };
+  log(`Garden lines: VendingTable at +0x${table.offset.toString(16)}, its lines at ` +
+    `+0x${specs.offset.toString(16)}, ${size} bytes each`);
+  return gardens.layout;
+}
+
+// The lines of one Garden: their addresses, in order.
+function gardenLines(garden, layout) {
+  const table = carefulPtr(garden.add(layout.table));
+  if (table === null || table.isNull()) {
+    return [];
+  }
+  const data = carefulPtr(table.add(layout.specs));
+  const count = carefulS32(table.add(layout.specs + 4));
+  if (data === null || data.isNull() || count === null || count < 1 || count > 100 ||
+      !readableRange(data, count * layout.size)) {
+    return [];
+  }
+  return Array.from({ length: count }, (_, n) => data.add(n * layout.size));
+}
+
+// Where an item class keeps its default values (an array in the class object, found by the text of its
+// FriendlyName) and its two texts: { at, data, count, name, description }, or null.
+function itemDefaults(cls) {
+  const key = cls.toString();
+  if (gardens.defaultsOf.has(key)) {
+    return gardens.defaultsOf.get(key);
+  }
+  let found = null;
+  const name = findProperty(cls, 'FriendlyName', 'StrProperty');
+  const description = findProperty(cls, 'Description', 'StrProperty');
+  const end = name === null || description === null ? 0 : Math.max(name.offset, description.offset) + 12;
+  for (let at = 0x30; end > 0 && at + 12 <= CLASS_MIN_SIZE; at += 4) {
+    const data = carefulPtr(cls.add(at));
+    const count = carefulS32(cls.add(at + 4));
+    const capacity = carefulS32(cls.add(at + 8));
+    if (data === null || data.isNull() || count === null || capacity === null || count < end || count > 0x40000 ||
+        capacity < count || !readableRange(data, count)) {
+      continue;
+    }
+    if (stringAt(data.add(name.offset)) !== null) {
+      found = { at, data, count, name: name.offset, description: description.offset };
+      break;
+    }
+  }
+  gardens.defaultsOf.set(key, found);
+  return found;
+}
+
+// Where the placeholder class keeps its default values and its two texts.
+function placeholderDefaults(cls) {
+  if (gardens.defaults !== undefined) {
+    return gardens.defaults;
+  }
+  gardens.defaults = itemDefaults(cls);
+  if (gardens.defaults === null) {
+    gardens.trouble = `could not find the default values of ${GARDEN_PLACEHOLDER}`;
+  } else {
+    log(`stand-ins for Garden lines are copies of ${GARDEN_PLACEHOLDER}: ` +
+      `default values at class+0x${gardens.defaults.at.toString(16)}`);
+  }
+  return gardens.defaults;
+}
+
+// What an item is worth to the game (Item.CreditValue, in its default values): a Garden line charges that times the
+// line's CostAdjustment (probe gardenGenes, 2026-10-14). Null if it cannot be read.
+function creditValue(cls) {
+  const defaults = cls === undefined || cls === null ? null : itemDefaults(cls);
+  const value = defaults === null ? null : findProperty(cls, 'CreditValue', 'FloatProperty');
+  if (value === null || value.offset + 4 > defaults.count) {
+    return null;
+  }
+  const at = defaults.data.add(value.offset);
+  const credit = readable(at) ? at.readFloat() : null;
+  return credit !== null && credit >= 0 && credit < 100000 ? credit : null;
+}
+
+// The price of a line: one of our own BioShock items costs what the game charges for it (its value times the
+// multiplier of the line that sold it here, or the vanilla price the client knows, or its value alone); anything
+// else costs what the client says.
+function linePrice(wanted, map) {
+  if (wanted.className === null) {
+    return wanted.price;
+  }
+  const value = creditValue(gardens.classes.get(wanted.className));
+  const vanilla = [...(gardens.vanilla.get(map) || new Map()).values()]
+    .find((v) => v.className === wanted.className);
+  if (value !== null && vanilla !== undefined) {
+    return Math.round(value * vanilla.adjustment);
+  }
+  if (wanted.known || value === null) {
+    return wanted.price;
+  }
+  return Math.round(value);
+}
+
+// Memory for the stand-ins, from the game's own heap: Frida frees what Memory.alloc gives when the agent unloads, and
+// the Garden lines (and anything the game made from a stand-in) would then point at freed memory. Never freed.
+const gameHeap = findGameHeap();
+
+function findGameHeap() {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const getProcessHeap = new NativeFunction(kernel32.getExportByName('GetProcessHeap'), 'pointer', [], 'stdcall');
+    const heapAlloc = new NativeFunction(kernel32.getExportByName('HeapAlloc'), 'pointer',
+      ['pointer', 'uint', 'uint'], 'stdcall');
+    const heap = getProcessHeap();
+    return heap.isNull() ? null : (size) => heapAlloc(heap, 0x8, size); // HEAP_ZERO_MEMORY
+  } catch (e) {
+    return null;
+  }
+}
+
+function lasting(size) {
+  const memory = gameHeap === null ? null : gameHeap(size);
+  return memory === null || memory.isNull() ? Memory.alloc(size) : memory;
+}
+
+function writeText(at, text) {
+  const buffer = lasting(2 * (text.length + 1)); // kept by the clone that holds it
+  buffer.writeUtf16String(text);
+  at.writePointer(buffer);
+  at.add(4).writeU32(text.length + 1);
+  at.add(8).writeU32(text.length + 1);
+  return buffer;
+}
+
+// A copy of the placeholder class with its own default values, showing this name and description. Given the class of
+// the item it stands for, it also takes that class's name: the Garden picks a line's icon (a FlashMovie) by the name
+// of the line's class, so the line then shows the real item's icon. A save still records such a line as chips
+// (probe, 2026-10-14).
+function standIn(name, description, iconOf = null) {
+  const cls = gardens.placeholder;
+  if (cls === null || nameOfObject(cls) !== GARDEN_PLACEHOLDER) {
+    gardens.placeholder = null;
+    return null;
+  }
+  if (gardens.clonesOf === null || !gardens.clonesOf.equals(cls)) {
+    gardens.clones.clear(); // the class moved (a level change can reload it): copies of the old one are stale
+    gardens.clonesOf = cls;
+    gardens.defaults = undefined;
+    gardens.defaultsOf.clear();
+  }
+  const key = `${name}\n${description}\n${iconOf === null ? '' : iconOf}`;
+  if (gardens.clones.has(key)) {
+    return gardens.clones.get(key).copy;
+  }
+  const defaults = placeholderDefaults(cls);
+  if (defaults === null || gardens.clones.size >= MAX_CLONES) {
+    return null;
+  }
+  let size = CLASS_COPY_SIZE;
+  while (size >= CLASS_MIN_SIZE && !readableRange(cls, size)) {
+    size -= 0x10; // as much of the class as can be read: the memory after it may belong to nobody
+  }
+  if (size < CLASS_MIN_SIZE) {
+    gardens.trouble = `could not read the class ${GARDEN_PLACEHOLDER}`;
+    return null;
+  }
+  const copy = lasting(CLASS_COPY_SIZE);
+  Memory.copy(copy, cls, size);
+  const ownValues = lasting(defaults.count);
+  Memory.copy(ownValues, defaults.data, defaults.count);
+  copy.add(defaults.at).writePointer(ownValues);
+  copy.add(defaults.at + 8).writeU32(defaults.count);
+  const texts = [writeText(ownValues.add(defaults.name), name),
+    writeText(ownValues.add(defaults.description), description)];
+  const iconName = iconOf === null ? null : carefulS32(iconOf.add(objectModel.objectName));
+  if (iconName !== null) {
+    copy.add(objectModel.objectName).writeU32(iconName);
+  }
+  gardens.clones.set(key, { copy, ownValues, texts });
+  return copy;
+}
+
+// The class whose name a line's stand-in takes, for its icon: the real item's for one of our own BioShock items, the
+// one the client named for an item with no icon of its own (a weapon upgrade's weapon), and for anything else the AP
+// icon's, once the Garden's menu that can show it has been loaded. null: the chips icon.
+function iconFor(wanted) {
+  if (wanted.className !== null) {
+    return gardens.classes.get(wanted.className) || null;
+  }
+  if (wanted.iconClass !== null && gardens.classes.has(wanted.iconClass)) {
+    return gardens.classes.get(wanted.iconClass);
+  }
+  return movies.served.has(AP_ICON_MENU) ? gardens.classes.get(AP_ICON_CLASS) || null : null;
+}
+
+function setGardenLines(config) {
+  if (objectModel === null || virtualQuery === null) {
+    return `changing Garden lines is not supported on the ${build.name} build yet`;
+  }
+  const lines = new Map();
+  const wanted = new Set();
+  for (const entry of Array.isArray(config.lines) ? config.lines : []) {
+    if (Number.isInteger(entry.line) && entry.line > 0 && typeof entry.name === 'string') {
+      const className = typeof entry.class === 'string' && /^\w{1,64}$/.test(entry.class) ? entry.class : null;
+      const iconClass = typeof entry.icon === 'string' && /^\w{1,64}$/.test(entry.icon) ? entry.icon : null;
+      lines.set(entry.line, {
+        name: entry.name.slice(0, 60),
+        description: String(entry.description || '').slice(0, 200),
+        price: Math.max(0, Number(entry.price) || 0),
+        bought: entry.bought === true,
+        className,
+        known: entry.known === true,
+        iconClass,
+      });
+      for (const name of [className, iconClass]) {
+        if (name !== null) {
+          wanted.add(name);
+        }
+      }
+    }
+  }
+  gardens.wanted = wanted;
+  gardens.config = { map: typeof config.map === 'string' ? config.map : null, lines };
+  log(`Garden lines to sell multiworld items: ${lines.size}${config.level ? ` in ${config.level}` : ''}`);
+  return gardens.trouble;
+}
+
+function readGardens(map) {
+  if (gardens.list.length === 0) {
+    return;
+  }
+  const layout = gardenLayout(gardens.list[0]);
+  if (layout === null) {
+    return;
+  }
+  const config = gardens.config;
+  const applies = config !== null && (config.map === null || config.map === normalizeMap(map));
+  const all = gardens.list.map((garden) => gardenLines(garden, layout));
+  const bought = gardens.bought.get(map) || new Set();
+  const vanilla = gardens.vanilla.get(map) || new Map();
+  gardens.vanilla.set(map, vanilla);
+  for (const lines of all) {
+    lines.forEach((line, n) => {
+      const sold = carefulPtr(line.add(layout.ItemClass));
+      const className = sold === null || sold.isNull() ? null : nameOfObject(sold);
+      if (!vanilla.has(n + 1) && className !== null && className !== GARDEN_PLACEHOLDER &&
+          readable(line.add(layout.CostAdjustment))) {
+        vanilla.set(n + 1, { className, adjustment: line.add(layout.CostAdjustment).readFloat() });
+      }
+      const amount = carefulS32(line.add(layout.AmountPurchased));
+      if (amount !== null && amount > 0 && !bought.has(n + 1)) {
+        bought.add(n + 1);
+        log(`Gatherer's Garden line ${n + 1} bought in ${map}`);
+      }
+    });
+  }
+  gardens.bought.set(map, bought);
+  if (!applies) {
+    return;
+  }
+  for (const lines of all) {
+    lines.forEach((line, n) => {
+      const wanted = config.lines.get(n + 1);
+      if (wanted === undefined) {
+        return;
+      }
+      const supply = carefulS32(line.add(layout.SupplySize));
+      const amount = carefulS32(line.add(layout.AmountPurchased));
+      if (wanted.bought || bought.has(n + 1)) {
+        if (supply !== null && amount !== null && supply > 0 && amount < supply) {
+          line.add(layout.AmountPurchased).writeS32(supply); // sold out, in every Garden of the level
+        }
+        return;
+      }
+      const copy = standIn(wanted.name, wanted.description, iconFor(wanted));
+      if (copy === null) {
+        return;
+      }
+      if (!same(carefulPtr(line.add(layout.ItemClass)), copy)) {
+        line.add(layout.ItemClass).writePointer(copy);
+      }
+      const adjustment = linePrice(wanted, map) / PLACEHOLDER_PRICE;
+      if (Math.abs(line.add(layout.CostAdjustment).readFloat() - adjustment) > 0.01) {
+        line.add(layout.CostAdjustment).writeFloat(adjustment); // the price can change once the item's class is found
+      }
+    });
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Flash movies from another folder: the Garden's menu with the AP icon
+// ---------------------------------------------------------------------------------------------------------------
+
+// The client builds a copy of the Garden's menu (craftingStationPC.swf) that also imports an icon exported as
+// AP_ICON_CLASS from APIcons.swf, and puts both in a folder of its own. Nothing in the game's folder changes: the
+// game is handed those files instead when it opens them. It opens the menus each time a save or level is loaded, so a
+// line takes the AP icon only once the menu has been opened from the client's folder. A line whose class is named
+// AP_ICON_CLASS then shows that icon, as the Garden picks a line's icon by the name of its class (probe, 2026-10-14).
+const AP_ICON_CLASS = 'Item';
+const AP_ICON_MENU = 'craftingstationpc.swf';
+const movies = { hook: null, files: new Map(), kept: [], served: new Set() };
+
+function redirectMovies(config) {
+  const folder = typeof config.folder === 'string' ? config.folder.replace(/[\\/]+$/, '') : '';
+  const names = (Array.isArray(config.files) ? config.files : [])
+    .filter((name) => typeof name === 'string' && /^[\w.]{1,64}$/.test(name));
+  if (folder === '' || names.length === 0) {
+    return 'no folder or files to use';
+  }
+  const files = new Map(names.map((name) => [name.toLowerCase(), `${folder}\\${name}`]));
+  if (movies.hook === null) {
+    let at = null;
+    for (const module of ['kernelbase.dll', 'kernel32.dll']) {
+      try {
+        at = Process.getModuleByName(module).getExportByName('CreateFileW');
+        break;
+      } catch (e) {
+        // try the next
+      }
+    }
+    if (at === null) {
+      return 'the game has no CreateFileW to watch';
+    }
+    movies.hook = Interceptor.attach(at, {
+      onEnter(args) {
+        let path = null;
+        try {
+          path = args[0].readUtf16String();
+        } catch (e) {
+          return;
+        }
+        if (path === null || !/flashmovies[\\/][^\\/]+$/i.test(path)) {
+          return;
+        }
+        const name = path.split(/[\\/]/).pop().toLowerCase();
+        const ours = movies.files.get(name);
+        if (ours === undefined) {
+          return;
+        }
+        const wide = Memory.allocUtf16String(ours);
+        movies.kept.push(wide); // CreateFileW is done with it on return; a few are kept in case
+        if (movies.kept.length > 16) {
+          movies.kept.shift();
+        }
+        args[0] = wide;
+        if (!movies.served.has(name)) {
+          log(`the game opens ${ours} for ${path}`);
+        }
+        movies.served.add(name);
+      },
+    });
+  }
+  movies.files = files;
+  log(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Touch: a Power to the People station that sends its check and closes, with no upgrade menu
+// ---------------------------------------------------------------------------------------------------------------
+
+// With station checks on, the client asks for this once the agent is attached. Using a station then skips its menu
+// (the native that opens it is replaced), and on the next tick the station's interaction is finished the way the
+// menu's confirm would: its current state's FinishInteraction(true). That counts the use (NumTimesUsed 0 -> 1, which
+// sends the check) and moves the station to its closed state. Confirmed with the probe, 2026-10-13.
+const TOUCH_PATIENCE_MS = 3000; // a skipped menu whose station cannot be found for this long is given up
+const touch = { installed: false, at: 0, currentPlayer: new Map(), trouble: null };
+
+function enableTouch() {
+  if (touch.installed) {
+    return null;
+  }
+  const info = build.openUpgradeMenu;
+  if (!info || objectModel === null) {
+    return `stations without a menu are not supported on the ${build.name} build yet`;
+  }
+  const trouble = scriptCallsTrouble();
+  if (trouble !== null) {
+    return trouble;
+  }
+  const start = base.add(info.rva);
+  if (carefulU32(start) !== info.start) {
+    return `the game's code at module+${start.sub(base)} is not what this agent expects`;
+  }
+  readyToCallScript(); // starts watching for a call to copy, so one is known by the time a station is used
+  Interceptor.replace(start, new NativeCallback(() => {
+    touch.at = Date.now(); // on the game thread, inside the station's script: finished on the next tick
+  }, 'void', ['pointer'], 'thiscall'));
+  touch.installed = true;
+  log('Power to the People stations open no menu now: using one sends its check and closes it');
+  return null;
+}
+
+function stationPlayer(station) {
+  const cls = classOfObject(station);
+  if (cls === null) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!touch.currentPlayer.has(key)) {
+    touch.currentPlayer.set(key, findObjectProperty(cls, 'CurrentPlayer'));
+  }
+  const field = touch.currentPlayer.get(key);
+  const player = field === null ? null : carefulPtr(station.add(field.offset));
+  return player === null || player.isNull() ? null : player;
+}
+
+// The state an object is in. Its state frame, a pointer among the object's first words, holds the current state (an
+// object of class State) a few words in: object+0x10, then +4, for a station.
+function stateOf(object) {
+  for (let at = 4; at < objectModel.objectName; at += 4) {
+    const frame = carefulPtr(object.add(at));
+    if (frame === null || frame.isNull()) {
+      continue;
+    }
+    for (let k = 4; k < 0x20; k += 4) {
+      const state = carefulPtr(frame.add(k));
+      if (state !== null && !state.isNull() && nameOfObject(classOf(state)) === 'State') {
+        return state;
+      }
+    }
+  }
+  return null;
+}
+
+// A function of a state or class, or of those it extends.
+function findFunctionIn(start, wanted) {
+  for (const owner of lineageOf(start)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'Function') {
+        return field;
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+function finishTouchedStation(now) {
+  if (touch.at === 0) {
+    return;
+  }
+  if (!readyToCallScript()) {
+    return; // watching for a call to copy; the station is finished in a later tick
+  }
+  const station = stations.list.find((candidate) => stationPlayer(candidate) !== null) || null;
+  if (station === null) {
+    if (now - touch.at > TOUCH_PATIENCE_MS) {
+      touch.at = 0;
+      log('a station skipped its menu, but no station has a player at it');
+    }
+    return;
+  }
+  touch.at = 0;
+  const state = stateOf(station);
+  const finish = (state === null ? null : findFunctionIn(state, 'FinishInteraction')) ||
+    findFunction(station, 'FinishInteraction');
+  if (finish === null) {
+    log('a station skipped its menu, but it has no FinishInteraction');
+    return;
+  }
+  const parms = Memory.alloc(0x10);
+  parms.writeU32(1); // SuccessfullyCompleted, its one parameter: true
+  parms.add(4).writeU32(0);
+  parms.add(8).writeU32(0);
+  parms.add(12).writeU32(0);
+  try {
+    callScript(station, finish, parms);
+  } catch (e) {
+    log(`could not finish the station's interaction: ${e.message}`);
+  }
+  parms.isNull();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1737,6 +2444,7 @@ function watchPlayer(level, info, map, now) {
   }
   carryOutKills(body.pawn, now);
   watchLife(body.pawn, map);
+  readWeapons(body.pawn);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1760,6 +2468,7 @@ function onLevelTick(level) {
         watchSisters(level, seen.map, now);
         watchObjects(seen.map, now);
         watchPlayer(level, info, seen.map, now);
+        finishTouchedStation(now);
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
@@ -1822,6 +2531,12 @@ globalThis.give = function (command) {
 globalThis.state = readState;
 
 // Kills the player, as a DeathLink from someone else would.
+// Stations open no menu from now on, as the client asks when stations are checks.
+globalThis.touch = function () {
+  const trouble = enableTouch();
+  return trouble === null ? 'using a station now sends its check and closes it' : trouble;
+};
+
 globalThis.kill = function () {
   kills.push({ id: null, at: Date.now() });
   return 'the player dies on the next game tick in a level';
@@ -1870,11 +2585,37 @@ rpc.exports = {
   state() {
     return readState();
   },
-  // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread; the traps are not
-  // built yet.
+  // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
+  // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
+  // 'redirect_movies {json}' (Flash movies from the client's folder) at once.
+  // The traps are not built yet.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
+      return;
+    }
+    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
+      if (typeof name === 'string' && name.startsWith(`${action} `)) {
+        let trouble;
+        try {
+          trouble = carryOut(JSON.parse(name.slice(action.length + 1)));
+        } catch (e) {
+          trouble = e.message;
+        }
+        send(trouble === null ? { type: 'action_result', id, name: action, ok: true }
+          : { type: 'action_result', id, name: action, ok: false, reason: trouble });
+        return;
+      }
+    }
+    if (name === 'touch_stations') {
+      let trouble;
+      try {
+        trouble = enableTouch();
+      } catch (e) {
+        trouble = e.message;
+      }
+      send(trouble === null ? { type: 'action_result', id, name, ok: true }
+        : { type: 'action_result', id, name, ok: false, reason: trouble });
       return;
     }
     send({ type: 'action_result', id, name, ok: false, reason: 'the agent does not support this yet' });

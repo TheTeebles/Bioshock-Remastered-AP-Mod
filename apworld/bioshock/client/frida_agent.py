@@ -25,7 +25,7 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, diaries_of, milestones_of, normalize_map, stations_of
+from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, stations_of
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
     LittleSisterResolved, PlayerDied,
@@ -125,7 +125,16 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         milestones=milestones_of(raw.get("completedQuests")),
         diaries=diaries_of(raw.get("logsReceived")),
         stations=stations_of(raw.get("stationsUsed")),
+        weapons=weapons_of(raw.get("weaponsHeld")),
+        garden_bought=gardens_of(raw.get("gardenBought")),
     )
+
+
+def weapons_of(held: object) -> frozenset[str] | None:
+    """The weapon classes the agent sees the player holding. None while it cannot tell."""
+    if not isinstance(held, list):
+        return None
+    return frozenset(name for name in held if isinstance(name, str))
 
 
 def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
@@ -458,6 +467,7 @@ class FridaAgent:
 
     def __init__(self, candidates: Iterable[Sequence[str]], env: Mapping[str, str] | None = None) -> None:
         self.description = "BioShock Remastered"
+        self.game_path: str | None = None  # BioshockHD.exe, as the agent sees it once attached
         self.command: Command = ()  # the Python that turned out to have Frida
         self.python = ""
         self.frida_version = ""
@@ -615,6 +625,7 @@ class FridaAgent:
                 state = raw if isinstance(raw, dict) else {}
                 self._take_state(state)
                 self.description = f"BioShock Remastered ({state.get('build', 'unknown build')})"
+                self.game_path = state.get("exe") if isinstance(state.get("exe"), str) else None
                 self._phase = _ATTACHED
                 self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}."))
         elif event == "state":

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import asyncio
 import os
+import pkgutil
 import time
 from argparse import Namespace
+from pathlib import Path
 from collections.abc import Iterable, Mapping
 from typing import TYPE_CHECKING, Any
 
@@ -22,12 +24,12 @@ from NetUtils import ClientStatus
 from Utils import async_start, gui_enabled
 
 from ..data import GAME_NAME
-from . import frida_agent
+from . import flash_movies, frida_agent
 from .core import BridgeCore
 from .frida_agent import AgentUnusable, FridaAgent
 from .protocol import (
-    Action, AgentError, GameAgent, KillPlayer, Notice, RunAction, RunCommand, SaveState, SendChecks, SendDeath,
-    SendGoal,
+    Action, AgentError, GameAgent, KillPlayer, Notice, RunAction, RunCommand, SaveState, ScoutedItem,
+    ScoutLocations, SendChecks, SendDeath, SendGoal,
 )
 from .simulated import SimulatedGame, resolve_level
 
@@ -40,8 +42,8 @@ ATTACH_RETRY_SECONDS = 5.0
 CLOSING_WAIT_SECONDS = 1.0  # how long closing the client waits for the game to confirm an item on its way
 STORAGE_CATEGORY = "bioshock"  # in Archipelago's own settings file on this PC
 
-SIM_HELP = ("story | sister | station | diary <1-122> | travel <level> | fontaine | die | loading | pause | "
-            "bag   (story, sister and station use the level you travelled to)")
+SIM_HELP = ("story | sister | station | buy <line> | diary <1-122> | travel <level> | fontaine | die | loading | "
+            "pause | bag   (story, sister, station and buy use the level you travelled to)")
 
 
 def stored_python() -> str | None:
@@ -140,6 +142,11 @@ class BioShockCommandProcessor(ClientCommandProcessor):
             elif verb == "station":
                 game.use_station()
                 self.output(f"Used a Power to the People station in {game.level}.")
+            elif verb == "buy":
+                if not rest.isdigit():
+                    self.output("Which Gatherer's Garden line? For example: /sim buy 3")
+                    return False
+                self.output(f"Bought {game.buy_from_garden(int(rest))} in {game.level}.")
             elif verb == "travel":
                 game.travel(resolve_level(rest))
                 self.output(f"Now in {game.level}.")
@@ -199,6 +206,7 @@ class BioShockContext(CommonContext):
         super().__init__(server_address, password)
         self.tags = set(self.tags)  # the class-level set is shared by every context
         self.core = BridgeCore()
+        self.core.prepare_movies = self.prepare_movies
         self.agent: GameAgent | None = None
         self.auto_attach = True
         self.game_task: asyncio.Task[None] | None = None
@@ -252,6 +260,22 @@ class BioShockContext(CommonContext):
         elif cmd == "RoomUpdate":
             if self._core_connected and "checked_locations" in args:
                 self.core.on_checked(args["checked_locations"])
+        elif cmd == "LocationInfo":
+            self.core.on_scouted(self._scouted(args.get("locations", ())))
+
+    def _scouted(self, items: Iterable[Any]) -> dict[int, ScoutedItem]:
+        """The core's view of the NetworkItems in a LocationInfo answer."""
+        result: dict[int, ScoutedItem] = {}
+        for item in items:
+            player = item.player
+            game = self.slot_info[player].game if player in self.slot_info else ""
+            result[item.location] = ScoutedItem(
+                item=self.item_names.lookup_in_slot(item.item, player),
+                player=self.player_names.get(player, f"Player {player}"),
+                flags=item.flags,
+                own=player == self.slot and game == self.game,
+            )
+        return result
 
     def _received_item_ids(self) -> list[int]:
         return [item.item for item in self.items_received]
@@ -274,6 +298,17 @@ class BioShockContext(CommonContext):
         self.drop_agent()
         self.agent = agent
         self.core.on_agent_attached(agent.description)
+
+    def prepare_movies(self) -> str | None:
+        """Make the Garden's menu that can show the AP icon for the game the client is attached to, outside the game's
+        folder, and return the folder it is in. None for a game that has no files, such as the simulated one."""
+        exe = getattr(self.agent, "game_path", None)
+        if not exe:
+            return None
+        library = pkgutil.get_data(__package__, flash_movies.LIBRARY)
+        if library is None:
+            raise flash_movies.MoviesUnavailable(f"{flash_movies.LIBRARY} is missing from the apworld")
+        return str(flash_movies.prepare(exe, Path(Utils.cache_path("bioshock", "FlashMovies")), library))
 
     def drop_agent(self, reason: str = "") -> None:
         if self.agent is None:
@@ -403,6 +438,9 @@ class BioShockContext(CommonContext):
                 # replays those on every login, including a login to a different seed. The core re-sends what a
                 # reconnect needs by itself.
                 await self.check_locations(action.locations)
+            elif isinstance(action, ScoutLocations):
+                await self.send_msgs([{"cmd": "LocationScouts", "locations": list(action.locations),
+                                       "create_as_hint": 0}])
             elif isinstance(action, SendGoal):
                 await self.send_msgs([{"cmd": "StatusUpdate", "status": ClientStatus.CLIENT_GOAL}])
             elif isinstance(action, SendDeath):
