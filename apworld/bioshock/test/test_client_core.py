@@ -450,6 +450,40 @@ class TestItemDelivery(unittest.TestCase):
         h.perform(h.core.drain())
         self.assertEqual(h.warnings(), [])
 
+    def test_a_weapon_upgrade_waits_for_its_weapon(self) -> None:
+        h = Harness().connect().attach()
+        h.game.reports_weapons = True
+        h.receive("Shotgun Rate of Fire", "First Aid Kit")
+        h.settle()
+        self.assertEqual(h.game.commands, ["GiveItem 1 ShockDesignerClasses.MedHypo"], "the rest goes on meanwhile")
+        self.assertEqual(h.core.skipped, {0: core_module.NEEDS_WEAPON})
+        self.assertTrue(any("waits until you have the Shotgun" in notice.text for notice in h.notices))
+        h.game.held_weapons.add("Shotgun")
+        h.settle()
+        self.assertEqual(h.game.commands[-1], "AddWeaponStatUpgrade Shotgun RateOfFire")
+        self.assertEqual(h.core.skipped, {})
+
+    def test_a_weapon_and_its_upgrade_arriving_together(self) -> None:
+        h = Harness().connect().attach()
+        h.game.reports_weapons = True
+        h.receive("Crossbow", "Crossbow Damage Increase")
+        h.settle()
+        self.assertEqual(h.game.commands, ["GiveWeapon ShockGame.Crossbow", "AddWeaponStatUpgrade Crossbow Damage"])
+        self.assertEqual(h.core.skipped, {})
+
+    def test_stations_are_set_to_touch_when_the_seed_says_so(self) -> None:
+        h = Harness()
+        h.slot_data["station_touch"] = True
+        h.connect().attach()
+        h.settle()
+        self.assertTrue(h.game.station_touch)
+        self.assertEqual(h.game.actions, [])
+
+    def test_stations_keep_their_menu_in_older_seeds(self) -> None:
+        h = Harness().connect().attach()
+        h.settle()
+        self.assertFalse(h.game.station_touch)
+
     def test_weapons_upgrades_and_bundles_have_commands_of_their_own(self) -> None:
         h = Harness().connect().attach()
         h.receive("Crossbow", "Crossbow Damage Increase", "Pistol Clip Size", "Ammo Bundle", "Film", "Plasmid Slot",

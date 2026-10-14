@@ -76,7 +76,8 @@ If the game was started as administrator, Archipelago has to be started as admin
   - *Audio diaries:* all 122, noticed when you pick one up. Works in the real game. A diary picked up
     while the client was not watching is not noticed once a save has been loaded since.
   - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
-    game.
+    game. The client asks the game to skip the station's upgrade menu (Steam), so using one only sends its check
+    and closes it.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.

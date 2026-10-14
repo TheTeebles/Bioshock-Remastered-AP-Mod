@@ -22,6 +22,7 @@ const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
+const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
 const ENGINE = 0x50000000;
 const GUARD_PAGE = 0x00190000; // a page that must never be read
@@ -102,6 +103,8 @@ function makeRuntime({
   };
   // ProcessEvent's first instructions, as the agent checks them before calling it
   runtime.memory.set(BASE + PROCESS_EVENT, 0x81EC8B55); runtime.memory.set(BASE + PROCESS_EVENT + 4, 0x000400EC);
+  runtime.memory.set(BASE + OPEN_UPGRADE_MENU, 0x64EC8B55);
+  runtime.replaced = new Map(); // address -> what the agent put there instead
   const ptr = (n) => new Ptr(n, runtime);
   const committed = (address) => {
     const page = address >>> 12;
@@ -148,7 +151,10 @@ function makeRuntime({
         return (scanHits || []).map((rva) => ({ address: ptr(BASE + rva), size: 47 }));
       },
     },
-    NativeCallback: function (callback) { runtime.outputDevice = callback; return ptr(0x66660000); },
+    NativeCallback: function (callback, returns, takes, abi) {
+      if (abi === 'thiscall') { return { callback }; } // a replacement for a function of the game's
+      runtime.outputDevice = callback; return ptr(0x66660000);
+    },
     NativeFunction: function (address, returns, takes, options) {
       runtime.nativeOptions.set(address.value, options);
       if (address.value === VIRTUAL_QUERY) {
@@ -196,6 +202,7 @@ function makeRuntime({
       };
     },
     Interceptor: {
+      replace: (address, replacement) => { runtime.replaced.set(address.value, replacement.callback); },
       attach: (address, callbacks) => {
         const hook = { address: address.value, callbacks };
         runtime.hooks.push(hook);
@@ -395,12 +402,33 @@ function makeRuntime({
     fields(stationClass, [['NumTimesUsed', intProperty, 0x524]]);
     const station = (used = 0) => { const at = make('PlaceableWeaponUpgradeStation0', stationClass, 0x600); poke(at + 0x524, used); return at; };
     const functionClass = cls('Function', objectClass);
+    const objectProperty = cls('ObjectProperty', objectClass);
+    const stateClass = cls('State', objectClass);
+    // A station in use: CurrentPlayer is set, and it is in its Interacting state, which has a FinishInteraction of
+    // its own. The state frame is at +0x10, the state 4 bytes into it.
+    fields(stationClass, [['FinishInteraction', functionClass, 0], ['NumTimesUsed', intProperty, 0x524],
+      ['CurrentPlayer', objectProperty, 0x540]]);
+    const finishInClass = runtime.memory.get(stationClass + 0x5C);
+    const interacting = make('Interacting', stateClass);
+    const finishInState = make('FinishInteraction', functionClass);
+    poke(interacting + 0x5C, finishInState);
+    const inUse = (stationAt, player) => {
+      const frame = runtime.object(0x40); poke(frame + 4, interacting); poke(stationAt + 0x10, frame);
+      poke(stationAt + 0x540, player);
+    };
+    // Weapons: their Holder is whoever has them.
+    const weaponClass = cls('Weapon', actor);
+    fields(weaponClass, [['Holder', objectProperty, 0x400]]);
+    const weapon = (className, holder) => {
+      const at = make(`${className}0`, cls(className, weaponClass), 0x600); poke(at + 0x400, holder); return at;
+    };
     const pawnClass = cls('ShockPawn', actor);
     const onKilled = make('OnKilled', functionClass);
     poke(pawnClass + 0x5C, onKilled);
     const playerClass = cls('ShockPlayer', pawnClass);
     const tick = make('Tick', functionClass);
-    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick };
+    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+      finishInClass, weapon };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1330,6 +1358,43 @@ const tests = {
     r.context.rpc.exports.action(5, 'kill'); r.frames(310);
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[5, false]]);
+  },
+  'touch_stations skips the station menu, then finishes the station through its state': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const station = model.station(0);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'touch_stations');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[1, 'touch_stations', true]]);
+    assert.ok(r.replaced.has(BASE + OPEN_UPGRADE_MENU), 'the native that opens the menu is replaced');
+    assert.strictEqual(r.context.rpc.exports.state().stationTouch, true);
+    model.inUse(station, game.pawn);
+    r.replaced.get(BASE + OPEN_UPGRADE_MENU)(r.context.ptr(game.pawn)); // the player uses the station
+    r.gameEvent(game.hud, model.tick); // a call of the game's to copy
+    r.frames(2);
+    const calls = r.scriptCalls.map((c) => [c.self, c.fn]);
+    assert.deepStrictEqual(calls, [[station, model.finishInState]], "the state's FinishInteraction, on the station");
+    assert.strictEqual(r.memory.get(r.scriptCalls[0].parms), 1, 'SuccessfullyCompleted is true');
+    r.frames(5);
+    assert.strictEqual(r.scriptCalls.length, 1, 'once');
+  },
+  'touch_stations is refused when the game code is not the expected one': () => {
+    const r = makeRuntime(); r.game(); r.objectModel();
+    r.memory.set(BASE + OPEN_UPGRADE_MENU, 0x90909090);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(2, 'touch_stations');
+    const answers = r.messages.filter((m) => m.type === 'action_result');
+    assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[2, false]]);
+    assert.ok(!r.replaced.has(BASE + OPEN_UPGRADE_MENU));
+    assert.strictEqual(r.context.rpc.exports.state().stationTouch, false);
+  },
+  'weapons held are the ones whose Holder is the player': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.load(); r.frames(2);
+    assert.strictEqual(r.context.rpc.exports.state().weaponsHeld, null, 'no weapon seen yet');
+    model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
+    r.frames(3);
+    assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
   },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();

@@ -50,6 +50,9 @@ class SimulatedGame:
         self.summoned: list[str] = []  # classes put into the level with `summon`
         self.deaths = 0
         self.closed = False
+        self.station_touch = False  # stations open no menu, as the client asks when they are touch checks
+        self.held_weapons: set[str] = set()  # weapon classes the player holds ("Crossbow")
+        self.reports_weapons = False  # whether the state says which weapons the player holds, as the agent does
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -85,6 +88,7 @@ class SimulatedGame:
             little_sisters=dict(self.little_sisters),
             stations=dict(self.stations),
             milestones=frozenset(self.milestones),
+            weapons=frozenset(self.held_weapons) if self.reports_weapons else None,
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -97,6 +101,10 @@ class SimulatedGame:
         self._run_waiting()
 
     def run_action(self, command_id: int, action: str) -> None:
+        if action == "touch_stations":  # a setting, not something that happens in the game: not in `actions`
+            self.station_touch = True
+            self._events.append(ActionResult(command_id, True))
+            return
         self.actions.append(action)
         self._waiting.append((command_id, action, True))
         self._run_waiting()
@@ -121,6 +129,7 @@ class SimulatedGame:
             self.inventory[match[2]] += int(match[1])
         elif match := _GIVE_WEAPON.match(text):
             self.inventory[match[1]] += 1
+            self.held_weapons.add(match[1].rsplit(".", 1)[-1])
         elif match := _WEAPON_UPGRADE.match(text):
             self.inventory[f"{match[1]} {match[2]} upgrade"] += 1
         elif text == "StartSecurityAlarm":

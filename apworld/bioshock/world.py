@@ -94,6 +94,8 @@ class BioShockWorld(World):
                 "trap_chance",
                 "death_link",
             ),
+            # Stations open no menu: using one sends its check and closes it, and the upgrades come from the pool.
+            "station_touch": items.stations_shuffled(self),
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
             "level_access_items": {level.name: level.access_item for level in LEVELS} if access_items else {},
         }

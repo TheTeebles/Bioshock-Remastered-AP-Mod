@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-13.1';
+const AGENT_VERSION = '2026-10-13.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -124,6 +124,9 @@ const BUILDS = {
     // The function the engine runs every script event through (its ProcessEvent), found with the probe on
     // 2026-10-13. It takes one argument: a stack frame with the function at +4 and the parameters at +0x10.
     processEvent: { rva: 0x736070, start: [0x81EC8B55, 0x000400EC] },
+    // UShockPlayer::BeginWeaponUpgradeInteraction, which opens a Power to the People station's menu (probe,
+    // 2026-10-13). Touch mode skips it and finishes the station's interaction instead.
+    openUpgradeMenu: { rva: 0x1dbf70, start: 0x64EC8B55 },
   },
   23552000: {
     name: 'Epic 1.0.127355',
@@ -585,6 +588,10 @@ function readState() {
     sistersWatched: sistersKnown.size,
     // Power to the People stations used, by map: the most this agent has seen used there at once.
     stationsUsed: Object.fromEntries(stations.used),
+    // Whether using a station skips its menu (asked for by the client when stations are checks).
+    stationTouch: touch.installed,
+    // Classes of the weapons the player holds (Pistol, Shotgun, ...); null while the agent cannot tell.
+    weaponsHeld: weapons.owned,
     sisterTrouble,
     // Names of the quests completed in the game that is loaded; null until the agent has looked them all up.
     completedQuests: quests.flag === null ? null : quests.completed,
@@ -1292,6 +1299,21 @@ function findIntProperty(cls, wanted) {
   return null;
 }
 
+// Where an object property (a reference to another object) of a class sits. Null if it has none of that name.
+function findObjectProperty(cls, wanted) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'ObjectProperty') {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0x30 || offset > 0x8000 ? null : { offset };
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
 // ---------------------------------------------------------------------------------------------------------------
 // Little Sisters
 // ---------------------------------------------------------------------------------------------------------------
@@ -1390,10 +1412,10 @@ function watchSisters(level, map, now) {
 const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
-const scan = { next: 0, quests: [], stations: [], map: null };
+const scan = { next: 0, quests: [], stations: [], weapons: [], map: null };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
-const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station' or null
+const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station', 'weapon' or null
 
 function kindOf(cls) {
   const key = cls.toString();
@@ -1410,6 +1432,8 @@ function kindOf(cls) {
         kind = 'sister';
       } else if (lineage.includes('PlaceableWeaponUpgradeStation')) {
         kind = 'station';
+      } else if (lineage.includes('Weapon')) {
+        kind = 'weapon';
       }
     }
     if (classKinds.size > 20000) {
@@ -1435,6 +1459,7 @@ function watchObjects(map, now) {
     scan.quests = [];
     scan.stations = [];
     stations.list = [];
+    scan.weapons = [];
   }
   const table = carefulPtr(base.add(objectModel.objects));
   const count = carefulS32(base.add(objectModel.objects + 4));
@@ -1454,6 +1479,8 @@ function watchObjects(map, now) {
       noteSister(object, cls);
     } else if (kind === 'station') {
       scan.stations.push(object);
+    } else if (kind === 'weapon') {
+      scan.weapons.push(object);
     }
   }
   scan.next = end;
@@ -1463,6 +1490,8 @@ function watchObjects(map, now) {
     scan.quests = [];
     stations.list = scan.stations;
     scan.stations = [];
+    weapons.list = scan.weapons;
+    scan.weapons = [];
     if (quests.flag === null && quests.trouble === null && quests.list.length > 0) {
       quests.flag = findBoolProperty(classOfObject(quests.list[0]), 'Completed');
       if (quests.flag === null) {
@@ -1527,6 +1556,173 @@ function readStations(map) {
     stations.used.set(map, used);
     log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Weapons the player has: weapon upgrades from the multiworld wait for their weapon
+// ---------------------------------------------------------------------------------------------------------------
+
+// Every weapon object of the game (classes that extend Weapon), and the classes of those the player holds: their
+// Holder is the player's body. The client gives an upgrade only once its weapon is among them.
+const weapons = { list: [], holders: new Map(), owned: null, reported: '' };
+
+function holderOf(weapon) {
+  const cls = classOfObject(weapon);
+  if (cls === null) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!weapons.holders.has(key)) {
+    weapons.holders.set(key, findObjectProperty(cls, 'Holder'));
+  }
+  const holder = weapons.holders.get(key);
+  return holder === null ? null : carefulPtr(weapon.add(holder.offset));
+}
+
+function readWeapons(pawn) {
+  const owned = new Set();
+  let known = false;
+  for (const weapon of weapons.list) {
+    const cls = classOfObject(weapon);
+    if (cls === null || kindOf(cls) !== 'weapon') {
+      continue; // gone since the scan
+    }
+    const holder = holderOf(weapon);
+    if (holder === null) {
+      continue;
+    }
+    known = true;
+    if (same(holder, pawn)) {
+      owned.add(nameOfObject(cls));
+    }
+  }
+  if (!known) {
+    return; // no weapon seen yet, or none with a Holder: the client gives upgrades as before
+  }
+  weapons.owned = [...owned].sort();
+  const text = weapons.owned.join(', ');
+  if (text !== weapons.reported) {
+    weapons.reported = text;
+    log(`weapons held: ${text || 'none'}`);
+  }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Touch: a Power to the People station that sends its check and closes, with no upgrade menu
+// ---------------------------------------------------------------------------------------------------------------
+
+// With station checks on, the client asks for this once the agent is attached. Using a station then skips its menu
+// (the native that opens it is replaced), and on the next tick the station's interaction is finished the way the
+// menu's confirm would: its current state's FinishInteraction(true). That counts the use (NumTimesUsed 0 -> 1, which
+// sends the check) and moves the station to its closed state. Confirmed with the probe, 2026-10-13.
+const TOUCH_PATIENCE_MS = 3000; // a skipped menu whose station cannot be found for this long is given up
+const touch = { installed: false, at: 0, currentPlayer: new Map(), trouble: null };
+
+function enableTouch() {
+  if (touch.installed) {
+    return null;
+  }
+  const info = build.openUpgradeMenu;
+  if (!info || objectModel === null) {
+    return `stations without a menu are not supported on the ${build.name} build yet`;
+  }
+  const trouble = scriptCallsTrouble();
+  if (trouble !== null) {
+    return trouble;
+  }
+  const start = base.add(info.rva);
+  if (carefulU32(start) !== info.start) {
+    return `the game's code at module+${start.sub(base)} is not what this agent expects`;
+  }
+  readyToCallScript(); // starts watching for a call to copy, so one is known by the time a station is used
+  Interceptor.replace(start, new NativeCallback(() => {
+    touch.at = Date.now(); // on the game thread, inside the station's script: finished on the next tick
+  }, 'void', ['pointer'], 'thiscall'));
+  touch.installed = true;
+  log('Power to the People stations open no menu now: using one sends its check and closes it');
+  return null;
+}
+
+function stationPlayer(station) {
+  const cls = classOfObject(station);
+  if (cls === null) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!touch.currentPlayer.has(key)) {
+    touch.currentPlayer.set(key, findObjectProperty(cls, 'CurrentPlayer'));
+  }
+  const field = touch.currentPlayer.get(key);
+  const player = field === null ? null : carefulPtr(station.add(field.offset));
+  return player === null || player.isNull() ? null : player;
+}
+
+// The state an object is in. Its state frame, a pointer among the object's first words, holds the current state (an
+// object of class State) a few words in: object+0x10, then +4, for a station.
+function stateOf(object) {
+  for (let at = 4; at < objectModel.objectName; at += 4) {
+    const frame = carefulPtr(object.add(at));
+    if (frame === null || frame.isNull()) {
+      continue;
+    }
+    for (let k = 4; k < 0x20; k += 4) {
+      const state = carefulPtr(frame.add(k));
+      if (state !== null && !state.isNull() && nameOfObject(classOf(state)) === 'State') {
+        return state;
+      }
+    }
+  }
+  return null;
+}
+
+// A function of a state or class, or of those it extends.
+function findFunctionIn(start, wanted) {
+  for (const owner of lineageOf(start)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === 'Function') {
+        return field;
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+function finishTouchedStation(now) {
+  if (touch.at === 0) {
+    return;
+  }
+  if (!readyToCallScript()) {
+    return; // watching for a call to copy; the station is finished in a later tick
+  }
+  const station = stations.list.find((candidate) => stationPlayer(candidate) !== null) || null;
+  if (station === null) {
+    if (now - touch.at > TOUCH_PATIENCE_MS) {
+      touch.at = 0;
+      log('a station skipped its menu, but no station has a player at it');
+    }
+    return;
+  }
+  touch.at = 0;
+  const state = stateOf(station);
+  const finish = (state === null ? null : findFunctionIn(state, 'FinishInteraction')) ||
+    findFunction(station, 'FinishInteraction');
+  if (finish === null) {
+    log('a station skipped its menu, but it has no FinishInteraction');
+    return;
+  }
+  const parms = Memory.alloc(0x10);
+  parms.writeU32(1); // SuccessfullyCompleted, its one parameter: true
+  parms.add(4).writeU32(0);
+  parms.add(8).writeU32(0);
+  parms.add(12).writeU32(0);
+  try {
+    callScript(station, finish, parms);
+  } catch (e) {
+    log(`could not finish the station's interaction: ${e.message}`);
+  }
+  parms.isNull();
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1737,6 +1933,7 @@ function watchPlayer(level, info, map, now) {
   }
   carryOutKills(body.pawn, now);
   watchLife(body.pawn, map);
+  readWeapons(body.pawn);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -1760,6 +1957,7 @@ function onLevelTick(level) {
         watchSisters(level, seen.map, now);
         watchObjects(seen.map, now);
         watchPlayer(level, info, seen.map, now);
+        finishTouchedStation(now);
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
@@ -1822,6 +2020,12 @@ globalThis.give = function (command) {
 globalThis.state = readState;
 
 // Kills the player, as a DeathLink from someone else would.
+// Stations open no menu from now on, as the client asks when stations are checks.
+globalThis.touch = function () {
+  const trouble = enableTouch();
+  return trouble === null ? 'using a station now sends its check and closes it' : trouble;
+};
+
 globalThis.kill = function () {
   kills.push({ id: null, at: Date.now() });
   return 'the player dies on the next game tick in a level';
@@ -1870,11 +2074,22 @@ rpc.exports = {
   state() {
     return readState();
   },
-  // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread; the traps are not
-  // built yet.
+  // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
+  // 'touch_stations' (stations open no menu) at once. The traps are not built yet.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
+      return;
+    }
+    if (name === 'touch_stations') {
+      let trouble;
+      try {
+        trouble = enableTouch();
+      } catch (e) {
+        trouble = e.message;
+      }
+      send(trouble === null ? { type: 'action_result', id, name, ok: true }
+        : { type: 'action_result', id, name, ok: false, reason: trouble });
       return;
     }
     send({ type: 'action_result', id, name, ok: false, reason: 'the agent does not support this yet' });

@@ -125,7 +125,15 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         milestones=milestones_of(raw.get("completedQuests")),
         diaries=diaries_of(raw.get("logsReceived")),
         stations=stations_of(raw.get("stationsUsed")),
+        weapons=weapons_of(raw.get("weaponsHeld")),
     )
+
+
+def weapons_of(held: object) -> frozenset[str] | None:
+    """The weapon classes the agent sees the player holding. None while it cannot tell."""
+    if not isinstance(held, list):
+        return None
+    return frozenset(name for name in held if isinstance(name, str))
 
 
 def event_from_message(message: dict[str, Any]) -> AgentEvent | None:

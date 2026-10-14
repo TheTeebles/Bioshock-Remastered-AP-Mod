@@ -42,6 +42,7 @@ QUIET_ANNOUNCEMENTS = 3  # more held checks than this at once are announced in o
 # Why an item was set aside instead of given.
 UNKNOWN = "unknown"  # the client has no way to give it yet (no game class known, or an item ID it has never heard of)
 REFUSED = "refused"  # the game refused it, or could not do it
+NEEDS_WEAPON = "needs weapon"  # a weapon upgrade, kept until the player holds the weapon
 
 
 @dataclass
@@ -66,6 +67,7 @@ class BridgeCore:
         self.identity: tuple[Any, ...] | None = None  # (seed, team, slot) the saved state belongs to
         self.access_items: dict[str, str | None] = {}
         self.world_items_shuffled = False
+        self.station_touch = False  # stations open no menu: the agent is asked to skip it
         self.death_link = False
         self.valid_locations: frozenset[int] = frozenset()
         self.checked: set[int] = set()  # confirmed by the server
@@ -101,6 +103,7 @@ class BridgeCore:
         self._pending_kill = False
         self._kill_deadline: float | None = None
         self._ignore_death_until = 0.0
+        self._touch_command_id: int | None = None  # the agent has been asked to skip station menus, under this id
         self._announced_locked: set[int] = set()
         self._announced_goal_locked = False
 
@@ -160,6 +163,7 @@ class BridgeCore:
                          "Update the apworld so the client matches.", warning=True)
         self.access_items = dict(slot_data.get("level_access_items") or {})
         self.world_items_shuffled = bool(slot_data.get("world_item_checks", 0))
+        self.station_touch = bool(slot_data.get("station_touch", False))
 
         self._merge_saved(saved)
         self._look_for_second_tries = True
@@ -221,11 +225,15 @@ class BridgeCore:
         self._warned_new_game = False
         self._in_flight = None  # an item that was on its way starts again from its first command
         self._pending_kill = False
+        self._touch_command_id = None  # a new agent is asked again
         # ... and what was about to be sent to the agent that has gone must not reach the next one as well.
         self._out = [action for action in self._out if not isinstance(action, (RunCommand, RunAction, KillPlayer))]
 
     def on_state(self, state: GameState) -> None:
+        held_before = self.state.weapons or frozenset()
         self.state = state
+        if state.weapons and state.weapons - held_before:
+            self._look_for_weapon_upgrades(state.weapons)
         self._track_level(state)
         self._track_goal(state)
 
@@ -243,6 +251,10 @@ class BridgeCore:
                 flight.started = True
         elif isinstance(event, CommandResult):
             self._on_result(event.command_id, event.handled, now, "the game refused the command", retry=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._touch_command_id:
+            if not event.ok:
+                self._notice(f"Power to the People stations will still open their menu: {event.reason}. Their "
+                             "checks are still sent, but the menu also gives an upgrade.", warning=True)
         elif isinstance(event, ActionResult):
             # The agent either supports an action or it doesn't, so asking again would not help.
             self._on_result(event.command_id, event.ok, now, event.reason or "the game could not do it",
@@ -258,6 +270,7 @@ class BridgeCore:
         """Advance everything that depends on time or on a combination of both sides. Call a few times a second."""
         self._send_ready_checks()
         self._send_goal_if_ready()
+        self._ask_for_touch()
         self._pump_delivery(now)
         self._pump_deathlink(now)
         if self._dirty and self.connected:
@@ -286,7 +299,8 @@ class BridgeCore:
 
     def status_lines(self) -> list[str]:
         waiting = sum(1 for reason in self.skipped.values() if reason == UNKNOWN)
-        refused = len(self.skipped) - waiting
+        for_weapons = sum(1 for reason in self.skipped.values() if reason == NEEDS_WEAPON)
+        refused = len(self.skipped) - waiting - for_weapons
         lines = [
             f"Archipelago: {'connected' if self.connected else 'not connected'}",
             f"Game: {self.agent_description if self.agent_attached else 'not connected'}"
@@ -296,6 +310,7 @@ class BridgeCore:
                f", in a map the client has no level for yet ({self.state.map})"),
             f"Items: {self.delivered - len(self.skipped)} of {len(self.items)} given"
             + (f", {waiting} the client cannot give yet" if waiting else "")
+            + (f", {for_weapons} waiting for their weapon" if for_weapons else "")
             + (f", {refused} the game refused (/retry tries them again)" if refused else "")
             + (", the rest when the game is ready for them"
                if self.delivered < len(self.items) and self.agent_attached and not self.state.ready else ""),
@@ -368,7 +383,7 @@ class BridgeCore:
         skipped: dict[int, str] = {}
         for entry in raw if isinstance(raw, (list, tuple)) else ():
             if (isinstance(entry, (list, tuple)) and len(entry) == 2 and isinstance(entry[0], int)
-                    and 0 <= entry[0] < delivered and entry[1] in (UNKNOWN, REFUSED)):
+                    and 0 <= entry[0] < delivered and entry[1] in (UNKNOWN, REFUSED, NEEDS_WEAPON)):
                 skipped[entry[0]] = entry[1]
         return skipped
 
@@ -540,6 +555,8 @@ class BridgeCore:
             self._look_for_second_tries = False
             self._second_tries = [index for index in sorted(self.skipped)
                                   if self.skipped[index] == UNKNOWN and self._plan(index) is not None]
+            if self.state.weapons:
+                self._look_for_weapon_upgrades(self.state.weapons)
         if not (self.agent_attached and self.state.ready):
             return
 
@@ -547,6 +564,9 @@ class BridgeCore:
             index = self._second_tries.pop(0)
             delivery = self._plan(index)
             if index not in self.skipped or delivery is None:
+                continue
+            if self._waits_for_weapon(delivery):
+                self.skipped[index] = NEEDS_WEAPON
                 continue
             if delivery.is_instant:
                 del self.skipped[index]
@@ -569,6 +589,11 @@ class BridgeCore:
                 self.skipped[index] = UNKNOWN
                 self._advance()
                 continue
+            if self._waits_for_weapon(delivery):
+                self._notice(f"{delivery.description} waits until you have the {delivery.needs_weapon}.")
+                self.skipped[index] = NEEDS_WEAPON
+                self._advance()
+                continue
             if delivery.is_instant:
                 if name is not None and game_data.ITEM_KIND[name] == ItemKind.LEVEL_ACCESS:
                     self._notice(f"{name} received.")
@@ -576,6 +601,25 @@ class BridgeCore:
                 continue
             self._start(index, delivery, now)
             return
+
+    def _waits_for_weapon(self, delivery: Delivery) -> bool:
+        """True for an upgrade whose weapon the player doesn't hold. An agent that can't tell gets it as before."""
+        held = self.state.weapons
+        return delivery.needs_weapon is not None and held is not None and delivery.needs_weapon not in held
+
+    def _look_for_weapon_upgrades(self, held: frozenset[str]) -> None:
+        """The player has picked up a weapon: the upgrades kept for it go in next."""
+        ready = [index for index, reason in sorted(self.skipped.items()) if reason == NEEDS_WEAPON
+                 and (delivery := self._plan(index)) is not None and delivery.needs_weapon in held]
+        self._second_tries += [index for index in ready if index not in self._second_tries]
+
+    def _ask_for_touch(self) -> None:
+        """With touch stations, ask each agent once to skip the station menu."""
+        if not (self.station_touch and self.connected and self.agent_attached) or self._touch_command_id is not None:
+            return
+        self._touch_command_id = self._next_command_id
+        self._next_command_id += 1
+        self._out.append(RunAction(self._touch_command_id, "touch_stations"))
 
     def _start(self, index: int, delivery: Delivery, now: float) -> None:
         self._in_flight = _InFlight(index, delivery)

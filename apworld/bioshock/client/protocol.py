@@ -31,6 +31,7 @@ class GameState:
     little_sisters: Mapping[str, int] | None = None  # level -> sisters rescued or harvested there
     stations: Mapping[str, int] | None = None  # level -> Power to the People stations used there
     milestones: frozenset[str] | None = None  # story milestones reached in this save (keys of STORY_MILESTONES)
+    weapons: frozenset[str] | None = None  # classes of the weapons the player holds ("Shotgun"), if the agent can tell
 
 
 @dataclass(frozen=True)

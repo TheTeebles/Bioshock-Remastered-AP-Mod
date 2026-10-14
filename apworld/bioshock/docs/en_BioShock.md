@@ -23,7 +23,9 @@ These can hold anything, including the items you and other players need:
 - 28 story objectives and bosses, for example defeating Dr. Steinman, photographing the Spider Splicers or completing
   Cohen's masterpiece. All of them are part of finishing the game, so you cannot miss one.
 - Rescuing or harvesting each of the 21 Little Sisters
-- Using each of the 12 Power to the People weapon upgrade stations
+- Using each of the 12 Power to the People weapon upgrade stations. A station opens no upgrade menu: using it sends
+  its check and closes it, and the 12 weapon upgrades are items in the multiworld instead. An upgrade for a weapon
+  you don't have yet waits until you pick the weapon up.
 - Finishing each level for the first time (12 checks)
 
 The 122 Audio Diaries are extras. By default they are checks that only ever hold filler such as ADAM and dollars, or

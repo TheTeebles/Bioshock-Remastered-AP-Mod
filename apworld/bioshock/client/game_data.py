@@ -224,6 +224,7 @@ class Delivery:
     commands: tuple[str, ...] = ()  # console commands, run in order
     optional: int = 0  # how many of the last commands may fail without the item failing
     action: str | None = None  # named agent action instead of commands (traps)
+    needs_weapon: str | None = None  # a weapon class the player must hold first (weapon upgrades)
 
     @property
     def is_instant(self) -> bool:
@@ -279,7 +280,9 @@ def plan_delivery(item_name: str, copy_number: int, world_items_shuffled: bool =
 
     if kind == ItemKind.WEAPON_UPGRADE:
         upgrade = WEAPON_UPGRADE.get(item_name)
-        return Delivery(item_name, (f"AddWeaponStatUpgrade {upgrade[0]} {upgrade[1]}",)) if upgrade else None
+        # The game upgrades the weapon the player holds, so an upgrade for one they don't have would be lost.
+        return Delivery(item_name, (f"AddWeaponStatUpgrade {upgrade[0]} {upgrade[1]}",),
+                        needs_weapon=upgrade[0]) if upgrade else None
 
     if item_name in CURRENCY_FILLER:
         count, class_name = CURRENCY_FILLER[item_name]
