@@ -42,6 +42,8 @@
  *                     gardenItem(7) puts the line's own class back
  *   gardenCost(7, 20) set line 7's CostAdjustment (the price multiplier) to 20, to see how the price follows it
  *                     and which currency the line asks for
+ *   defaults('chips') the text properties of a class's default values (what a new chips object starts with)
+ *   rename('chips', 'FriendlyName', 'Archipelago Item')  rewrite one of them, to see whether the Garden shows it
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
  *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
@@ -73,7 +75,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.2';
+const PROBE_VERSION = '2026-10-14.3';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1244,6 +1246,80 @@ globalThis.gardenCost = function (n, adjustment) {
   log(`line ${n}: CostAdjustment (${field.kind}) ${before} -> ${valueText(at, field)}`);
   log(`  now ${lineText(line, read.fields)}`);
   return 'open the Garden and look at that line\'s price';
+};
+
+// A class's default values: an array (data, count, capacity) in the class object whose bytes hold the class's
+// properties at their usual offsets. Found by trying each such array for readable text at the string properties.
+const keptStrings = [];
+
+function classDefaults(className) {
+  const learned = learnAnyClass(className);
+  const cls = learned.error ? null : findClass(className);
+  if (cls === null) {
+    return { error: learned.error || `no class named ${className}` };
+  }
+  const strings = [...learned.properties.entries()].filter(([, p]) => p.kind === 'StrProperty');
+  if (strings.length === 0) {
+    return { error: `${className} has no text properties` };
+  }
+  const end = Math.max(...strings.map(([, p]) => p.offset)) + 12;
+  let best = null;
+  for (let at = 0x30; at < 0x200; at += 4) {
+    const data = pointerAt(cls.add(at));
+    const count = u32(cls.add(at + 4));
+    const capacity = u32(cls.add(at + 8));
+    if (data === null || data.isNull() || count === null || capacity === null || count < end ||
+        count > 0x40000 || capacity < count || !readable(data, end)) {
+      continue;
+    }
+    const texts = strings.map(([name, p]) => [name, p, stringAt(data.add(p.offset))]);
+    const filled = texts.filter(([, , text]) => text.length > 0).length;
+    if (best === null || filled > best.filled) {
+      best = { at, data, texts, filled };
+    }
+  }
+  if (best === null || best.filled === 0) {
+    return { error: `no default values with text found in class ${className}` };
+  }
+  return best;
+}
+
+globalThis.defaults = function (className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = classDefaults(className);
+  if (found.error) {
+    return found.error;
+  }
+  log(`${className}: default values at class+${hex(found.at)} (${found.data})`);
+  for (const [name, p, text] of found.texts) {
+    log(`  +${hex(p.offset)} ${name} (${p.owner}) = ${JSON.stringify(text)}`);
+  }
+  return `${found.filled} of ${found.texts.length} text properties filled`;
+};
+
+globalThis.rename = function (className, propertyName, text) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = classDefaults(className);
+  if (found.error) {
+    return found.error;
+  }
+  const entry = found.texts.find(([name]) => name === propertyName);
+  if (entry === undefined) {
+    return `${className} has no text property ${propertyName}`;
+  }
+  const at = found.data.add(entry[1].offset);
+  // A new buffer the game did not allocate; kept alive here, and never handed to the game to free.
+  const buffer = Memory.allocUtf16String(text);
+  keptStrings.push(buffer);
+  at.writePointer(buffer);
+  at.add(4).writeU32(text.length + 1);
+  at.add(8).writeU32(text.length + 1);
+  log(`${className}.${propertyName}: ${JSON.stringify(entry[2])} -> ${JSON.stringify(stringAt(at))}`);
+  return 'open the Garden (or look at a chips pickup) to see it';
 };
 
 // ---- weapon upgrades, for taking back what a Power to the People station gave ----
