@@ -520,6 +520,16 @@ class TestSlotData(BioShockTestBase):
                               if location.category == LocationCategory.GATHERERS_GARDEN]), 273)
 
 
+    def test_universal_tracker_rebuilds_a_seed_that_needed_its_start_inventory(self) -> None:
+        # Made with every access item from the pool, so no check had to hold one. The slot data doesn't carry the
+        # start inventory, and the rebuild must not refuse the seed for it.
+        slot_data = dict(self.world.fill_slot_data(), story_checks=0, little_sister_checks=0,
+                         power_to_the_people_checks=0, level_completion_checks=0,
+                         audio_diary_checks=AudioDiaryChecks.option_off, shop_checks=2)
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        self.assertEqual(self.world.options.level_access.value, slot_data["level_access"])
+
 class TestWeaponStations(PoolTestBase):
     """Station checks, on by default: a station is a check you use once, and the weapon upgrades come from the
     multiworld."""

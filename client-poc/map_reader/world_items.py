@@ -23,6 +23,8 @@ import sys
 from worlds.bioshock.client.game_data import GIVE_CLASS, MAP_LEVEL, WEAPON_CLASS, normalize_map
 from worlds.bioshock.data import LEVEL_NAMES
 
+from map_survey import is_weapon_pickup, weapon_of_pickup
+
 SAFES = ("SecurityCrate_Safe", "Lockbox")
 FIRST_ID = {"plasmid": 6001, "tonic": 6011, "weapon": 6051, "safe": 6101}
 LAST_ID = {"plasmid": 6010, "tonic": 6050, "weapon": 6057, "safe": 6199}
@@ -48,7 +50,7 @@ def kind_of(cls):
         return "plasmid"
     if cls.endswith("PlasmidPickup"):
         return "tonic"
-    if "And" in cls and cls.endswith("Pickup"):
+    if is_weapon_pickup(cls):
         return "weapon"
     return None
 
@@ -68,7 +70,7 @@ def candidates(maps):
             if kind is None:
                 continue
             if kind == "weapon":
-                cls = spot["class"].split("And", 1)[0]
+                cls = weapon_of_pickup(spot["class"])
                 if cls in weapons_seen:
                     continue
                 weapons_seen.add(cls)

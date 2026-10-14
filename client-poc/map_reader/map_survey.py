@@ -161,12 +161,25 @@ def text(value):
 
 
 # Actors that could become checks of their own (design section 5): plasmid and tonic pickups, weapons (a weapon's
-# pickup class names it with its first ammo, "ShotgunAnd00BuckPickup"), the Research Camera, and safes.
+# pickup class names it with its first ammo, "ShotgunAnd00BuckPickup", or alone, "PistolPickup"), the Research Camera,
+# and safes.
 SAFES = ("SecurityCrate_Safe", "Lockbox")
+# The wrench is left out: a script hands it over (WrenchPickupItem), and section 5 keeps no ID for it.
+WEAPONS = ("Pistol", "MachineGun", "Shotgun", "GrenadeLauncher", "ChemicalThrower", "Crossbow", "ResearchCamera")
+PLAIN_WEAPON_PICKUPS = tuple(f"{weapon}Pickup" for weapon in WEAPONS)
+
+
+def is_weapon_pickup(cls):
+    return ("And" in cls and cls.endswith("Pickup")) or cls in PLAIN_WEAPON_PICKUPS
+
+
+def weapon_of_pickup(cls):
+    """The weapon a weapon pickup class names: "ShotgunAnd00BuckPickup" and "ShotgunPickup" are both Shotgun."""
+    return cls.split("And", 1)[0] if "And" in cls else cls[:-len("Pickup")]
 
 
 def is_world_item(cls):
-    return cls.endswith("PlasmidPickup") or ("And" in cls and cls.endswith("Pickup")) or cls in SAFES
+    return cls.endswith("PlasmidPickup") or is_weapon_pickup(cls) or cls in SAFES
 
 
 def position(value):

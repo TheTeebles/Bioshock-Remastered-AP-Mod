@@ -57,6 +57,21 @@ def test_each_weapon_counts_once_where_it_first_lies():
         ("Medical Pavilion - Shotgun", 6051), ("Neptune's Bounty - Grenade Launcher", 6052)]
 
 
+def test_weapon_pickups_without_ammo_in_their_name_count_too():
+    plain = {"map": "1-Medical.bsm", "world": [spot("PistolPickup", "PistolPickup0", ["PistolPickupItem"]),
+                                               spot("ShotgunPickup", "ShotgunPickup0", ["ShotgunPickupItem"])]}
+    rows, unknown, _ = candidates([plain, FISHERIES])
+    weapons = [row["name"] for row in rows if row["kind"] == "weapon"]
+    assert weapons == ["Medical Pavilion - Pistol", "Medical Pavilion - Shotgun", "Neptune's Bounty - Grenade Launcher"]
+    assert unknown == []
+
+
+def test_ammo_pickups_are_not_weapons():
+    ammo = {"map": "1-Medical.bsm", "world": [spot("PistolAmmoPickup", "PistolAmmoPickup0"),
+                                              spot("ShotgunAmmoPickups", "ShotgunAmmoPickups0")]}
+    assert candidates([ammo])[0] == []
+
+
 def test_safes_are_numbered_per_level_and_keep_their_contents():
     rows, _, _ = candidates([FISHERIES, MEDICAL])
     safes = {row["name"]: row["contents"] for row in rows if row["kind"] == "safe"}
