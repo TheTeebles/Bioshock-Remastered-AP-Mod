@@ -5,6 +5,17 @@
 > EVE Drain and Pickpocket traps are not tried in the game yet. "What to expect from the real game today" below says
 > exactly where things stand.
 
+## Quick start
+
+1. Install Archipelago 0.6.7 or newer, then double-click `bioshock.apworld` to add BioShock to it.
+2. Install Python 3 (tick "Add python.exe to PATH") and run `pip install frida` in a terminal.
+3. Make a YAML ("Generate Template Options" in the Launcher), generate, and host the seed.
+4. Start **BioShock Client** from the Launcher and connect to the room.
+5. Start BioShock Remastered (Steam) and begin a **new game** for this seed. The client says "Game connected" when it
+   has found it.
+
+Each step is explained below.
+
 ## Required Software
 
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases/latest) 0.6.7 or newer
