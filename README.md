@@ -19,11 +19,11 @@ client that ships inside it, and the script the client puts into the running gam
 | Story objectives | All 28 noticed, from the game's own quest list. Seen sending checks in the real game |
 | Little Sisters | Noticed when one is rescued or harvested (not which). Works in the real game |
 | Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Works in the real game |
-| Power to the People stations | Noticed from each station's use counter. Works in the real game. Stations open no menu (skipping it and closing the station was seen working with the probe); the 12 weapon upgrades come from the multiworld and wait for their weapon. The agent side is not tested in the real game yet |
-| Gatherer's Garden purchases (Shop Checks option) | In the APWorld, off by default: Neptune's Bounty's 16 lines so far. The client renames each line after the multiworld item it holds, prices it and sends the check when it is bought (Steam); not yet tried in game |
+| Power to the People stations | Noticed from each station's use counter. Works in the real game. Stations open no menu: using one sends its check and closes it, and the 12 weapon upgrades come from the multiworld and wait for their weapon |
+| Gatherer's Garden purchases (Shop Checks option) | Off by default; `first_appearances` (61 checks) or `all` (273), every level's Garden, read from the game's map files. Each line is renamed after the multiworld item it holds, priced and given an icon, and buying it sends the check (Steam). Works in the real game at Neptune's Bounty; the other levels' Gardens are not tried in game yet |
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink in the game | Works in the real game, both ways: your deaths are sent, and a received death kills Jack through the game's own OnKilled, so he collapses and wakes in a Vita-Chamber |
-| The EVE Drain and Pickpocket traps inside the game | Not built yet |
+| The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the EVE bar redraws at once; the dollars counter does not flash up (accepted by Teebs) |
 | The GOG and Epic versions | Not supported yet |
 
 [claude/bioshock-ap-design.md](claude/bioshock-ap-design.md) has the whole picture: what was found out about the

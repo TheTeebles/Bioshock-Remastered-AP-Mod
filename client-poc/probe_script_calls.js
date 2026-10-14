@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.14';
+const PROBE_VERSION = '2026-10-14.16';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -2113,6 +2113,56 @@ globalThis.skipCall = function (functionName) {
   return scriptTrace.skip === null ? 'nothing skipped' : `the game now skips ${scriptTrace.skip}`;
 };
 
+// ---- Choice: which C++ code asks for the weapon when a station upgrade is confirmed ----
+
+// Logs the native call chain each time the game runs the named script function (by default the one the station's
+// confirm asks first). The first frames inside the game's module that are not the script interpreter are the
+// station menu's own C++ confirm: once known, it can be replaced the way Touch replaces the menu opener, so that
+// confirming sends a check instead of applying the vanilla upgrade.
+const callers = { hook: null, wanted: null, seen: 0 };
+
+globalThis.whoCalls = function (functionName = 'GetHoldableByClassName', limit = 3) {
+  const at = scriptRunAt();
+  if (at === null) {
+    return `module+${hex(SCRIPT_RUN)} does not start the way it should; is this the Steam build?`;
+  }
+  if (callers.hook !== null) {
+    callers.hook.detach();
+  }
+  callers.wanted = functionName;
+  callers.seen = 0;
+  callers.hook = Interceptor.attach(at, {
+    onEnter(args) {
+      const fn = pointerAt(args[0].add(4));
+      if (fn === null || callers.seen >= limit || nameOfObject(fn) !== callers.wanted) {
+        return;
+      }
+      callers.seen += 1;
+      let frames;
+      try {
+        frames = Thread.backtrace(this.context, Backtracer.ACCURATE);
+      } catch (e) {
+        frames = Thread.backtrace(this.context, Backtracer.FUZZY);
+      }
+      log(`${callers.wanted} on ${nameOfObject(this.context.ecx)} (${classNameOf(this.context.ecx)}), called from:`);
+      frames.slice(0, 16).forEach((frame, k) => log(`  #${k} ${rel(frame)}`));
+      if (callers.seen >= limit) {
+        log(`whoCalls: logged ${limit}; whoCallsStop() or whoCalls() again for more`);
+      }
+    },
+  });
+  return `watching ${functionName}: open a station, pick an upgrade, confirm, then send the log`;
+};
+
+globalThis.whoCallsStop = function () {
+  if (callers.hook === null) {
+    return 'not watching';
+  }
+  callers.hook.detach();
+  callers.hook = null;
+  return 'stopped';
+};
+
 // ---- Touch: a station that sends its check and closes, with no menu ----
 
 // UShockPlayer::BeginWeaponUpgradeInteraction, which opens the menu (what the script native's stub calls).
@@ -2581,6 +2631,150 @@ globalThis.die = function () {
     }, 5000);
   });
   return 'queued for the game thread; the result follows';
+};
+
+// ---- HUD: redrawing EVE and dollars after a trap writes them (2026-10-14) ----
+// Calling RemoveBioAmmo, RemoveCredits and UpdateUIStats through callScript stopped on "access violation accessing
+// 0x74" in the agent. These try other ways: the same call here (with the frame shown), and the native's own C++
+// entry (execUpdateUIStats(FFrame&, void*)) called directly with a frame of our own.
+
+function playerStat(name) {
+  const learned = learnAnyClass(PLAYER_CLASS);
+  return learned.error ? null : learned.properties.get(name) || null;
+}
+
+globalThis.stats = function () {
+  const player = thePlayer();
+  const credits = playerStat('Credits');
+  const eve = playerStat('BioAmmo');
+  if (player === null || credits === null || eve === null) {
+    return 'load a save first (no player, or no Credits/BioAmmo found)';
+  }
+  return `Credits ${player.add(credits.offset).readS32()} at +${hex(credits.offset)}, ` +
+    `BioAmmo ${player.add(eve.offset).readFloat().toFixed(1)} at +${hex(eve.offset)}`;
+};
+
+// setStat('Credits', 50) or setStat('BioAmmo', 0): writes the number only, as the agent's traps do.
+globalThis.setStat = function (name, value) {
+  const player = thePlayer();
+  const property = playerStat(name);
+  if (player === null || property === null) {
+    return `load a save first (no player, or no ${name})`;
+  }
+  const at = player.add(property.offset);
+  if (name === 'BioAmmo') {
+    at.writeFloat(value);
+  } else {
+    at.writeS32(value);
+  }
+  return globalThis.stats();
+};
+
+// hudScript('UpdateUIStats'): the agent's way, through the copied frame. Needs events() first.
+globalThis.hudScript = function (functionName = 'UpdateUIStats') {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const player = thePlayer();
+  const found = findFunction(PLAYER_CLASS, functionName);
+  if (player === null || found.error) {
+    return player === null ? 'load a save first' : found.error;
+  }
+  log(`hudScript: copied frame from ${processEvent.template.name}: ` +
+    processEvent.template.words.map((w) => w.toString()).join(' '));
+  const block = Memory.alloc(0x80);
+  for (let at = 0; at < 0x80; at += 4) {
+    block.add(at).writeU32(0);
+  }
+  runOnGameThread(() => {
+    try {
+      callScript(player, found.function, block);
+      log(`hudScript: ${functionName} returned; ${globalThis.stats()}`);
+    } catch (e) {
+      log(`hudScript: ${functionName} failed: ${e.message}`);
+    }
+    block.isNull();
+  });
+  return 'queued for the game thread; look at the HUD, the result follows';
+};
+
+// The C++ entry of a native script function: the word, at the same offset in every function, that points into the
+// game's code and differs between three natives (as stationHooks() finds the station's).
+const playerNatives = { offset: null };
+
+function nativeEntry(functionName) {
+  const names = ['UpdateUIStats', 'UpdateUIBioAmmoBank', 'UpdateUIAmmoTotals', 'GetCredits', 'GetBioAmmo'];
+  if (!names.includes(functionName)) {
+    names.push(functionName);
+  }
+  const fns = names.map((fname) => findFunction(PLAYER_CLASS, fname));
+  const missing = fns.find((f) => f.error);
+  if (missing) {
+    return { error: missing.error };
+  }
+  if (playerNatives.offset === null) {
+    const code = mod.enumerateRanges('r-x').map((r) => [r.base.toUInt32(), r.base.toUInt32() + r.size]);
+    const isCode = (value) => value !== null && code.some(([from, to]) => value >= from && value < to);
+    for (let at = 0x30; at <= 0x100 && playerNatives.offset === null; at += 4) {
+      const words = fns.map((f) => u32(f.function.add(at)));
+      if (words.every(isCode) && new Set(words).size === words.length) {
+        playerNatives.offset = at;
+      }
+    }
+    if (playerNatives.offset === null) {
+      fns.forEach((f, k) => log(`  ${names[k]}: ${hexWords(f.function, 0x30, 0x100)}`));
+      return { error: 'no word points into the code for every native' };
+    }
+    log(`natives: C++ entry at function+${hex(playerNatives.offset)}`);
+  }
+  const fn = fns[names.indexOf(functionName)].function;
+  return { fn, entry: ptr(u32(fn.add(playerNatives.offset))) };
+}
+
+// hudNative('GetCredits') first: it only reads, and its answer shows whether the call works at all. Then
+// hudNative('UpdateUIStats') and hudNative('UpdateUIBioAmmoBank').
+globalThis.hudNative = function (functionName = 'UpdateUIStats') {
+  const player = thePlayer();
+  if (player === null) {
+    return 'load a save first';
+  }
+  const found = nativeEntry(functionName);
+  if (found.error) {
+    return found.error;
+  }
+  log(`hudNative: ${functionName} at ${rel(found.entry)}`);
+  const code = Memory.alloc(16);
+  for (let at = 0; at < 16; at++) {
+    code.add(at).writeU8(0x16); // EX_EndFunctionParms, what P_FINISH steps over
+  }
+  const locals = Memory.alloc(0x40);
+  const result = Memory.alloc(0x10);
+  const frame = Memory.alloc(0x40);
+  for (let at = 0; at < 0x40; at += 4) {
+    frame.add(at).writeU32(0);
+    locals.add(at).writeU32(0);
+  }
+  result.writeU32(0xDEADBEEF);
+  if (processEvent.template !== null) {
+    frame.writePointer(processEvent.template.words[0]); // the frame's vtable
+  }
+  frame.add(4).writePointer(found.fn);
+  frame.add(8).writePointer(player);
+  frame.add(0xC).writePointer(code);
+  frame.add(0x10).writePointer(locals);
+  const call = new NativeFunction(found.entry, 'void', ['pointer', 'pointer', 'pointer'], 'thiscall');
+  runOnGameThread(() => {
+    try {
+      call(player, frame, result);
+      log(`hudNative: ${functionName} returned; result word ${hex(u32(result))} (as float ` +
+        `${result.readFloat().toFixed(1)}), code stepped ${frame.add(0xC).readPointer().sub(code).toInt32()}; ` +
+        globalThis.stats());
+    } catch (e) {
+      log(`hudNative: ${functionName} failed: ${e.message}`);
+    }
+    [code, locals, result, frame].forEach((m) => m.isNull());
+  });
+  return 'queued for the game thread; look at the HUD, the result follows';
 };
 
 globalThis.hurt = function (amount = 10, functionName = 'TakeSimpleDamage', type = 36) {

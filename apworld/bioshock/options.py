@@ -103,6 +103,15 @@ class LevelCompletionChecks(DefaultOnToggle):
     display_name = "Level Completion Checks"
 
 
+class StartWithResearchCamera(DefaultOnToggle):
+    """
+    You start with the Research Camera instead of finding it in Neptune's Bounty. Research makes you deal more
+    damage to the enemies you photograph, and some later enemies (spider splicers) are hard to hurt without it.
+    The camera in Neptune's Bounty is still there and gives film.
+    """
+    display_name = "Start With Research Camera"
+
+
 class TrapChance(Range):
     """
     Percentage chance that each filler item is replaced with a trap.
@@ -125,6 +134,7 @@ class BioShockOptions(PerGameCommonOptions):
     level_completion_checks: LevelCompletionChecks
     audio_diary_checks: AudioDiaryChecks
     shop_checks: ShopChecks
+    start_with_research_camera: StartWithResearchCamera
     trap_chance: TrapChance
     death_link: DeathLink
     start_inventory_from_pool: StartInventoryPool
@@ -134,7 +144,7 @@ option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
                            AudioDiaryChecks, ShopChecks]),
-    OptionGroup("Item Pool", [TrapChance]),
+    OptionGroup("Item Pool", [StartWithResearchCamera, TrapChance]),
 ]
 
 option_presets = {

@@ -32,6 +32,7 @@ class GameState:
     stations: Mapping[str, int] | None = None  # level -> Power to the People stations used there
     milestones: frozenset[str] | None = None  # story milestones reached in this save (keys of STORY_MILESTONES)
     weapons: frozenset[str] | None = None  # classes of the weapons the player holds ("Shotgun"), if the agent can tell
+    weapons_pending: bool = False  # the agent can tell which weapons are held but has not looked yet
     garden_bought: Mapping[str, frozenset[int]] | None = None  # level -> Gatherer's Garden lines bought (from 1)
 
 

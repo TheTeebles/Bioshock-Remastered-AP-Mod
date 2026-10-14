@@ -1,9 +1,19 @@
 # BioShock Remastered Randomizer Setup Guide
 
 > **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
-> version, and notices every kind of check there. No whole seed has been played through in the real game yet, and the
-> EVE Drain and Pickpocket traps are not built. "What to expect from the real game today" below says
-> exactly where things stand.
+> version, and notices every kind of check there. No whole seed has been played through in the real game yet.
+> "What to expect from the real game today" below says exactly where things stand.
+
+## Quick start
+
+1. Install Archipelago 0.6.7 or newer, then double-click `bioshock.apworld` to add BioShock to it.
+2. Install Python 3 (tick "Add python.exe to PATH") and run `pip install frida` in a terminal.
+3. Make a YAML ("Generate Template Options" in the Launcher), generate, and host the seed.
+4. Start **BioShock Client** from the Launcher and connect to the room.
+5. Start BioShock Remastered (Steam) and begin a **new game** for this seed. The client says "Game connected" when it
+   has found it.
+
+Each step is explained below.
 
 ## Required Software
 
@@ -88,8 +98,9 @@ If the game was started as administrator, Archipelago has to be started as admin
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
-- **Not yet, on any version:** the EVE Drain and Pickpocket traps. The client names every item it could not give you
-  and keeps it for later.
+- **EVE Drain and Pickpocket traps (Steam):** work in the real game (2026-10-14): EVE Drain empties your EVE and
+  Pickpocket takes half your dollars (rounded up). If the game can't be reached, the client says it could not deliver
+  the trap and keeps it for later.
 
 ## Client commands
 

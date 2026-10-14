@@ -55,6 +55,7 @@ class SimulatedGame:
         self.station_touch = False  # stations open no menu, as the client asks when they are touch checks
         self.held_weapons: set[str] = set()  # weapon classes the player holds ("Crossbow")
         self.reports_weapons = False  # whether the state says which weapons the player holds, as the agent does
+        self.weapons_pending = False  # whether the state says the agent has not looked at the weapons yet
         self.garden_lines: dict[str, list[dict[str, Any]]] = {}  # level -> what its Gardens sell, as the client said
         self.movies: dict[str, Any] | None = None  # the folder and files the client said to hand the game instead
         self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
@@ -94,6 +95,7 @@ class SimulatedGame:
             stations=dict(self.stations),
             milestones=frozenset(self.milestones),
             weapons=frozenset(self.held_weapons) if self.reports_weapons else None,
+            weapons_pending=self.weapons_pending,
             garden_bought={level: frozenset(lines) for level, lines in self.garden_bought.items()},
         )
 

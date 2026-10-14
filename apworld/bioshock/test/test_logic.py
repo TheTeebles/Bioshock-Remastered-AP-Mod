@@ -16,7 +16,8 @@ from ..data import (
 )
 from ..items import ITEM_KIND
 from ..options import AudioDiaryChecks, option_presets
-from ..world import SLOT_DATA_VERSION
+from .. import locations
+from ..world import SLOT_DATA_VERSION, BioShockWorld
 from .bases import BioShockTestBase, generate_multiworld
 
 CATEGORY = {location.name: location.category for location in LOCATION_TABLE}
@@ -302,6 +303,25 @@ class TestOptionChecks(PoolTestBase):
         with self.assertRaises(OptionError):  # one that is merely added to the inventory does not
             self.generate_for_real({**seven_left, "start_inventory": {"Apollo Square Access": 1}})
 
+    def test_shuffled_upgrades_need_room_in_the_pool(self) -> None:
+        stations_only = dict(story_checks=False, little_sister_checks=False, level_completion_checks=False,
+                             audio_diary_checks="off")
+        self.generate(**stations_only, level_access="vanilla")  # 12 stations, 12 upgrades
+        with self.assertRaises(OptionError) as raised:
+            self.generate(**stations_only, level_access="vanilla",
+                          exclude_locations=["Arcadia - Power to the People 1"])
+        self.assertIn("leave room for 11", str(raised.exception))
+
+    def test_access_items_from_the_pool_still_take_room(self) -> None:
+        # The pool is made with every access item in it, and those started with are swapped for filler afterwards,
+        # so they leave no more room for the upgrades.
+        options = dict(story_checks=False, little_sister_checks=False, audio_diary_checks="off",
+                       start_inventory_from_pool={name: 1 for name in ACCESS_ITEMS},
+                       exclude_locations=[f"{level} - Level Complete" for level in self.later_levels])
+        with self.assertRaises(OptionError) as raised:
+            self.generate(**options)
+        self.assertIn("leave room for", str(raised.exception))
+
     def test_filler_only_collectibles_alone_work_without_access_items(self) -> None:
         self.generate(level_access="vanilla", story_checks=False, little_sister_checks=False,
                       power_to_the_people_checks=False, level_completion_checks=False)
@@ -454,9 +474,12 @@ class TestSomewhereToStart(PoolTestBase):
         self.generate_for_real({"exclude_locations": first_two})
 
     def test_ways_out(self) -> None:
+        # Later levels' completion checks leave room for the twelve upgrades without being anywhere to start.
+        room = {"level_completion_checks": True,
+                "exclude_locations": ["Welcome to Rapture - Level Complete", "Medical Pavilion - Level Complete"]}
         for way_out in ({"level_access": "vanilla"},
-                        {"start_inventory": {"Fort Frolic Access": 1}},
-                        {"start_inventory_from_pool": {"Arcadia Access": 1}},
+                        {"start_inventory": {"Fort Frolic Access": 1}, **room},
+                        {"start_inventory_from_pool": {"Arcadia Access": 1}, **room},
                         {"little_sister_checks": True},
                         {"audio_diary_checks": "all"}):  # a Medical Pavilion diary can then hold one
             with self.subTest(way_out=way_out):
@@ -476,7 +499,7 @@ class TestSlotData(BioShockTestBase):
 
     def test_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
-        self.assertEqual(slot_data["slot_data_version"], 3)
+        self.assertEqual(slot_data["slot_data_version"], 4)
         self.assertEqual(SLOT_DATA_VERSION, SUPPORTED_SLOT_DATA_VERSION, "the client that ships with the world")
         self.assertEqual(slot_data["death_link"], 1)
         self.assertEqual(slot_data["story_checks"], 1)
@@ -485,6 +508,27 @@ class TestSlotData(BioShockTestBase):
         self.assertEqual(slot_data["level_access_items"]["Arcadia"], "Arcadia Access")
         self.assertIsNone(slot_data["level_access_items"]["Medical Pavilion"])
 
+    def test_universal_tracker_takes_the_options_from_the_slot_data(self) -> None:
+        slot_data = dict(self.world.fill_slot_data(), shop_checks=2, audio_diary_checks=AudioDiaryChecks.option_all,
+                         level_access=0, death_link=0)
+        self.assertEqual(BioShockWorld.interpret_slot_data(slot_data), slot_data)
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        for name in BioShockWorld.TRACKED_OPTIONS:
+            self.assertEqual(getattr(self.world.options, name).value, slot_data[name], name)
+        self.assertEqual(len([location for location in locations.enabled_locations(self.world)
+                              if location.category == LocationCategory.GATHERERS_GARDEN]), 273)
+
+
+    def test_universal_tracker_rebuilds_a_seed_that_needed_its_start_inventory(self) -> None:
+        # Made with every access item from the pool, so no check had to hold one. The slot data doesn't carry the
+        # start inventory, and the rebuild must not refuse the seed for it.
+        slot_data = dict(self.world.fill_slot_data(), story_checks=0, little_sister_checks=0,
+                         power_to_the_people_checks=0, level_completion_checks=0,
+                         audio_diary_checks=AudioDiaryChecks.option_off, shop_checks=2)
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        self.assertEqual(self.world.options.level_access.value, slot_data["level_access"])
 
 class TestWeaponStations(PoolTestBase):
     """Station checks, on by default: a station is a check you use once, and the weapon upgrades come from the
@@ -509,3 +553,26 @@ class TestWeaponStationsOff(PoolTestBase):
     def test_no_weapon_upgrades_in_the_pool(self) -> None:
         names = {item.name for item in self.multiworld.itempool}
         self.assertFalse(names & set(WEAPON_UPGRADES))
+
+
+class TestResearchCamera(BioShockTestBase):
+    def precollected(self) -> list[str]:
+        return [item.name for item in self.multiworld.precollected_items[self.player]]
+
+    def test_on_by_default(self) -> None:
+        self.assertEqual(self.precollected().count("Research Camera"), 1)
+        self.assertNotIn("Research Camera", [item.name for item in self.multiworld.itempool])
+
+
+class TestNoResearchCamera(BioShockTestBase):
+    options = {"start_with_research_camera": False}
+
+    def test_not_given(self) -> None:
+        self.assertNotIn("Research Camera", [item.name for item in self.multiworld.precollected_items[self.player]])
+
+
+class TestResearchCameraAlreadyInStartInventory(PoolTestBase):
+    def test_given_once(self) -> None:
+        multiworld = self.generate_for_real({"start_inventory": {"Research Camera": 1}})
+        names = [item.name for item in multiworld.precollected_items[1]]
+        self.assertEqual(names.count("Research Camera"), 1)

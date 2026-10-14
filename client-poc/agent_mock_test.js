@@ -186,6 +186,14 @@ function makeRuntime({
           const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
         };
       }
+      if (runtime.nativeBodies && runtime.nativeBodies.has(address.value)) { // a script function's C++ body
+        return (self, frame, result) => {
+          const read = (at) => runtime.memory.get(frame.value + at);
+          runtime.nativeCalls.push({ name: runtime.nativeBodies.get(address.value), self: self.value, fn: read(4),
+            object: read(8), vtable: read(0), result: result.value });
+          if (runtime.onNativeCall) { runtime.onNativeCall(); }
+        };
+      }
       if (address.value === BASE + PROCESS_EVENT) {
         return (self, frame) => {
           const read = (at) => runtime.memory.get(frame.value + at);
@@ -204,6 +212,10 @@ function makeRuntime({
         if ([...runtime.refuse].some((text) => command.includes(text))) { return 0; }
         const playerCommand = [...runtime.playerOnly].some((text) => command.includes(text));
         if (onPlayer !== playerCommand) { return 0; } // each side only takes its own kind of command
+        const dollars = /^GiveItem (\d+) ShockGame\.Credits$/.exec(command);
+        if (dollars && runtime.creditsAt) { // the game adds them to the player's Credits
+          runtime.memory.set(runtime.creditsAt, (runtime.memory.get(runtime.creditsAt) || 0) + Number(dollars[1]));
+        }
         for (const [part, raised] of runtime.raises) {
           if (!command.includes(part)) { continue; }
           for (const spec of raised) {
@@ -503,7 +515,23 @@ function makeRuntime({
     const defaults = runtime.object(0x100);
     poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
     runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
-    return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    // The player's EVE and dollars as ShockPlayer declares them, and (unless left out) its functions for taking some.
+    const removeBioAmmo = make('RemoveBioAmmo', functionClass);
+    const removeCredits = make('RemoveCredits', functionClass);
+    const updateUIStats = make('UpdateUIStats', functionClass);
+    const updateUIBioAmmoBank = make('UpdateUIBioAmmoBank', functionClass);
+    const playerStats = (functions = true, redraws = false) => {
+      fields(playerClass, [['BioAmmo', floatProperty, 0xAF8], ['Credits', intProperty, 0xAEC]]);
+      if (functions) { // in front of the properties
+        poke(removeCredits + 0x44, runtime.memory.get(playerClass + 0x5C));
+        poke(removeBioAmmo + 0x44, removeCredits); poke(playerClass + 0x5C, removeBioAmmo);
+      }
+      if (redraws) { // the HUD's natives, in front as well
+        poke(updateUIBioAmmoBank + 0x44, runtime.memory.get(playerClass + 0x5C));
+        poke(updateUIStats + 0x44, updateUIBioAmmoBank); poke(playerClass + 0x5C, updateUIStats);
+      }
+    };
+    return { playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1468,11 +1496,29 @@ const tests = {
   },
   'weapons held are the ones whose Holder is the player': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.load(); r.frames(2);
-    assert.strictEqual(r.context.rpc.exports.state().weaponsHeld, null, 'no weapon seen yet');
+    r.load();
+    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, true, 'not looked yet');
+    r.frames(2);
+    assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], [], 'no weapon anywhere: none held');
+    assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked');
     model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
     r.frames(3);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
+  },
+  'after a level change the weapons are looked at again before upgrades go in': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.weapon('Shotgun', game.pawn);
+    r.load(); r.frames(3);
+    assert.deepStrictEqual([...state(r).weaponsHeld], ['Shotgun']);
+    const next = r.level('2-fisheries', { extra: 4 }); r.levels.splice(r.levels.indexOf(game.level), 1);
+    r.player(next, { viewport: game.player });
+    r.poke(BASE + 0x1390430, 12000); // a table big enough that a pass over it takes a few ticks
+    r.frame();
+    assert.strictEqual(state(r).weaponsHeld, null, 'the last level\'s weapons no longer count');
+    assert.strictEqual(state(r).weaponsPending, true);
+    r.frames(4);
+    assert.deepStrictEqual([...state(r).weaponsHeld], [], 'the shotgun was the last body\'s');
+    assert.strictEqual(state(r).weaponsPending, false);
   },
   // ---- Gatherer's Gardens ----
   'garden_lines makes each line a copy of chips with its own name, priced from the item': () => {
@@ -1600,9 +1646,125 @@ const tests = {
     r.frames(8);
     assert.ok(r.memory.get(lines[0]) < 0x70000000);
   },
+  // ---- Traps ----
+  'eve_drain and pickpocket call the game\'s RemoveBioAmmo and RemoveCredits': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(2);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0, 'waiting for a call to copy');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(1);
+    const calls = r.scriptCalls.map((c) => [c.self, c.fn, r.memory.get(c.parms)]);
+    const fns = calls.map(([self, fn]) => [self, fn]);
+    assert.deepStrictEqual(fns, [[game.pawn, model.removeBioAmmo], [game.pawn, model.removeCredits]]);
+    assert.strictEqual(calls[0][2], 1000, 'all 100 EVE');
+    assert.strictEqual(calls[1][2], 62, 'half of 123 dollars, rounded up');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[1, 'eve_drain', true], [2, 'pickpocket', true]]);
+  },
+  'a Remove function that fails is not called again, and the trap writes the number instead': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
+    r.load(); r.frames(2);
+    r.onScriptCall = () => { throw new Error('access violation accessing 0x74'); }; // as seen in the game
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(2);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(1);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61, '62 of 123 dollars taken');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[1, true], [2, true]]);
+    const called = r.scriptCalls.length;
+    r.poke(game.pawn + 0xAEC, 100);
+    r.context.rpc.exports.action(3, 'pickpocket');
+    r.frames(2);
+    assert.strictEqual(r.scriptCalls.length, called, 'RemoveCredits is not tried again');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 50);
+  },
+  'a number written by a trap is redrawn on the HUD by calling UpdateUIStats\'s C++ body': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false, true); r.creditsAt = game.pawn + 0xAEC;
+    r.poke(model.updateUIStats + 0xC0, BASE + 0x1D86F0); r.poke(model.updateUIBioAmmoBank + 0xC0, BASE + 0x1D8910);
+    r.nativeBodies = new Map([[BASE + 0x1D86F0, 'UpdateUIStats'], [BASE + 0x1D8910, 'UpdateUIBioAmmoBank']]);
+    r.nativeCalls = [];
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.frames(3);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
+    assert.strictEqual(r.nativeCalls.length, 0, 'waiting for a call to copy the frame\'s vtable from');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(2);
+    assert.strictEqual(r.scriptCalls.length, 0, 'no script function called through ProcessEvent');
+    assert.deepStrictEqual(r.nativeCalls.map((c) => [c.name, c.self, c.fn, c.object]),
+      [['UpdateUIStats', game.pawn, model.updateUIStats, game.pawn],
+        ['UpdateUIBioAmmoBank', game.pawn, model.updateUIBioAmmoBank, game.pawn]]);
+    assert.ok(r.nativeCalls.every((c) => c.vtable !== 0 && c.vtable !== undefined), 'the copied frame\'s vtable');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 123, 'no dollar taken or given');
+    assert.deepStrictEqual(r.execCalls.map((c) => c.command), [], 'no console command, so no "Collected" message');
+    r.frames(5);
+    assert.strictEqual(r.nativeCalls.length, 2, 'redrawn once per trap');
+  },
+  'a HUD redraw that fails is not tried again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false, true); r.creditsAt = game.pawn + 0xAEC;
+    r.poke(model.updateUIStats + 0xC0, BASE + 0x1D86F0); r.poke(model.updateUIBioAmmoBank + 0xC0, 0x1234);
+    r.nativeBodies = new Map([[BASE + 0x1D86F0, 'UpdateUIStats']]);
+    r.nativeCalls = [];
+    r.onNativeCall = () => { throw new Error('access violation accessing 0x74'); };
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.frames(3);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(2);
+    assert.strictEqual(r.nativeCalls.length, 1, 'UpdateUIBioAmmoBank is not reached either');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(3);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61, 'the trap still works');
+    assert.strictEqual(r.nativeCalls.length, 1, 'not called again');
+  },
+  'without the Remove functions the trap writes the number itself': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false); r.creditsAt = game.pawn + 0xAEC;
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[1, true], [2, true]]);
+  },
+  'a trap is refused where the player has no such number': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); // no BioAmmo declared
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 1000, 'left alone');
+    const answers = r.messages.filter((m) => m.type === 'action_result');
+    assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[1, false]]);
+    assert.ok(answers[0].reason.includes('no BioAmmo'), answers[0].reason);
+  },
+  'a trap waits for a body and gives up after a while': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
+    r.load(); r.frames(2);
+    r.poke(game.controller + 0x450, 0); // between two levels
+    r.context.rpc.exports.action(3, 'pickpocket'); r.frames(3);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0);
+    r.frames(310);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[3, false]]);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 123);
+  },
   'unsupported actions answer straight away': () => {
     const r = makeRuntime(); r.engine(); r.load();
-    r.context.rpc.exports.action(4, 'eve_drain');
+    r.context.rpc.exports.action(4, 'flood_the_level');
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[4, false]]);
   },

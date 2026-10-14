@@ -152,6 +152,12 @@ class Player:
         self.game = game
 
 
+def without_camera(players: Mapping[str, Mapping[str, Any]]) -> dict[str, dict[str, Any]]:
+    """The players, starting without the Research Camera unless a test says otherwise: the tests count exactly what
+    each player is given."""
+    return {name: {"start_with_research_camera": False, **options} for name, options in players.items()}
+
+
 class ServerTestBase(unittest.IsolatedAsyncioTestCase):
     players: ClassVar[Mapping[str, Mapping[str, Any]]] = {"Jack": {}}
     seed: ClassVar[int] = 1
@@ -163,7 +169,7 @@ class ServerTestBase(unittest.IsolatedAsyncioTestCase):
     def setUpClass(cls) -> None:
         cls._directory = tempfile.TemporaryDirectory(prefix="bioshock_ap_test_")
         cls.addClassCleanup(cls._directory.cleanup)
-        cls.archive = generate_seed(cls._directory.name, cls.players, cls.seed)
+        cls.archive = generate_seed(cls._directory.name, without_camera(cls.players), cls.seed)
 
     async def asyncSetUp(self) -> None:
         self.server = new_server(self.archive, self.password)
@@ -526,7 +532,7 @@ class TestSecondSeed(ServerTestBase):
         super().setUpClass()
         directory = tempfile.TemporaryDirectory(prefix="bioshock_ap_test_")
         cls.addClassCleanup(directory.cleanup)
-        cls.second_archive = generate_seed(directory.name, cls.players, cls.seed + 1)
+        cls.second_archive = generate_seed(directory.name, without_camera(cls.players), cls.seed + 1)
 
     async def asyncSetUp(self) -> None:
         await super().asyncSetUp()

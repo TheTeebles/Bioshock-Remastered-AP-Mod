@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.5';
+const AGENT_VERSION = '2026-10-14.13';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -593,6 +593,9 @@ function readState() {
     stationTouch: touch.installed,
     // Classes of the weapons the player holds (Pistol, Shotgun, ...); null while the agent cannot tell.
     weaponsHeld: weapons.owned,
+    // True while the agent can tell but has not looked yet (its first pass over the objects is not done). The
+    // client keeps upgrades back until then.
+    weaponsPending: objectModel !== null && virtualQuery !== null && !weapons.looked,
     // Gatherer's Garden lines (from 1) seen bought, by map, and how many lines sell multiworld items.
     gardenBought: Object.fromEntries(
       [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
@@ -1474,6 +1477,11 @@ function watchObjects(map, now) {
     scan.stations = [];
     stations.list = [];
     scan.weapons = [];
+    weapons.list = []; // the last level's weapons are gone, and which ones the player holds is not known yet
+    weapons.owned = null;
+    weapons.scanned = false;
+    weapons.looked = false;
+    weapons.reported = '';
     scan.gardens = [];
     gardens.list = [];
     scan.classes = new Map();
@@ -1519,6 +1527,7 @@ function watchObjects(map, now) {
     stations.list = scan.stations;
     scan.stations = [];
     weapons.list = scan.weapons;
+    weapons.scanned = true;
     scan.weapons = [];
     gardens.list = scan.gardens;
     scan.gardens = [];
@@ -1608,7 +1617,8 @@ function readStations(map) {
 
 // Every weapon object of the game (classes that extend Weapon), and the classes of those the player holds: their
 // Holder is the player's body. The client gives an upgrade only once its weapon is among them.
-const weapons = { list: [], holders: new Map(), owned: null, reported: '' };
+// scanned: a pass over the objects has listed the weapons; looked: readWeapons has gone through such a list since.
+const weapons = { list: [], holders: new Map(), owned: null, reported: '', scanned: false, looked: false };
 
 function holderOf(weapon) {
   const cls = classOfObject(weapon);
@@ -1624,6 +1634,7 @@ function holderOf(weapon) {
 }
 
 function readWeapons(pawn) {
+  weapons.looked = weapons.scanned;
   const owned = new Set();
   let known = false;
   for (const weapon of weapons.list) {
@@ -1640,8 +1651,11 @@ function readWeapons(pawn) {
       owned.add(nameOfObject(cls));
     }
   }
+  if (!known && weapons.scanned && weapons.list.length === 0) {
+    known = true; // a whole pass found no weapon at all, so the player holds none (a new game, before the wrench)
+  }
   if (!known) {
-    return; // no weapon seen yet, or none with a Holder: the client gives upgrades as before
+    return; // weapons seen, but none with a Holder: the client gives upgrades as before
   }
   weapons.owned = [...owned].sort();
   const text = weapons.owned.join(', ');
@@ -1881,13 +1895,13 @@ function findGameHeap() {
   }
 }
 
+// null when the game's heap cannot give it: Frida's own memory would be freed under the game's feet.
 function lasting(size) {
   const memory = gameHeap === null ? null : gameHeap(size);
-  return memory === null || memory.isNull() ? Memory.alloc(size) : memory;
+  return memory === null || memory.isNull() ? null : memory;
 }
 
-function writeText(at, text) {
-  const buffer = lasting(2 * (text.length + 1)); // kept by the clone that holds it
+function writeText(at, buffer, text) {
   buffer.writeUtf16String(text);
   at.writePointer(buffer);
   at.add(4).writeU32(text.length + 1);
@@ -1928,13 +1942,18 @@ function standIn(name, description, iconOf = null) {
     return null;
   }
   const copy = lasting(CLASS_COPY_SIZE);
-  Memory.copy(copy, cls, size);
   const ownValues = lasting(defaults.count);
+  const texts = [name, description].map((text) => lasting(2 * (text.length + 1))); // kept by the clone
+  if (copy === null || ownValues === null || texts.includes(null)) {
+    gardens.trouble = 'the game\'s heap has no memory for a copy of a Garden line';
+    return null;
+  }
+  Memory.copy(copy, cls, size);
   Memory.copy(ownValues, defaults.data, defaults.count);
   copy.add(defaults.at).writePointer(ownValues);
   copy.add(defaults.at + 8).writeU32(defaults.count);
-  const texts = [writeText(ownValues.add(defaults.name), name),
-    writeText(ownValues.add(defaults.description), description)];
+  writeText(ownValues.add(defaults.name), texts[0], name);
+  writeText(ownValues.add(defaults.description), texts[1], description);
   const iconName = iconOf === null ? null : carefulS32(iconOf.add(objectModel.objectName));
   if (iconName !== null) {
     copy.add(objectModel.objectName).writeU32(iconName);
@@ -2433,6 +2452,217 @@ function carryOutKills(pawn, now) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Traps
+// ---------------------------------------------------------------------------------------------------------------
+
+// EVE Drain empties the player's EVE, Pickpocket takes half their dollars. ShockPlayer keeps them as BioAmmo (float)
+// and Credits (int), and has RemoveBioAmmo and RemoveCredits for taking some away (its script, exported 2026-10-13).
+// The trap reads the number by its property's name and calls the Remove function the way DeathLink calls OnKilled,
+// so the game does its own bookkeeping (the HUD, limits). Where script calls are not possible, it writes the number.
+// Like kills, traps are carried out on the game thread once the player has a body.
+const TRAPS = {
+  eve_drain: { stat: 'BioAmmo', kind: 'FloatProperty', remove: 'RemoveBioAmmo', take: (eve) => eve },
+  pickpocket: { stat: 'Credits', kind: 'IntProperty', remove: 'RemoveCredits', take: (dollars) => Math.ceil(dollars / 2) },
+};
+const traps = []; // { id, name, at }: traps asked for and not carried out yet
+const statProperties = new Map(); // `${class}/${stat}` -> offset, or null when the class has no such property
+const refusedRemoves = new Map(); // Remove function name -> why calling it failed; the number is written instead
+
+// Where a property of this name and kind sits in an object of this class (or a class it extends).
+function findPropertyOfKind(cls, wanted, kind) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 5000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === kind) {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0x30 || offset > 0x8000 ? null : offset;
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+function statOf(pawn, trap) {
+  const cls = classOfObject(pawn);
+  if (objectModel === null || cls === null) {
+    return null;
+  }
+  const key = `${cls}/${trap.stat}`;
+  if (!statProperties.has(key)) {
+    const offset = findPropertyOfKind(cls, trap.stat, trap.kind);
+    if (offset === null && !readable(cls)) {
+      return null; // the class could not be read just now (a load); looked up again next time
+    }
+    statProperties.set(key, offset);
+    log(offset === null ? `the player has no ${trap.kind} ${trap.stat}`
+      : `the player's ${trap.stat} is at +0x${offset.toString(16)}`);
+  }
+  return statProperties.get(key);
+}
+
+function readStat(at, trap) {
+  return trap.kind === 'FloatProperty' ? at.readFloat() : at.readS32();
+}
+
+function shown(value) {
+  return Math.round(value * 10) / 10;
+}
+
+// Carries out one trap. Returns null when done, a reason when it can't be, or undefined to try again next tick.
+function springTrap(pawn, trap) {
+  const offset = statOf(pawn, trap);
+  if (offset === null) {
+    return `the game has no ${trap.stat} on the player where the agent can find it`;
+  }
+  const at = pawn.add(offset);
+  const before = readStat(at, trap);
+  const amount = trap.take(before);
+  const remove = refusedRemoves.has(trap.remove) ? null : findFunction(pawn, trap.remove);
+  let why = remove === null ? (refusedRemoves.get(trap.remove) || `the player has no ${trap.remove}`)
+    : scriptCallsTrouble();
+  if (remove !== null && why === null) {
+    if (!readyToCallScript()) {
+      return undefined; // watching for a call to copy; the trap follows in a later tick
+    }
+    const parms = Memory.alloc(0x40); // room for the function's locals as well as its one parameter
+    for (let n = 0; n < 0x40; n += 4) {
+      parms.add(n).writeU32(0);
+    }
+    if (trap.kind === 'FloatProperty') {
+      parms.writeFloat(amount);
+    } else {
+      parms.writeS32(amount);
+    }
+    try {
+      callScript(pawn, remove, parms);
+      parms.isNull();
+      log(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
+      return null;
+    } catch (e) {
+      // Seen in the game (2026-10-14): both Remove functions stopped on "access violation accessing 0x74". The
+      // number is written instead, and the function is not called again this session.
+      why = `${trap.remove} failed: ${e.message}`;
+      refusedRemoves.set(trap.remove, why);
+    }
+  }
+  // A call that failed part way may have taken some already: the target is what the trap leaves, never less.
+  const now = readStat(at, trap);
+  const target = Math.max(0, Math.min(now, before - amount));
+  if (trap.kind === 'FloatProperty') {
+    at.writeFloat(target);
+  } else {
+    at.writeS32(target);
+  }
+  log(`${trap.stat} written: ${shown(now)} -> ${shown(readStat(at, trap))} (${why})`);
+  hud.redraw = true;
+  return null;
+}
+
+// A number written straight into the player is not shown until the HUD is told (Teebs, 2026-10-14: the EVE bar and
+// the dollars stayed as they were). Calling ShockPlayer's UpdateUIStats as a script function failed like the Remove
+// functions (access violation at 0x74), and a dollar given back through GiveItem showed a "Collected" message. Its
+// C++ body, called directly with a frame the agent builds, redraws the EVE bar (probe 2026-10-14.16; the dollars
+// counter does not flash up, which Teebs accepts).
+const NATIVE_ENTRY = 0xc0; // a native function's C++ body, inside its UFunction
+const HUD_REDRAWS = ['UpdateUIStats', 'UpdateUIBioAmmoBank'];
+const EX_END_FUNCTION_PARMS = 0x16; // the bytecode a native steps over once its (here: no) parameters are read
+const hud = { redraw: false, trouble: null, calls: new Map() };
+
+function nativeCall(pawn, name) {
+  if (hud.calls.has(name)) {
+    return hud.calls.get(name);
+  }
+  const fn = findFunction(pawn, name);
+  const entry = fn === null ? null : carefulPtr(fn.add(NATIVE_ENTRY));
+  let call = null;
+  if (entry !== null && entry.toUInt32() >= moduleStart && entry.toUInt32() < moduleEnd) {
+    call = { fn, run: new NativeFunction(entry, 'void', ['pointer', 'pointer', 'pointer'], 'thiscall') };
+    log(`${name}'s C++ body is at module+${entry.sub(base)}`);
+  } else {
+    log(`${name} has no C++ body the agent can call`);
+  }
+  hud.calls.set(name, call);
+  return call;
+}
+
+function callNative(pawn, call) {
+  const code = Memory.alloc(16);
+  for (let at = 0; at < 16; at += 4) {
+    code.add(at).writeU32(EX_END_FUNCTION_PARMS * 0x01010101);
+  }
+  const frame = Memory.alloc(0x40);
+  const locals = Memory.alloc(0x40);
+  const result = Memory.alloc(0x10);
+  for (let at = 0; at < 0x40; at += 4) {
+    frame.add(at).writeU32(0);
+    locals.add(at).writeU32(0);
+  }
+  frame.writePointer(scriptCalls.template.words[0]); // the frame's vtable, from the game's own call
+  frame.add(4).writePointer(call.fn);
+  frame.add(8).writePointer(pawn);
+  frame.add(0xC).writePointer(code);
+  frame.add(0x10).writePointer(locals);
+  call.run(pawn, frame, result);
+  [code, frame, locals, result].forEach((m) => m.isNull()); // kept alive until the call is done
+}
+
+function redrawHud(pawn) {
+  if (!hud.redraw || pawn === null || hud.trouble !== null) {
+    return;
+  }
+  hud.trouble = scriptCallsTrouble();
+  if (hud.trouble !== null) {
+    log(`the HUD is not redrawn: ${hud.trouble}`);
+    return;
+  }
+  if (!readyToCallScript()) {
+    return; // watching for a call to copy the frame's vtable from; redrawn in a later tick
+  }
+  hud.redraw = false;
+  for (const name of HUD_REDRAWS) {
+    const call = nativeCall(pawn, name);
+    if (call === null) {
+      continue;
+    }
+    try {
+      callNative(pawn, call);
+    } catch (e) {
+      hud.trouble = `${name} failed: ${e.message}`;
+      log(`the HUD is not redrawn again this session: ${hud.trouble}`);
+      return;
+    }
+  }
+}
+
+function dropLateTraps(now) {
+  while (traps.length > 0 && now - traps[0].at > KILL_PATIENCE_MS) {
+    const late = traps.shift();
+    send({ type: 'action_result', id: late.id, name: late.name, ok: false,
+      reason: 'the player could not be reached in time (a menu or a loading screen)' });
+  }
+}
+
+function carryOutTraps(pawn, now) {
+  dropLateTraps(now);
+  redrawHud(pawn);
+  while (traps.length > 0) {
+    let trouble;
+    try {
+      trouble = springTrap(pawn, TRAPS[traps[0].name]);
+    } catch (e) {
+      trouble = `the player's numbers could not be changed (${e.message})`;
+    }
+    if (trouble === undefined) {
+      return;
+    }
+    const trap = traps.shift();
+    send(trouble === null ? { type: 'action_result', id: trap.id, name: trap.name, ok: true }
+      : { type: 'action_result', id: trap.id, name: trap.name, ok: false, reason: trouble });
+  }
+}
+
 function watchPlayer(level, info, map, now) {
   const loading = readPath(build.loading, (p) => p.readS32());
   if (loading) {
@@ -2443,6 +2673,7 @@ function watchPlayer(level, info, map, now) {
     return;
   }
   carryOutKills(body.pawn, now);
+  carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
 }
@@ -2478,6 +2709,7 @@ function onLevelTick(level) {
       probeTick(level, now);
     }
     dropLateKills(now);
+    dropLateTraps(now);
     runQueuedCommand(level, info, now);
   } catch (e) {
     if (!complained) {
@@ -2587,11 +2819,19 @@ rpc.exports = {
   },
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
-  // 'redirect_movies {json}' (Flash movies from the client's folder) at once.
-  // The traps are not built yet.
+  // 'redirect_movies {json}' (Flash movies from the client's folder) at once. The traps 'eve_drain' and
+  // 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(TRAPS, name)) {
+      if (objectModel === null || virtualQuery === null) {
+        send({ type: 'action_result', id, name, ok: false, reason: 'this build gives the agent no way to find it' });
+      } else {
+        traps.push({ id, name, at: Date.now() });
+      }
       return;
     }
     for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
