@@ -36,7 +36,8 @@ Shop Checks (off by default) make each gene upgrade a Gatherer's Garden sells a 
 but never anything needed to progress, since the ADAM to buy them depends on how you play. Only the Neptune's
 Bounty Garden is mapped so far (16 checks). Each of its lines is renamed after the multiworld item it holds. Your
 own BioShock items cost what the game charges for them; other items cost 80 ADAM if they are useful and 20
-otherwise. Your own items show their own icon and other items show the Archipelago icon. Buying a line sends its
+otherwise. Your own items show their own icon (a weapon upgrade shows its weapon) and other items show the
+Archipelago icon. Buying a line sends its
 check and gives you a bag of chips instead of the gene.
 
 Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.

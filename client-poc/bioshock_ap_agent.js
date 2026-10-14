@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.4';
+const AGENT_VERSION = '2026-10-14.5';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1943,11 +1943,15 @@ function standIn(name, description, iconOf = null) {
   return copy;
 }
 
-// The class whose name a line's stand-in takes, for its icon: the real item's for one of our own BioShock items, and
-// for anything else the AP icon's, once the Garden's menu that can show it has been loaded. null: the chips icon.
+// The class whose name a line's stand-in takes, for its icon: the real item's for one of our own BioShock items, the
+// one the client named for an item with no icon of its own (a weapon upgrade's weapon), and for anything else the AP
+// icon's, once the Garden's menu that can show it has been loaded. null: the chips icon.
 function iconFor(wanted) {
   if (wanted.className !== null) {
     return gardens.classes.get(wanted.className) || null;
+  }
+  if (wanted.iconClass !== null && gardens.classes.has(wanted.iconClass)) {
+    return gardens.classes.get(wanted.iconClass);
   }
   return movies.served.has(AP_ICON_MENU) ? gardens.classes.get(AP_ICON_CLASS) || null : null;
 }
@@ -1961,6 +1965,7 @@ function setGardenLines(config) {
   for (const entry of Array.isArray(config.lines) ? config.lines : []) {
     if (Number.isInteger(entry.line) && entry.line > 0 && typeof entry.name === 'string') {
       const className = typeof entry.class === 'string' && /^\w{1,64}$/.test(entry.class) ? entry.class : null;
+      const iconClass = typeof entry.icon === 'string' && /^\w{1,64}$/.test(entry.icon) ? entry.icon : null;
       lines.set(entry.line, {
         name: entry.name.slice(0, 60),
         description: String(entry.description || '').slice(0, 200),
@@ -1968,9 +1973,12 @@ function setGardenLines(config) {
         bought: entry.bought === true,
         className,
         known: entry.known === true,
+        iconClass,
       });
-      if (className !== null) {
-        wanted.add(className);
+      for (const name of [className, iconClass]) {
+        if (name !== null) {
+          wanted.add(name);
+        }
       }
     }
   }

@@ -1527,8 +1527,8 @@ const tests = {
   },
   'redirect_movies hands the game the client\'s menu, whose lines then take the AP icon': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
-    const enrage = model.itemClass('BerserkRage', 30);
-    const { lines } = model.garden(2);
+    const enrage = model.itemClass('BerserkRage', 30); const thrower = model.itemClass('ChemicalThrower', 0);
+    const { lines } = model.garden(4);
     r.load(); r.frames(2);
     assert.strictEqual(state(r).exe, 'E:\\Game\\Build\\Final\\BioshockHD.exe', 'for the client to find the menu');
     const redirect = (id, offer) => r.context.rpc.exports.action(id, `redirect_movies ${JSON.stringify(offer)}`);
@@ -1537,7 +1537,9 @@ const tests = {
     assert.strictEqual(JSON.stringify(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok])),
       '[[1,true],[2,false]]');
     gardenLines(r, 3, [{ line: 1, name: 'Hookshot', description: '', price: 80 },
-      { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false }]);
+      { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
+      { line: 3, name: 'Chemical Thrower Range', description: '', price: 80, icon: 'ChemicalThrower' },
+      { line: 4, name: 'Pistol Clip Size', description: '', price: 80, icon: 'Pistol' }]);
     r.frames(8);
     const nameOf = (at) => r.memory.get(at + 0x28);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.chips), 'the menu open now is the game\'s own');
@@ -1551,6 +1553,9 @@ const tests = {
     r.frames(8);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.item), 'someone else\'s item: named Item, for the AP icon');
     assert.strictEqual(nameOf(r.memory.get(lines[1])), nameOf(enrage), 'our own item keeps its real icon');
+    assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(thrower), 'a weapon upgrade shows its weapon');
+    assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, '... at the client\'s price, not the weapon\'s value');
+    assert.strictEqual(nameOf(r.memory.get(lines[3])), nameOf(model.item), 'its weapon not loaded: the AP icon');
     redirect(4, { folder: 'D:\\other', files: ['APIcons.swf'] });
     assert.strictEqual(r.hooks.filter((h) => h.address === CREATE_FILE).length, 1, 'one hook, whatever is asked');
     assert.strictEqual(r.openFile(`${game}APIcons.swf`), 'D:\\other\\APIcons.swf');

@@ -789,6 +789,13 @@ def garden_class(item: str, own: bool) -> str | None:
     return None if give is None else give.rpartition(".")[2]
 
 
+def garden_icon(item: str, own: bool) -> str | None:
+    """For one of this slot's own items with no Garden icon of its own, a class whose icon fits it: a weapon upgrade
+    shows its weapon (the Garden's menu imports every weapon's icon under the weapon's class name)."""
+    upgrade = WEAPON_UPGRADE.get(item) if own else None
+    return None if upgrade is None else upgrade[0]
+
+
 def garden_price_known(item: str, own: bool) -> bool:
     """Whether garden_price is the item's vanilla Garden price rather than one by importance."""
     return own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES

@@ -1276,12 +1276,13 @@ class TestGatherersGarden(unittest.TestCase):
 
     def test_prices_follow_the_item(self) -> None:
         h = self.shop()
-        line = {n: game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, n] for n in (1, 2, 3, 5)}
+        line = {n: game_data.GARDEN_LOCATION[NEPTUNES_BOUNTY, n] for n in (1, 2, 3, 5, 6)}
         h.placed = {
             line[1]: ScoutedItem("Progressive Sonic Boom", "Teebs", 2, True),  # a gene of ours: its vanilla price
             line[2]: ScoutedItem("Potion", "Link", 2, False),
             line[3]: ScoutedItem("Rupee", "Link", 0, False),
             line[5]: ScoutedItem("Speedy Hacker", "Teebs", 2, True),  # a gene whose price is not known yet
+            line[6]: ScoutedItem("Chemical Thrower Range", "Teebs", 2, True),  # no Garden icon: its weapon's
         }
         h.connect().attach()
         h.game.travel(NEPTUNES_BOUNTY)
@@ -1293,6 +1294,10 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual((offer[1]["class"], offer[1]["known"]), ("AirBlast", True))
         self.assertEqual((offer[5]["class"], offer[5]["known"]), ("SlowFlow", False))
         self.assertNotIn("class", offer[2], "someone else's item has no class of ours")
+        self.assertNotIn("icon", offer[2])
+        self.assertEqual(offer[6].get("icon"), "ChemicalThrower")
+        self.assertNotIn("class", offer[6], "priced by importance, not as the weapon")
+        self.assertEqual(offer[6]["price"], game_data.USEFUL_PRICE)
 
     def test_every_gene_price_is_for_an_item(self) -> None:
         self.assertLessEqual(set(game_data.GENE_PRICES), {entry.name for entry in ITEM_TABLE})

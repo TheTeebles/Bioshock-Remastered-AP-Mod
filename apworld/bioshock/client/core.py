@@ -697,6 +697,9 @@ class BridgeCore:
             if game_class is not None:
                 entry["class"] = game_class
                 entry["known"] = game_data.garden_price_known(item.item, item.own)
+            icon = game_data.garden_icon(item.item, item.own)
+            if icon is not None:
+                entry["icon"] = icon  # only its icon: the line keeps the client's price
             lines.append(entry)
         if not lines:
             return
