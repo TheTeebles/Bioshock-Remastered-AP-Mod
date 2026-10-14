@@ -612,12 +612,23 @@ function makeRuntime({
       poke(at + 0x98, rows); poke(at + 0x9C, 2); poke(at + 0xA0, 2);
       return at;
     };
+    // A script note (ActionScriptNote) whose Label has room for `room` characters: a string the game made that
+    // nothing reads while playing.
+    const noteClass = cls('ActionScriptNote', cls('Action', objectClass));
+    fields(noteClass, [['Label', strProperty, 0x80]]);
+    const note = (text, room) => {
+      const at = make('ActionScriptNote0', noteClass, 0x100);
+      runtime.string(at + 0x80, text);
+      poke(at + 0x88, room);
+      return at;
+    };
+    const textOf = (at) => runtime.text.get(runtime.memory.get(at));
     const changeOf = (change) => ({
       map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
       rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
-    return { bathysphere, unlockedOf, arrivalOf, levelChange, changeOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { bathysphere, unlockedOf, arrivalOf, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1693,7 +1704,32 @@ const tests = {
     r.frames(6);
     assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
   },
-  'a level change whose strings have no room and are not on the process heap is left alone and said': () => {
+  'where the hub does not fit, the crossing borrows script notes\' strings, and gives them back when it opens': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const short = model.note('tiny', 4);
+    const first = model.note('A long note about the submarine', 40);
+    const second = model.note('Another long note about the dock', 40);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    const labelBuffer = r.memory.get(change + 0x8C);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '1-Medical', label: 'Backtrack_MedicalStart', rows: ['1-Medical', 'Backtrack_MedicalStart'] });
+    assert.strictEqual(model.textOf(short + 0x80), 'tiny', 'a note without room is left alone');
+    // "1-Medical" fits where "3-Arcadia" was; the arrival point does not, so it takes the first note's buffer.
+    assert.strictEqual(r.memory.get(first + 0x80), labelBuffer, 'the note now owns the old buffer: one owner each');
+    assert.strictEqual(model.textOf(second + 0x80), 'Another long note about the dock', 'only what is needed');
+    assert.strictEqual(state(r).travelTrouble, null);
+    travelRules(r, 2, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+  },
+  'a level change whose strings have no room and no note to borrow from is left alone and said': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '5-Ryan');
     model.bathysphere([0], 8);

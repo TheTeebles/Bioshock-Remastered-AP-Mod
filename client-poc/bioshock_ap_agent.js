@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.14';
+const AGENT_VERSION = '2026-10-14.15';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1461,6 +1461,8 @@ function kindOf(cls) {
         kind = 'bathysphere';
       } else if (lineage.includes('ActionChangeLevel')) {
         kind = 'changelevel';
+      } else if (lineage.includes('ActionScriptNote') || lineage.includes('ActionLog')) {
+        kind = 'note';
       }
     }
     if (classKinds.size > 20000) {
@@ -1485,8 +1487,11 @@ function watchObjects(map, now) {
     scan.map = map; // a new map, or a save loaded: start the pass again
     scan.bathyspheres = [];
     scan.changes = [];
+    scan.notes = [];
     travel.managers = [];
     travel.changes = [];
+    travel.notes = [];
+    travel.borrowed = new Set();
     scan.next = 0;
     scan.quests = [];
     scan.stations = [];
@@ -1529,6 +1534,8 @@ function watchObjects(map, now) {
       scan.bathyspheres.push(object);
     } else if (kind === 'changelevel') {
       scan.changes.push(object);
+    } else if (kind === 'note') {
+      scan.notes.push(object);
     } else if (kind === 'class') {
       const name = nameOfObject(object);
       if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
@@ -1554,6 +1561,8 @@ function watchObjects(map, now) {
     scan.bathyspheres = [];
     travel.changes = scan.changes;
     scan.changes = [];
+    travel.notes = scan.notes;
+    scan.notes = [];
     if (scan.placeholder !== null) {
       gardens.placeholder = scan.placeholder;
       scan.placeholder = null;
@@ -2189,6 +2198,9 @@ const travel = {
   trouble: null,
   told: new Set(), // troubles already logged
   offered: null, // the destinations offered the last time they were looked at
+  notes: [], // the level's script notes and log lines: strings the game made that nothing reads while playing
+  borrowed: new Set(), // their strings already swapped into a level change
+  noteFields: new Map(), // class -> offset of its string
 };
 
 const heapApi = (() => {
@@ -2317,31 +2329,79 @@ function nameAt(at) {
   return text === null ? null : text.toLowerCase();
 }
 
-// Whether writeString can write this text there.
-function canWriteString(at, text) {
-  const data = carefulPtr(at);
-  const max = carefulS32(at.add(8));
-  return data !== null && !data.isNull() && ((max !== null && text.length + 1 <= max) || onProcessHeap(data));
+// A string the game made, with room for `room` characters (terminator included), that nothing reads while playing:
+// a script note's Label or a log line's Text. Strings given memory of our own crash the game once the level change
+// runs (in-game test 2026-10-14), so a name that does not fit swaps buffers with one of these instead: pointer,
+// count and room travel together, every buffer keeps exactly one owner, and the game frees both as usual.
+function borrowString(room) {
+  for (const note of travel.notes) {
+    const cls = classOfObject(note);
+    if (cls === null) {
+      continue;
+    }
+    const key = cls.toString();
+    if (!travel.noteFields.has(key)) {
+      const field = findProperty(cls, 'Label', 'StrProperty') || findProperty(cls, 'Text', 'StrProperty');
+      travel.noteFields.set(key, field === null ? null : field.offset);
+    }
+    const offset = travel.noteFields.get(key);
+    if (offset === null) {
+      continue;
+    }
+    const at = note.add(offset);
+    const data = carefulPtr(at);
+    const max = carefulS32(at.add(8));
+    if (travel.borrowed.has(at.toString()) || data === null || data.isNull() || max === null || max < room ||
+        max > 4096 || !readableRange(data, max * 2)) {
+      continue;
+    }
+    return at;
+  }
+  return null;
 }
 
-// Writes an engine string: in its own buffer when it fits, else in a new one from the process heap if the old one
-// was there too. False when neither works.
+function swapStrings(a, b) {
+  const first = [a.readPointer(), a.add(4).readU32(), a.add(8).readU32()];
+  a.writePointer(b.readPointer());
+  a.add(4).writeU32(b.add(4).readU32());
+  a.add(8).writeU32(b.add(8).readU32());
+  b.writePointer(first[0]);
+  b.add(4).writeU32(first[1]);
+  b.add(8).writeU32(first[2]);
+}
+
+// Makes room for `text` in the engine string at `at`: in place, or by borrowing a game string. Returns a function
+// that undoes the borrowing (a no-op when nothing was borrowed), or null when there is no room to be had.
+function makeRoom(at, text) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8));
+  if (data === null || data.isNull() || max === null) {
+    return null;
+  }
+  if (text.length + 1 <= max) {
+    return () => {};
+  }
+  const donor = borrowString(text.length + 1);
+  if (donor === null) {
+    return null;
+  }
+  swapStrings(at, donor);
+  travel.borrowed.add(donor.toString());
+  return () => {
+    swapStrings(at, donor);
+    travel.borrowed.delete(donor.toString());
+  };
+}
+
+// Writes an engine string in its own buffer, which must have room (see makeRoom).
 function writeString(at, text) {
   const data = carefulPtr(at);
   const max = carefulS32(at.add(8));
-  if (data !== null && !data.isNull() && max !== null && text.length + 1 <= max) {
-    data.writeUtf16String(text);
-    at.add(4).writeU32(text.length + 1);
-    return true;
-  }
-  if (data === null || data.isNull() || !onProcessHeap(data)) {
+  if (data === null || data.isNull() || max === null || text.length + 1 > max) {
     return false;
   }
-  const buffer = heapApi.alloc(heapApi.heap, 0x8, (text.length + 1) * 2);
-  if (buffer.isNull()) {
-    return false;
-  }
-  writeText(at, buffer, text);
+  data.writeUtf16String(text);
+  at.add(4).writeU32(text.length + 1);
   return true;
 }
 
@@ -2435,8 +2495,15 @@ function changeRows(change, layout) {
 // Points a level change at a map and arrival point: its strings, and the rows that would hand it the old ones.
 // `values` maps 'mapname'/'startlocationlabel' to the name index each row gets.
 function pointChange(change, layout, map, label, values) {
-  if (!canWriteString(change.add(layout.map), map) || !canWriteString(change.add(layout.label), label) ||
-      !writeString(change.add(layout.map), map) || !writeString(change.add(layout.label), label)) {
+  const undoMap = makeRoom(change.add(layout.map), map);
+  const undoLabel = undoMap === null ? null : makeRoom(change.add(layout.label), label);
+  if (undoLabel === null) {
+    if (undoMap !== null) {
+      undoMap();
+    }
+    return false;
+  }
+  if (!writeString(change.add(layout.map), map) || !writeString(change.add(layout.label), label)) {
     return false;
   }
   for (const { at, property } of changeRows(change, layout)) {
