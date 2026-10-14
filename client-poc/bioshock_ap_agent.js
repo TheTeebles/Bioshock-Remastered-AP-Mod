@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.13';
+const AGENT_VERSION = '2026-10-14.14';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -601,6 +601,11 @@ function readState() {
       [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
     gardenLines: gardens.config === null ? 0 : gardens.config.lines.size,
     gardenTrouble: gardens.trouble,
+    // Open Rapture: the bathysphere destinations offered now (indexes), the level changes pointed at the hub, and
+    // what went wrong, if anything.
+    travelOffered: travel.offered,
+    travelRedirects: travel.originals.size,
+    travelTrouble: travel.trouble,
     // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
     apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
@@ -1425,6 +1430,7 @@ const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = {
   next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
+  bathyspheres: [], changes: [],
 };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
@@ -1451,6 +1457,10 @@ function kindOf(cls) {
         kind = 'weapon';
       } else if (lineage.includes('GrowthStation')) {
         kind = 'garden';
+      } else if (lineage.includes('BathysphereManager')) {
+        kind = 'bathysphere';
+      } else if (lineage.includes('ActionChangeLevel')) {
+        kind = 'changelevel';
       }
     }
     if (classKinds.size > 20000) {
@@ -1471,7 +1481,12 @@ function watchObjects(map, now) {
     return;
   }
   if (map !== scan.map) {
+    noteTravel(scan.map, map);
     scan.map = map; // a new map, or a save loaded: start the pass again
+    scan.bathyspheres = [];
+    scan.changes = [];
+    travel.managers = [];
+    travel.changes = [];
     scan.next = 0;
     scan.quests = [];
     scan.stations = [];
@@ -1510,6 +1525,10 @@ function watchObjects(map, now) {
       scan.weapons.push(object);
     } else if (kind === 'garden') {
       scan.gardens.push(object);
+    } else if (kind === 'bathysphere') {
+      scan.bathyspheres.push(object);
+    } else if (kind === 'changelevel') {
+      scan.changes.push(object);
     } else if (kind === 'class') {
       const name = nameOfObject(object);
       if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
@@ -1531,6 +1550,10 @@ function watchObjects(map, now) {
     scan.weapons = [];
     gardens.list = scan.gardens;
     scan.gardens = [];
+    travel.managers = scan.bathyspheres;
+    scan.bathyspheres = [];
+    travel.changes = scan.changes;
+    scan.changes = [];
     if (scan.placeholder !== null) {
       gardens.placeholder = scan.placeholder;
       scan.placeholder = null;
@@ -1560,6 +1583,11 @@ function watchObjects(map, now) {
       gardens.trouble = e.message;
       log(`problem with the Gatherer's Gardens: ${e.message}`);
     }
+  }
+  try {
+    keepTravel(map);
+  } catch (e) {
+    travelTrouble(e.message);
   }
   if (quests.flag === null) {
     return;
@@ -2135,6 +2163,395 @@ function redirectMovies(config) {
   movies.files = files;
   log(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Open Rapture: where the bathysphere goes, and scripted level changes into a locked chapter
+// ---------------------------------------------------------------------------------------------------------------
+
+// With level_access: open_rapture the client sends travel_rules whenever they change:
+//   { stops: [{map, arrival}], redirects: [{from, to, map, arrival}] }
+// Each level has a BathysphereManager (BioshockBathyspheres) with Destinations [{Title, MapName, StartLocationLabel}]
+// and UnlockedDestinations (indexes into Destinations), which the menu offers; the level's own scripts unlock
+// destinations as it starts (probe and map files, 2026-10-14). The agent keeps UnlockedDestinations to the client's
+// stops and their arrival points, a few times a second, so whatever the scripts add is taken back out. A scripted
+// level change is an ActionChangeLevel holding MapName and StartLocationLabel as strings, also handed to it by its
+// resolveInfoList rows when it runs; a crossing into a locked chapter is pointed at the client's hub instead.
+// Memory: an array or string grows only if the game keeps its buffer on the process heap (HeapValidate), so the
+// game can free or grow it later; otherwise the agent keeps to the room the buffer has, and says what it could not do.
+const travel = {
+  rules: null, // the client's rules, with name indexes resolved
+  managers: [],
+  changes: [],
+  layout: undefined, // where the fields are; null once they could not be found
+  originals: new Map(), // level change address -> { map, label } it had before it was redirected
+  armed: [], // redirects set up in the level being played: [{ from, to, map }]
+  trouble: null,
+  told: new Set(), // troubles already logged
+  offered: null, // the destinations offered the last time they were looked at
+};
+
+const heapApi = (() => {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const fn = (name, ret, args) => new NativeFunction(kernel32.getExportByName(name), ret, args, 'stdcall');
+    return {
+      heap: fn('GetProcessHeap', 'pointer', [])(),
+      validate: fn('HeapValidate', 'int', ['pointer', 'uint', 'pointer']),
+      alloc: fn('HeapAlloc', 'pointer', ['pointer', 'uint', 'uint']),
+      realloc: fn('HeapReAlloc', 'pointer', ['pointer', 'uint', 'pointer', 'uint']),
+    };
+  } catch (e) {
+    return null;
+  }
+})();
+
+function onProcessHeap(pointer) {
+  if (heapApi === null || pointer === null || pointer.isNull()) {
+    return false;
+  }
+  try {
+    return heapApi.validate(heapApi.heap, 0, pointer) !== 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function travelTrouble(text) {
+  travel.trouble = text;
+  if (!travel.told.has(text)) {
+    travel.told.add(text);
+    log(`Open Rapture: ${text}`);
+  }
+}
+
+// The index of a name in the game's name table, by its text in any case; -1 if the game has no such name.
+function indexOfName(wanted) {
+  if (objectModel === null) {
+    return -1;
+  }
+  const count = carefulS32(base.add(objectModel.names + 4));
+  const lower = wanted.toLowerCase();
+  for (let index = 0; count !== null && index < count; index++) {
+    const text = nameOf(index);
+    if (text !== null && text.toLowerCase() === lower) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+const KIND_BYTES = { StrProperty: 12, NameProperty: 8, ArrayProperty: 12 };
+
+// The fields of the struct an array property holds: { name: offset }, and the size of one element.
+function structOfArray(arrayField) {
+  const name = nameOfObject(arrayField);
+  const inner = linkedTo(arrayField, (t) => nameOfObject(classOf(t)) === 'StructProperty' && nameOfObject(t) === name);
+  const struct = inner === null ? null :
+    linkedTo(inner, (t) => /^(Script)?Struct$/.test(nameOfObject(classOf(t)) || ''));
+  if (struct === null) {
+    return null;
+  }
+  const fields = {};
+  let size = 0;
+  let field = carefulPtr(struct.add(objectModel.structChildren));
+  for (let n = 0; field !== null && !field.isNull() && n < 100; n++) {
+    const offset = carefulS32(field.add(objectModel.propertyOffset));
+    if (offset !== null && offset >= 0 && offset < 0x100) {
+      fields[nameOfObject(field)] = offset;
+      size = Math.max(size, offset + (KIND_BYTES[nameOfObject(classOf(field))] || 4));
+    }
+    field = carefulPtr(field.add(objectModel.fieldNext));
+  }
+  return { fields, size: (size + 3) & ~3 };
+}
+
+function travelLayout() {
+  if (travel.layout !== undefined) {
+    return travel.layout;
+  }
+  const manager = travel.managers[0];
+  const change = travel.changes[0];
+  if (manager === undefined) {
+    return null; // not known yet: asked again once a level with a bathysphere has been scanned
+  }
+  travel.layout = null;
+  const cls = classOfObject(manager);
+  const destinations = findProperty(cls, 'Destinations', 'ArrayProperty');
+  const unlocked = findProperty(cls, 'UnlockedDestinations', 'ArrayProperty');
+  const entry = destinations === null ? null : structOfArray(destinations.field);
+  if (unlocked === null || entry === null || !('MapName' in entry.fields) || !('StartLocationLabel' in entry.fields)) {
+    travelTrouble('could not find the bathysphere destinations (BathysphereManager.Destinations)');
+    return null;
+  }
+  const layout = { destinations: destinations.offset, unlocked: unlocked.offset, entry, change: null };
+  const changeClass = change === undefined ? null : classOfObject(change);
+  if (changeClass !== null) {
+    const map = findProperty(changeClass, 'MapName', 'StrProperty');
+    const label = findProperty(changeClass, 'StartLocationLabel', 'StrProperty');
+    const rows = findProperty(changeClass, 'resolveInfoList', 'ArrayProperty');
+    const row = rows === null ? null : structOfArray(rows.field);
+    if (map !== null && label !== null) {
+      layout.change = { map: map.offset, label: label.offset, rows: rows === null ? null : rows.offset, row };
+    }
+  }
+  travel.layout = layout;
+  log(`Open Rapture: Destinations at +0x${destinations.offset.toString(16)} (${entry.size} bytes each), ` +
+    `UnlockedDestinations at +0x${unlocked.offset.toString(16)}` +
+    (layout.change === null ? '; no level change seen yet' : `, a level change's MapName at +0x${layout.change.map.toString(16)}`));
+  return layout;
+}
+
+// A level change's layout may only be learned once one has been scanned, after the bathysphere's.
+function changeLayout() {
+  const layout = travelLayout();
+  if (layout !== null && layout.change === null && travel.changes.length > 0) {
+    travel.layout = undefined;
+    return travelLayout();
+  }
+  return layout;
+}
+
+function nameAt(at) {
+  const text = nameOf(carefulS32(at));
+  return text === null ? null : text.toLowerCase();
+}
+
+// Whether writeString can write this text there.
+function canWriteString(at, text) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8));
+  return data !== null && !data.isNull() && ((max !== null && text.length + 1 <= max) || onProcessHeap(data));
+}
+
+// Writes an engine string: in its own buffer when it fits, else in a new one from the process heap if the old one
+// was there too. False when neither works.
+function writeString(at, text) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8));
+  if (data !== null && !data.isNull() && max !== null && text.length + 1 <= max) {
+    data.writeUtf16String(text);
+    at.add(4).writeU32(text.length + 1);
+    return true;
+  }
+  if (data === null || data.isNull() || !onProcessHeap(data)) {
+    return false;
+  }
+  const buffer = heapApi.alloc(heapApi.heap, 0x8, (text.length + 1) * 2);
+  if (buffer.isNull()) {
+    return false;
+  }
+  writeText(at, buffer, text);
+  return true;
+}
+
+// Sets an int array {data, count, max} to these values. Grows it only on the process heap.
+function writeIntArray(at, values) {
+  let data = carefulPtr(at);
+  let max = carefulS32(at.add(8)) || 0;
+  if (values.length > max) {
+    if (data === null || data.isNull() || !onProcessHeap(data)) {
+      return false;
+    }
+    const grown = heapApi.realloc(heapApi.heap, 0, data, values.length * 4);
+    if (grown.isNull()) {
+      return false;
+    }
+    data = grown;
+    max = values.length;
+    at.writePointer(data);
+    at.add(8).writeU32(max);
+  }
+  values.forEach((value, i) => data.add(i * 4).writeS32(value));
+  at.add(4).writeU32(values.length);
+  return true;
+}
+
+function keepBathysphere(manager, layout, rules) {
+  const at = manager.add(layout.destinations);
+  const data = carefulPtr(at);
+  const count = carefulS32(at.add(4));
+  const { entry } = layout;
+  if (data === null || data.isNull() || count === null || count < 1 || count > 32 ||
+      !readableRange(data, count * entry.size)) {
+    return;
+  }
+  const wanted = [];
+  for (let i = 0; i < count; i++) {
+    const destination = data.add(i * entry.size);
+    const map = nameAt(destination.add(entry.fields.MapName));
+    const stop = rules.stops.find((s) => s.map === map);
+    if (stop === undefined) {
+      continue;
+    }
+    wanted.push(i);
+    const labelAt = destination.add(entry.fields.StartLocationLabel);
+    if (stop.arrivalIndex >= 0 && carefulS32(labelAt) !== stop.arrivalIndex) {
+      labelAt.writeS32(stop.arrivalIndex);
+      labelAt.add(4).writeS32(0);
+      log(`Open Rapture: the bathysphere to ${map} now arrives at ${stop.arrival}`);
+    }
+  }
+  const unlockedAt = manager.add(layout.unlocked);
+  const unlockedData = carefulPtr(unlockedAt);
+  const unlockedCount = carefulS32(unlockedAt.add(4)) || 0;
+  const current = [];
+  for (let i = 0; unlockedData !== null && !unlockedData.isNull() && i < Math.min(unlockedCount, 32); i++) {
+    current.push(unlockedData.add(i * 4).readS32());
+  }
+  travel.offered = current;
+  if (current.join(',') === wanted.join(',')) {
+    return;
+  }
+  if (writeIntArray(unlockedAt, wanted)) {
+    travel.offered = wanted;
+    log(`Open Rapture: the bathysphere offers destinations [${wanted.join(', ')}] (was [${current.join(', ')}])`);
+  } else {
+    travelTrouble(`could not make room for ${wanted.length} bathysphere destinations (room for ` +
+      `${carefulS32(unlockedAt.add(8))})`);
+  }
+}
+
+// The resolveInfoList rows of a level change that hand it MapName and StartLocationLabel: [{ at, property }].
+function changeRows(change, layout) {
+  const rows = layout.rows === null ? null : carefulPtr(change.add(layout.rows));
+  const count = layout.rows === null ? 0 : (carefulS32(change.add(layout.rows + 4)) || 0);
+  const row = layout.row;
+  const found = [];
+  if (rows === null || rows.isNull() || row === null || !('PropertyName' in row.fields) || !('Variable' in row.fields) ||
+      count < 1 || count > 16 || !readableRange(rows, count * row.size)) {
+    return found;
+  }
+  for (let i = 0; i < count; i++) {
+    const at = rows.add(i * row.size);
+    const property = nameAt(at.add(row.fields.PropertyName));
+    if (property === 'mapname' || property === 'startlocationlabel') {
+      found.push({ at: at.add(row.fields.Variable), property });
+    }
+  }
+  return found;
+}
+
+// Points a level change at a map and arrival point: its strings, and the rows that would hand it the old ones.
+// `values` maps 'mapname'/'startlocationlabel' to the name index each row gets.
+function pointChange(change, layout, map, label, values) {
+  if (!canWriteString(change.add(layout.map), map) || !canWriteString(change.add(layout.label), label) ||
+      !writeString(change.add(layout.map), map) || !writeString(change.add(layout.label), label)) {
+    return false;
+  }
+  for (const { at, property } of changeRows(change, layout)) {
+    const index = values[property];
+    if (index !== undefined && index >= 0) {
+      at.writeS32(index);
+      at.add(4).writeS32(0);
+    }
+  }
+  return true;
+}
+
+function keepLevelChanges(map, layout, rules) {
+  travel.armed = [];
+  for (const change of travel.changes) {
+    const key = change.toString();
+    let original = travel.originals.get(key);
+    const current = normalizeMap(stringAt(change.add(layout.map)));
+    if (original !== undefined && current !== original.now) {
+      travel.originals.delete(key); // not what was written there: a new object (a save loaded) at the same address
+      original = undefined;
+    }
+    const target = original === undefined ? current : normalizeMap(original.map);
+    if (target === null) {
+      continue;
+    }
+    const redirect = rules.redirects.find((r) => r.from === map && r.to === target);
+    if (redirect !== undefined) {
+      travel.armed.push(redirect);
+      if (original !== undefined) {
+        continue; // already pointed at the hub
+      }
+      const saved = { map: stringAt(change.add(layout.map)), label: stringAt(change.add(layout.label)) || '', rows: {},
+        now: redirect.map };
+      for (const { at, property } of changeRows(change, layout)) {
+        saved.rows[property] = carefulS32(at);
+      }
+      if (pointChange(change, layout, redirect.mapName, redirect.arrival,
+        { mapname: redirect.mapIndex, startlocationlabel: redirect.arrivalIndex })) {
+        travel.originals.set(key, saved);
+        log(`Open Rapture: the way from ${map} to ${target} now leads to ${redirect.map} (${redirect.arrival})`);
+      } else {
+        travelTrouble(`could not point the level change to ${target} elsewhere (its strings have no room)`);
+      }
+    } else if (original !== undefined) { // its chapter has opened since: put it back
+      if (pointChange(change, layout, original.map, original.label, original.rows)) {
+        travel.originals.delete(key);
+        log(`Open Rapture: the way from ${map} to ${target} is open again`);
+      }
+    }
+  }
+}
+
+// Every few ticks, with the scan's lists of bathysphere managers and level changes for the map being played.
+function keepTravel(map) {
+  const rules = travel.rules;
+  if (rules === null || objectModel === null) {
+    return;
+  }
+  const layout = changeLayout();
+  if (layout === null) {
+    return;
+  }
+  for (const manager of travel.managers) {
+    const cls = classOfObject(manager);
+    if (cls !== null && kindOf(cls) === 'bathysphere') {
+      keepBathysphere(manager, layout, rules);
+    }
+  }
+  if (layout.change !== null) {
+    keepLevelChanges(normalizeMap(map), layout.change, rules);
+  }
+}
+
+// The level being played changed: if it went where an armed redirect leads, from where it starts, it was taken.
+function noteTravel(from, to) {
+  const before = normalizeMap(from);
+  const after = normalizeMap(to);
+  const taken = travel.armed.find((r) => r.from === before && r.map === after);
+  if (taken !== undefined) {
+    send({ type: 'travel_redirected', from: before, to: taken.to });
+  }
+  travel.armed = [];
+  travel.originals.clear(); // the level's objects are gone; a new level has its own
+}
+
+function setTravelRules(config) {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the bathysphere';
+  }
+  const named = (text) => (typeof text === 'string' && text ? indexOfName(text) : -1);
+  const rules = {
+    stops: (config.stops || []).map((s) => ({ map: String(s.map).toLowerCase(), arrival: s.arrival,
+      arrivalIndex: named(s.arrival) })),
+    redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
+      map: String(r.map).toLowerCase(), mapName: mapFileName(r.map), arrival: r.arrival,
+      mapIndex: named(mapFileName(r.map)), arrivalIndex: named(r.arrival) })),
+  };
+  const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
+    ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];
+  if (unknown.length > 0) {
+    log(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are`);
+  }
+  travel.rules = rules;
+  travel.trouble = null;
+  return null;
+}
+
+// The map file's own spelling, which the game keeps in its strings ("2-Fisheries"); the client sends lower case.
+const MAP_FILES = ['1-Welcome', '1-Medical', '2-Fisheries', '2-SubBay', '3-Arcadia', '3-Market', '4-Recreation',
+  '5-Hephaestus', '5-Ryan', '6-Resi', '6-Slums', '7-Science', '7-Gauntlet', '7-BossFight'];
+
+function mapFileName(map) {
+  const lower = String(map).toLowerCase();
+  return MAP_FILES.find((name) => name.toLowerCase() === lower) || String(map);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2819,7 +3236,8 @@ rpc.exports = {
   },
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
-  // 'redirect_movies {json}' (Flash movies from the client's folder) at once. The traps 'eve_drain' and
+  // 'redirect_movies {json}' (Flash movies from the client's folder) and 'travel_rules {json}' (Open Rapture: where
+  // the bathysphere and level changes go) at once. The traps 'eve_drain' and
   // 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
@@ -2834,7 +3252,8 @@ rpc.exports = {
       }
       return;
     }
-    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
+    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies],
+      ['travel_rules', setTravelRules]]) {
       if (typeof name === 'string' && name.startsWith(`${action} `)) {
         let trouble;
         try {

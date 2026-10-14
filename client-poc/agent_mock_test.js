@@ -22,6 +22,7 @@ const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
 const HEAP_GET = 0x76000100; const HEAP_ALLOC = 0x76000200; // GetProcessHeap and HeapAlloc
+const HEAP_VALIDATE = 0x76000400; const HEAP_REALLOC = 0x76000500; // HeapValidate and HeapReAlloc
 const CREATE_FILE = 0x76000300; // CreateFileW
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
@@ -80,7 +81,7 @@ class Ptr {
   writeU32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   writeS32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   compare(other) { return this.value < other.value ? -1 : (this.value > other.value ? 1 : 0); }
-  writeUtf16String(text) { this.runtime.strings.set(this.value, text); return this; }
+  writeUtf16String(text) { this.runtime.strings.set(this.value, text); this.runtime.text.set(this.value, text); return this; }
   writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
@@ -104,6 +105,8 @@ function makeRuntime({
     nextStack: 0x0A000000,
     scriptCalls: [], // what the agent ran through ProcessEvent: object, function, the frame's words
     heapAllocs: [], // the size of everything the agent took from the game's heap
+    processHeap: new Set(), // blocks the game took from the process heap
+    reallocs: [], // the size of every block the agent grew
     onScriptCall: null,
   };
   // ProcessEvent's first instructions, as the agent checks them before calling it
@@ -138,7 +141,8 @@ function makeRuntime({
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') {
           if (!virtualQuery) { throw new Error('unable to find module'); }
-          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE }[name] ||
+          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE,
+            HeapValidate: HEAP_VALIDATE, HeapReAlloc: HEAP_REALLOC }[name] ||
             VIRTUAL_QUERY) };
         }
         return {
@@ -181,6 +185,19 @@ function makeRuntime({
         };
       }
       if (address.value === HEAP_GET) { return () => ptr(0x00A00000); }
+      if (address.value === HEAP_VALIDATE) { // a block the game took from the process heap
+        return (heap, flags, block) => (runtime.processHeap.has(block.value) ? 1 : 0);
+      }
+      if (address.value === HEAP_REALLOC) {
+        return (heap, flags, block, size) => {
+          const p = runtime.nextAlloc; runtime.nextAlloc += size + 16;
+          for (let at = 0; at < size; at += 4) {
+            if (runtime.memory.has(block.value + at)) { runtime.memory.set(p + at, runtime.memory.get(block.value + at)); }
+          }
+          runtime.processHeap.add(p); runtime.reallocs.push(size);
+          return ptr(p);
+        };
+      }
       if (address.value === HEAP_ALLOC) {
         return (heap, flags, size) => {
           const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
@@ -531,7 +548,76 @@ function makeRuntime({
         poke(updateUIStats + 0x44, updateUIBioAmmoBank); poke(playerClass + 0x5C, updateUIStats);
       }
     };
-    return { playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    // Open Rapture: the level's BathysphereManager, with Destinations {Title, MapName, StartLocationLabel} (28 bytes
+    // each) at +0x80 and UnlockedDestinations at +0x8C; and scripted level changes (ActionChangeLevel) with their
+    // two strings and resolveInfoList rows {PropertyName, Variable} that hand them names.
+    const nameProperty = cls('NameProperty', objectClass);
+    const arrayOfStructs = (owner, arrayName, offset, structName, structFields) => {
+      const struct = make(structName, scriptStruct);
+      fields(struct, structFields);
+      fields(owner, [[arrayName, arrayProperty, offset]]);
+      const arrayField = runtime.memory.get(owner + 0x5C);
+      const innerField = make(arrayName, structProperty); poke(arrayField + 0x7C, innerField); poke(innerField + 0x78, struct);
+    };
+    const managerClass = cls('BathysphereManager', objectClass);
+    fields(managerClass, [['UnlockedDestinations', arrayProperty, 0x8C]]);
+    const unlockedField = runtime.memory.get(managerClass + 0x5C);
+    arrayOfStructs(managerClass, 'Destinations', 0x80, 'BathysphereDestination',
+      [['Title', strProperty, 0], ['MapName', nameProperty, 0xC], ['StartLocationLabel', nameProperty, 0x14]]);
+    poke(runtime.memory.get(managerClass + 0x5C) + 0x44, unlockedField); // Destinations, then UnlockedDestinations
+    const STOPS = [['Medical Pavilion', '1-Medical', 'Backtrack_MedicalStart'], ["Neptune's Bounty", '2-Fisheries', 'PlayerStart'],
+      ['Arcadia', '3-Arcadia', 'ArcBathyEndPS'], ['Fort Frolic', '4-Recreation', 'PlayerStart'],
+      ['Hephaestus', '5-Hephaestus', 'EngBathyStartPS'], ['Apollo Square', '6-Slums', 'PlayerStart_FromDeck7Bathy'],
+      ['Point Prometheus', '7-Science', 'FromResidential'], ['', 'None', 'None']];
+    ['FromFisheriesPS', 'FromSubBayPS', '3-Arcadia', '2-SubBay', 'MapName', 'StartLocationLabel'].forEach(name);
+    // The manager: every destination, `unlocked` offered, with room for `room`; `onHeap` if its buffer is the
+    // process heap's.
+    const bathysphere = (unlocked, room = unlocked.length, onHeap = false) => {
+      const at = make('BioshockBathyspheres', managerClass, 0x100);
+      const destinations = runtime.object(28 * STOPS.length);
+      STOPS.forEach(([title, map, label], i) => {
+        runtime.string(destinations + 28 * i, title || 'x');
+        poke(destinations + 28 * i + 0xC, name(map)); poke(destinations + 28 * i + 0x10, 0);
+        poke(destinations + 28 * i + 0x14, name(label)); poke(destinations + 28 * i + 0x18, 0);
+      });
+      poke(at + 0x80, destinations); poke(at + 0x84, STOPS.length); poke(at + 0x88, STOPS.length);
+      const data = runtime.object(Math.max(4, 4 * room));
+      unlocked.forEach((index, i) => poke(data + 4 * i, index));
+      for (let i = unlocked.length; i < room; i++) { poke(data + 4 * i, 0); }
+      if (onHeap) { runtime.processHeap.add(data); }
+      poke(at + 0x8C, data); poke(at + 0x90, unlocked.length); poke(at + 0x94, room);
+      return at;
+    };
+    const unlockedOf = (manager) => {
+      const data = runtime.memory.get(manager + 0x8C);
+      return Array.from({ length: runtime.memory.get(manager + 0x90) }, (_, i) => runtime.memory.get(data + 4 * i));
+    };
+    const arrivalOf = (manager, i) => names[runtime.memory.get(runtime.memory.get(manager + 0x80) + 28 * i + 0x14)];
+    const changeClass = cls('ActionChangeLevel', cls('Action', objectClass));
+    fields(changeClass, [['MapName', strProperty, 0x80], ['StartLocationLabel', strProperty, 0x8C]]);
+    const mapField = runtime.memory.get(changeClass + 0x5C);
+    arrayOfStructs(changeClass, 'resolveInfoList', 0x98, 'ResolveInfo',
+      [['PropertyName', nameProperty, 0], ['Variable', nameProperty, 8]]);
+    poke(runtime.memory.get(changeClass + 0x5C) + 0x44, mapField);
+    // A level change to this map and arrival point, with room for `room` characters in each string.
+    const levelChange = (map, label, room = 0) => {
+      const at = make('ActionChangeLevel0', changeClass, 0x100);
+      for (const [offset, text] of [[0x80, map], [0x8C, label]]) {
+        runtime.string(at + offset, text);
+        if (room) { poke(at + offset + 8, room); }
+      }
+      const rows = runtime.object(0x20);
+      poke(rows, name('MapName')); poke(rows + 4, 0); poke(rows + 8, name(map)); poke(rows + 12, 0);
+      poke(rows + 16, name('StartLocationLabel')); poke(rows + 20, 0); poke(rows + 24, name(label)); poke(rows + 28, 0);
+      poke(at + 0x98, rows); poke(at + 0x9C, 2); poke(at + 0xA0, 2);
+      return at;
+    };
+    const changeOf = (change) => ({
+      map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
+      rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
+        names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
+    });
+    return { bathysphere, unlockedOf, arrivalOf, levelChange, changeOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -581,6 +667,7 @@ const exec = (r, id, command) => r.context.rpc.exports.exec(id, command);
 const state = (r) => r.context.rpc.exports.state();
 const gardenLines = (r, id, lines) => r.context.rpc.exports.action(id, 'garden_lines ' +
   JSON.stringify({ level: 'Medical Pavilion', map: '1-medical', lines }));
+const travelRules = (r, id, rules) => r.context.rpc.exports.action(id, `travel_rules ${JSON.stringify(rules)}`);
 const raisedMessages = (r) => r.messages.filter((m) => m.type === 'exec_raised');
 
 // What the client is told about one exception the game raises while a command runs: the text, or null if nothing.
@@ -1519,6 +1606,89 @@ const tests = {
     r.frames(4);
     assert.deepStrictEqual([...state(r).weaponsHeld], [], 'the shotgun was the last body\'s');
     assert.strictEqual(state(r).weaponsPending, false);
+  },
+  // ---- Open Rapture ----
+  'travel_rules makes the bathysphere offer exactly the stops given, at their arrival points': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 1], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 4, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '3-arcadia', arrival: 'FromFisheriesPS' }, { map: '4-recreation', arrival: 'PlayerStart' }], redirects: [] });
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[4, 'travel_rules', true]]);
+    r.frames(8);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3]);
+    assert.strictEqual(model.arrivalOf(manager, 2), 'FromFisheriesPS', 'a first ride to Arcadia docks with the submarine');
+    assert.strictEqual(model.arrivalOf(manager, 3), 'PlayerStart');
+    assert.deepStrictEqual([...state(r).travelOffered], [0, 2, 3]);
+    assert.strictEqual(state(r).travelTrouble, null);
+    r.poke(r.memory.get(manager + 0x8C) + 4, 1); r.poke(manager + 0x90, 2); // the level's script unlocks its own again
+    r.frames(6);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'taken back out');
+  },
+  'more stops than the array has room for grow it only on the process heap': () => {
+    for (const onHeap of [true, false]) {
+      const r = makeRuntime(); r.game(); const model = r.objectModel();
+      const manager = model.bathysphere([1], 1, onHeap);
+      r.load(); r.frames(2);
+      travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '7-science' }], redirects: [] });
+      r.frames(8);
+      if (onHeap) {
+        assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 6]);
+        assert.deepStrictEqual(r.reallocs, [12]);
+        assert.strictEqual(r.memory.get(manager + 0x94), 3);
+      } else {
+        assert.deepStrictEqual(model.unlockedOf(manager), [1], 'left alone: the game could not free a buffer of ours');
+        assert.match(state(r).travelTrouble, /could not make room for 3 bathysphere destinations/);
+      }
+    }
+  },
+  'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    const back = model.levelChange('2-Fisheries', 'FromSubBayPS', 32);
+    r.load(); r.frames(2);
+    const locked = { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] };
+    travelRules(r, 1, locked);
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '1-Medical', label: 'Backtrack_MedicalStart', rows: ['1-Medical', 'Backtrack_MedicalStart'] });
+    assert.deepStrictEqual(model.changeOf(back).rows, ['2-Fisheries', 'FromSubBayPS'], 'the way back is left alone');
+    assert.strictEqual(state(r).travelRedirects, 1);
+    travelRules(r, 2, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+    assert.strictEqual(state(r).travelRedirects, 0);
+  },
+  'a redirect taken is reported when the hub level comes up': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    model.bathysphere([0], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    r.string(g.level + 0x7C, '1-Medical');
+    r.frames(4);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected').map((m) => [m.from, m.to]),
+      [['2-subbay', '3-arcadia']]);
+  },
+  'a level change whose strings have no room and are not on the process heap is left alone and said': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '5-Ryan');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('6-Resi', 'PlayerStart_First');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '5-ryan', to: '6-resi', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change).rows, ['6-Resi', 'PlayerStart_First']);
+    assert.match(state(r).travelTrouble, /could not point the level change to 6-resi elsewhere/);
   },
   // ---- Gatherer's Gardens ----
   'garden_lines makes each line a copy of chips with its own name, priced from the item': () => {
