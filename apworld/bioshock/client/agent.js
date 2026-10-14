@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.9';
+const AGENT_VERSION = '2026-10-14.10';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2467,6 +2467,7 @@ const TRAPS = {
 };
 const traps = []; // { id, name, at }: traps asked for and not carried out yet
 const statProperties = new Map(); // `${class}/${stat}` -> offset, or null when the class has no such property
+const refusedRemoves = new Map(); // Remove function name -> why calling it failed; the number is written instead
 
 // Where a property of this name and kind sits in an object of this class (or a class it extends).
 function findPropertyOfKind(cls, wanted, kind) {
@@ -2518,29 +2519,43 @@ function springTrap(pawn, trap) {
   const at = pawn.add(offset);
   const before = readStat(at, trap);
   const amount = trap.take(before);
-  const remove = findFunction(pawn, trap.remove);
-  if (remove !== null && scriptCallsTrouble() === null) {
+  const remove = refusedRemoves.has(trap.remove) ? null : findFunction(pawn, trap.remove);
+  let why = remove === null ? (refusedRemoves.get(trap.remove) || `the player has no ${trap.remove}`)
+    : scriptCallsTrouble();
+  if (remove !== null && why === null) {
     if (!readyToCallScript()) {
       return undefined; // watching for a call to copy; the trap follows in a later tick
     }
-    const parms = Memory.alloc(0x10);
+    const parms = Memory.alloc(0x40); // room for the function's locals as well as its one parameter
+    for (let n = 0; n < 0x40; n += 4) {
+      parms.add(n).writeU32(0);
+    }
     if (trap.kind === 'FloatProperty') {
       parms.writeFloat(amount);
     } else {
       parms.writeS32(amount);
     }
-    callScript(pawn, remove, parms);
-    parms.isNull();
-    log(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
-    return null;
+    try {
+      callScript(pawn, remove, parms);
+      parms.isNull();
+      log(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
+      return null;
+    } catch (e) {
+      // Seen in the game (2026-10-14): both Remove functions stopped on "access violation accessing 0x74". The
+      // number is written instead, and the function is not called again this session.
+      why = `${trap.remove} failed: ${e.message}`;
+      refusedRemoves.set(trap.remove, why);
+    }
   }
+  // A call that failed part way may have taken some already: the target is what the trap leaves, never less.
+  const now = readStat(at, trap);
+  const target = Math.max(0, Math.min(now, before - amount));
   if (trap.kind === 'FloatProperty') {
-    at.writeFloat(before - amount);
+    at.writeFloat(target);
   } else {
-    at.writeS32(before - amount);
+    at.writeS32(target);
   }
-  log(`${trap.stat} written: ${shown(before)} -> ${shown(readStat(at, trap))}` +
-    `${remove === null ? ` (the player has no ${trap.remove})` : ` (${scriptCallsTrouble()})`}`);
+  log(`${trap.stat} written: ${shown(now)} -> ${shown(readStat(at, trap))} (${why})`);
   return null;
 }
 

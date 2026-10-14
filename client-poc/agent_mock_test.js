@@ -1647,6 +1647,27 @@ const tests = {
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
       [[1, 'eve_drain', true], [2, 'pickpocket', true]]);
   },
+  'a Remove function that fails is not called again, and the trap writes the number instead': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats();
+    r.load(); r.frames(2);
+    r.onScriptCall = () => { throw new Error('access violation accessing 0x74'); }; // as seen in the game
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(2);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(1);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61, '62 of 123 dollars taken');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[1, true], [2, true]]);
+    const called = r.scriptCalls.length;
+    r.poke(game.pawn + 0xAEC, 100);
+    r.context.rpc.exports.action(3, 'pickpocket');
+    r.frames(2);
+    assert.strictEqual(r.scriptCalls.length, called, 'RemoveCredits is not tried again');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 50);
+  },
   'without the Remove functions the trap writes the number itself': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false);
