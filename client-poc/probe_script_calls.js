@@ -75,7 +75,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.3';
+const PROBE_VERSION = '2026-10-14.4';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1248,9 +1248,14 @@ globalThis.gardenCost = function (n, adjustment) {
   return 'open the Garden and look at that line\'s price';
 };
 
-// A class's default values: an array (data, count, capacity) in the class object whose bytes hold the class's
-// properties at their usual offsets. Found by trying each such array for readable text at the string properties.
+// A class's default values. Either a default object in the object table (an object of the class whose name starts
+// with "Default"), or an array (data, count, capacity) in the class object whose bytes hold the class's properties at
+// their usual offsets. Found by looking for readable text at the class's string properties.
 const keptStrings = [];
+
+function textsAt(base, strings) {
+  return strings.map(([name, p]) => [name, p, readable(base.add(p.offset), 12) ? stringAt(base.add(p.offset)) : '']);
+}
 
 function classDefaults(className) {
   const learned = learnAnyClass(className);
@@ -1259,12 +1264,28 @@ function classDefaults(className) {
     return { error: learned.error || `no class named ${className}` };
   }
   const strings = [...learned.properties.entries()].filter(([, p]) => p.kind === 'StrProperty');
+  log(`${className}: ${learned.lineage.join(' < ')}; text properties: ` +
+      `${strings.map(([name, p]) => `${name} +${hex(p.offset)} (${p.owner})`).join(', ') || 'none'}`);
   if (strings.length === 0) {
     return { error: `${className} has no text properties` };
   }
+  const candidates = [];
+  // default objects
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null || classOf(object) === null || !classOf(object).equals(cls)) {
+      continue;
+    }
+    const name = nameOfObject(object) || '';
+    log(`  object ${name} of class ${className} at ${object}`);
+    if (/^Default/i.test(name)) {
+      candidates.push({ where: `default object ${name}`, data: object });
+    }
+  }
+  // arrays in the class object
   const end = Math.max(...strings.map(([, p]) => p.offset)) + 12;
-  let best = null;
-  for (let at = 0x30; at < 0x200; at += 4) {
+  for (let at = 0x30; at < 0x1000; at += 4) {
     const data = pointerAt(cls.add(at));
     const count = u32(cls.add(at + 4));
     const capacity = u32(cls.add(at + 8));
@@ -1272,14 +1293,20 @@ function classDefaults(className) {
         count > 0x40000 || capacity < count || !readable(data, end)) {
       continue;
     }
-    const texts = strings.map(([name, p]) => [name, p, stringAt(data.add(p.offset))]);
+    candidates.push({ where: `array at class+${hex(at)} (${count} bytes)`, data, at });
+  }
+  let best = null;
+  for (const candidate of candidates) {
+    const texts = textsAt(candidate.data, strings);
     const filled = texts.filter(([, , text]) => text.length > 0).length;
-    if (best === null || filled > best.filled) {
-      best = { at, data, texts, filled };
+    log(`  ${candidate.where}: ${filled} of ${texts.length} text properties hold text` +
+        `${filled > 0 ? ` (${texts.filter(([, , t]) => t).map(([n, , t]) => `${n} ${JSON.stringify(t.slice(0, 40))}`).join(', ')})` : ''}`);
+    if (filled > 0 && (best === null || filled > best.filled)) {
+      best = { ...candidate, texts, filled };
     }
   }
-  if (best === null || best.filled === 0) {
-    return { error: `no default values with text found in class ${className}` };
+  if (best === null) {
+    return { error: `no default values with text found for ${className} (${candidates.length} places tried)` };
   }
   return best;
 }
@@ -1290,9 +1317,10 @@ globalThis.defaults = function (className) {
   }
   const found = classDefaults(className);
   if (found.error) {
+    log(found.error);
     return found.error;
   }
-  log(`${className}: default values at class+${hex(found.at)} (${found.data})`);
+  log(`${className}: default values in ${found.where} (${found.data})`);
   for (const [name, p, text] of found.texts) {
     log(`  +${hex(p.offset)} ${name} (${p.owner}) = ${JSON.stringify(text)}`);
   }
@@ -1305,6 +1333,7 @@ globalThis.rename = function (className, propertyName, text) {
   }
   const found = classDefaults(className);
   if (found.error) {
+    log(found.error);
     return found.error;
   }
   const entry = found.texts.find(([name]) => name === propertyName);
