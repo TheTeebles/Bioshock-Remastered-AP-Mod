@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.9';
+const PROBE_VERSION = '2026-10-14.10';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1533,6 +1533,36 @@ globalThis.gardenClone = function (n, friendlyName, description, className = 'ch
 function weaponStats() {
   return [...matchingObjects('^UpgradeableWeaponStat$').values()].flat();
 }
+
+// The Item class has an Icon property, but every Garden item leaves it None, so the Garden may pick the icon by the
+// class's name. This renames the copy on line n (made by gardenClone) after another class, to see whose icon shows.
+// Do not save while a copy carries another class's name: the save would name that class for the line.
+globalThis.gardenIcon = function (n, className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  if (line === undefined) {
+    return `pick n from 0 to ${read.lines.length - 1}`;
+  }
+  const copy = pointerAt(line.add(read.fields.get('ItemClass').offset));
+  if (copy === null || !clones.some((c) => c.copy.equals(copy))) {
+    return 'that line does not hold a copy: run gardenClone(n) first';
+  }
+  const wanted = findClass(className);
+  if (wanted === null) {
+    return `no class named ${className} is loaded`;
+  }
+  const before = nameOfObject(copy);
+  copy.add(objects.nameOffset).writeU32(u32(wanted.add(objects.nameOffset)));
+  log(`line ${n}: the copy's class name ${before} -> ${nameOfObject(copy)}`);
+  return 'open the Garden and look at that line\'s icon (and do not save)';
+};
 
 globalThis.upgrades = function () {
   if (objects.table === null) {
