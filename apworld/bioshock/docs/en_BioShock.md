@@ -75,8 +75,9 @@ Defeat Frank Fontaine at the end of Proving Grounds. With Level Access on, you a
 ## Status
 
 This world is in early development. Seeds can be generated, and the BioShock Client (in the Archipelago Launcher)
-connects to a multiworld, receives items, holds and sends checks and reports the goal. On the Steam version, items
-have been put into the real game by hand; the client doing that by itself is built and has not been run against the
-game yet. Nothing notices most of what you do in the game so far (story objectives, Little Sisters, upgrade
-stations, diaries), so for now a seed can only be played end to end with the client's simulated game. See the setup
-guide.
+connects to a multiworld, puts items into the real game by itself (Steam version) and notices every kind of check
+there: story objectives, Little Sisters, Power to the People stations, audio diaries, level completion and Gatherer's
+Garden purchases. DeathLink works both ways. No whole seed has been played through in the real game yet, and the
+GOG and Epic versions are not supported. See the setup guide for exactly what has been tried in the game.
+
+Universal Tracker works without your YAML: it takes the options from the seed.

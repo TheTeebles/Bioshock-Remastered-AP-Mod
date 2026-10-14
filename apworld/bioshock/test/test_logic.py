@@ -16,7 +16,8 @@ from ..data import (
 )
 from ..items import ITEM_KIND
 from ..options import AudioDiaryChecks, option_presets
-from ..world import SLOT_DATA_VERSION
+from .. import locations
+from ..world import SLOT_DATA_VERSION, BioShockWorld
 from .bases import BioShockTestBase, generate_multiworld
 
 CATEGORY = {location.name: location.category for location in LOCATION_TABLE}
@@ -496,6 +497,17 @@ class TestSlotData(BioShockTestBase):
         self.assertNotIn("directors_commentary_checks", slot_data)
         self.assertEqual(slot_data["level_access_items"]["Arcadia"], "Arcadia Access")
         self.assertIsNone(slot_data["level_access_items"]["Medical Pavilion"])
+
+    def test_universal_tracker_takes_the_options_from_the_slot_data(self) -> None:
+        slot_data = dict(self.world.fill_slot_data(), shop_checks=2, audio_diary_checks=AudioDiaryChecks.option_all,
+                         level_access=0, death_link=0)
+        self.assertEqual(BioShockWorld.interpret_slot_data(slot_data), slot_data)
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        for name in BioShockWorld.TRACKED_OPTIONS:
+            self.assertEqual(getattr(self.world.options, name).value, slot_data[name], name)
+        self.assertEqual(len([location for location in locations.enabled_locations(self.world)
+                              if location.category == LocationCategory.GATHERERS_GARDEN]), 273)
 
 
 class TestWeaponStations(PoolTestBase):

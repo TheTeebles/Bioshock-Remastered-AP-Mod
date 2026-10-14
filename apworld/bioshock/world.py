@@ -9,7 +9,7 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.19"
+WORLD_VERSION = "0.1.20"
 SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
 # 4: station_touch, and shop_checks is 0/1/2
 
@@ -32,7 +32,21 @@ class BioShockWorld(World):
     location_name_groups = locations.LOCATION_NAME_GROUPS
     item_name_groups = items.ITEM_NAME_GROUPS
 
+    # Universal Tracker builds the player's world again from the slot data, without their YAML.
+    ut_can_gen_without_yaml = True
+    TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
+                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link")
+
+    @staticmethod
+    def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
+        return slot_data
+
     def generate_early(self) -> None:
+        tracked = getattr(self.multiworld, "re_gen_passthrough", {}).get(self.game)
+        if tracked is not None:  # Universal Tracker: the options the seed was made with
+            for name in self.TRACKED_OPTIONS:
+                if name in tracked:
+                    getattr(self.options, name).value = tracked[name]
         if not locations.enabled_locations(self):
             raise OptionError(f"{self.player_name}: every kind of BioShock check is switched off. "
                               "Turn at least one of them on.")
@@ -92,17 +106,7 @@ class BioShockWorld(World):
         return {
             "slot_data_version": SLOT_DATA_VERSION,
             "world_version": WORLD_VERSION,
-            **self.options.as_dict(
-                "level_access",
-                "story_checks",
-                "little_sister_checks",
-                "power_to_the_people_checks",
-                "level_completion_checks",
-                "audio_diary_checks",
-                "shop_checks",
-                "trap_chance",
-                "death_link",
-            ),
+            **self.options.as_dict(*self.TRACKED_OPTIONS),
             # Stations open no menu: using one sends its check and closes it, and the upgrades come from the pool.
             "station_touch": items.stations_shuffled(self),
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
