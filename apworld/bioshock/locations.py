@@ -4,9 +4,12 @@ from typing import TYPE_CHECKING
 
 from BaseClasses import Location, LocationProgressType
 
-from .data import GAME_NAME, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, VICTORY_ITEM, LocationCategory, LocationData
+from .data import (
+    GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, VICTORY_ITEM,
+    LocationCategory, LocationData,
+)
 from .items import BioShockItem
-from .options import CollectibleChecks
+from .options import CollectibleChecks, ShopChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -38,7 +41,9 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
         LocationCategory.POWER_TO_THE_PEOPLE: bool(options.power_to_the_people_checks),
         LocationCategory.LEVEL_COMPLETION: bool(options.level_completion_checks),
         LocationCategory.STORY: bool(options.story_checks),
-        LocationCategory.GATHERERS_GARDEN: bool(options.shop_checks),
+        LocationCategory.GATHERERS_GARDEN: options.shop_checks == ShopChecks.option_all or (
+            options.shop_checks == ShopChecks.option_first_appearances
+            and location.id in GATHERERS_GARDEN_FIRST_APPEARANCES),
     }[location.category]
 
 

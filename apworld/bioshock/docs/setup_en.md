@@ -78,7 +78,7 @@ If the game was started as administrator, Archipelago has to be started as admin
   - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
     game. The client asks the game to skip the station's upgrade menu (Steam), so using one only sends its check
     and closes it.
-  - *Gatherer's Garden lines (Shop Checks, Steam):* Neptune's Bounty only so far. Each line that is a check is renamed
+  - *Gatherer's Garden lines (Shop Checks, Steam):* every level's Garden. Each line that is a check is renamed
     after the multiworld item it holds and priced from it (your own BioShock items with their own icon and the game's
     price, other items with the Archipelago icon); buying it sends the check. Lines already checked are sold
     out. After loading a save the lines show as Potato Chips for a moment until the client renames them again.

@@ -7,7 +7,7 @@ from ..client import game_data
 from ..client.core import REFUSED, UNKNOWN, BridgeCore
 from ..client.protocol import CommandResult, CommandStarted, ScoutedItem
 from ..client.simulated import SimulatedGame
-from ..data import ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
+from ..data import GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
 from .client_harness import IDENTITY, Harness, item, loc, not_known_yet, play_level
 
 
@@ -1323,6 +1323,20 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual(len(self.offer(h)), 16)
         self.assertEqual(len(h.scouts), 1, "what the lines hold is not asked again")
 
+    def test_lines_that_are_not_checks_are_sold_out(self) -> None:
+        h = self.shop()
+        h.valid -= {location for location in game_data.GARDEN_LOCATION.values()
+                    if location not in GATHERERS_GARDEN_FIRST_APPEARANCES}
+        h.connect().attach()
+        h.game.travel(NEPTUNES_BOUNTY)
+        h.settle()
+        offer = self.offer(h)
+        self.assertEqual(len(offer), 16, "every line is sent")
+        self.assertTrue(offer[4]["bought"], "Enrage! is a check in Medical Pavilion: sold out here")
+        self.assertEqual(offer[4]["name"], "")
+        self.assertFalse(offer[5]["bought"], "Sonic Boom is first sold here: a check")
+        self.assertEqual(len(h.scouts[0]), len(GATHERERS_GARDEN_FIRST_APPEARANCES))
+
     def test_without_shop_checks_nothing_is_scouted_or_sent(self) -> None:
         h = Harness(access_items=False).connect().attach()
         h.game.travel(NEPTUNES_BOUNTY)
@@ -1371,8 +1385,11 @@ class TestGatherersGarden(unittest.TestCase):
         h.settle()
         self.assertIsNone(h.game.movies)
 
-    def test_levels_without_mapped_gardens_get_no_lines(self) -> None:
+    def test_every_level_with_a_garden_gets_its_own_lines(self) -> None:
         h = self.shop().connect().attach()
         h.game.travel(MEDICAL_PAVILION)
         h.settle()
-        self.assertEqual(h.game.garden_lines, {})
+        lines = h.game.garden_lines[MEDICAL_PAVILION]
+        self.assertEqual(len(lines), 5)
+        self.assertEqual([entry["line"] for entry in lines], [1, 2, 3, 4, 5])
+        self.assertEqual(set(h.game.garden_lines), {MEDICAL_PAVILION}, "only the level the player is in")

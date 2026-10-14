@@ -681,7 +681,12 @@ class BridgeCore:
             return
         lines = []
         for (level, line), location in sorted(game_data.GARDEN_LOCATION.items()):
-            if level != self.level or location not in self.valid_locations:
+            if level != self.level:
+                continue
+            if location not in self.valid_locations:
+                # Not a check in this seed (Shop Checks set to first appearances): sold out, so that the Garden
+                # never sells a gene from outside the multiworld.
+                lines.append({"line": line, "name": "", "description": "", "price": 0, "bought": True})
                 continue
             item = self.scouted.get(location)
             if item is None:

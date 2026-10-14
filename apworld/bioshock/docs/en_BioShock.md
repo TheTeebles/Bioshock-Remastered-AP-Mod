@@ -32,9 +32,11 @@ The 122 Audio Diaries are extras. By default they are checks that only ever hold
 traps, so nobody ever has to hunt for one. They can also be switched off, or set to "all" if you do want important
 items on them. Every other kind of check can be switched off as well.
 
-Shop Checks (off by default) make each gene upgrade a Gatherer's Garden sells a check. They can hold useful items
-but never anything needed to progress, since the ADAM to buy them depends on how you play. Only the Neptune's
-Bounty Garden is mapped so far (16 checks). Each of its lines is renamed after the multiworld item it holds. Your
+Shop Checks (off by default) make the gene upgrades the Gatherer's Gardens sell checks. They can hold useful items
+but never anything needed to progress, since the ADAM to buy them depends on how you play. With First Appearances,
+a line is a check only in the first Garden that sells its gene (61 checks) and repeats are sold out; with All,
+every line of every level's Garden is a check (273). Each line that is a check is renamed after the multiworld
+item it holds. Your
 own BioShock items cost what the game charges for them; other items cost 80 ADAM if they are useful and 20
 otherwise. Your own items show their own icon (a weapon upgrade shows its weapon) and other items show the
 Archipelago icon. Buying a line sends its

@@ -36,7 +36,7 @@ class TestGameData(unittest.TestCase):
             LocationCategory.POWER_TO_THE_PEOPLE: 12,
             LocationCategory.LEVEL_COMPLETION: 12,
             LocationCategory.STORY: 28,
-            LocationCategory.GATHERERS_GARDEN: 16,
+            LocationCategory.GATHERERS_GARDEN: 273,
         }))
         names = [location.name for location in LOCATION_TABLE]
         ids = [location.id for location in LOCATION_TABLE]
@@ -64,7 +64,10 @@ class TestGameData(unittest.TestCase):
         self.assertEqual(names[8101], "Neptune's Bounty - Gatherer's Garden: Plasmid Slot")
         self.assertEqual(names[8107], "Neptune's Bounty - Gatherer's Garden: Winter Blast")
         self.assertEqual(names[8116], "Neptune's Bounty - Gatherer's Garden: Static Discharge")
-        self.assertEqual(sorted(names), list(range(8101, 8117)))
+        self.assertEqual(names[8051], "Medical Pavilion - Gatherer's Garden: Enrage!")
+        self.assertEqual(names[8606], "Proving Grounds - Gatherer's Garden: EVE Upgrade")
+        self.assertEqual(len(names), 273)
+        self.assertEqual(sorted(names)[:21], list(range(8051, 8056)) + list(range(8101, 8117)))
 
     def test_gatherers_garden_sells_pool_items(self) -> None:
         """Every line names an item the world knows (a plasmid by its level's name), so the location reads as the gene

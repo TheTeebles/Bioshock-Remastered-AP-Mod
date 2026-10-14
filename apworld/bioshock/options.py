@@ -71,17 +71,31 @@ class PowerToThePeopleChecks(DefaultOnToggle):
     display_name = "Power to the People Checks"
 
 
-class ShopChecks(Toggle):
+class ShopChecks(Choice):
     """
-    Buying each gene upgrade from a Gatherer's Garden sends a check (one per item it sells, in each level). The
-    Garden's plasmids, tonics, slots and upgrades then come from the multiworld instead.
+    Buying gene upgrades from the Gatherer's Gardens sends checks. The Gardens' plasmids, tonics, slots and upgrades
+    then come from the multiworld instead.
+
+    Off: the Gardens sell their own genes, and buying them sends nothing.
+    First Appearances: a line is a check only in the first Garden (in story order) that sells its gene (61 checks).
+    Lines that repeat an earlier Garden's gene are sold out.
+    All: every line of every Garden is a check (273 checks).
+
     These checks never hold an item anyone needs to progress, because how much ADAM you have to spend depends on
     how you play. Circus of Values and El Ammo Bandito machines are never checks.
     Each line that is a check shows the name of the multiworld item it holds. Your own BioShock items cost what the game
     charges for them; other items cost 80 ADAM (useful) or 20 (anything else).
-    So far only the Neptune's Bounty Garden is mapped (16 checks); the other levels follow.
     """
     display_name = "Shop Checks"
+    option_off = 0
+    option_first_appearances = 1
+    option_all = 2
+    alias_false = 0  # on/off spellings, for YAMLs written when this was an on/off switch
+    alias_no = 0
+    alias_true = 2
+    alias_yes = 2
+    alias_on = 2
+    default = option_off
 
 
 class LevelCompletionChecks(DefaultOnToggle):

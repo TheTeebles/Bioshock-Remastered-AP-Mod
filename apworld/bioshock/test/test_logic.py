@@ -333,10 +333,22 @@ class TestShopChecks(PoolTestBase):
     def test_sizes(self) -> None:
         garden = [location for location in self.real_locations()
                   if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN]
-        self.assertEqual(len(garden), 16)
-        self.assertEqual({location.parent_region.name for location in garden}, {"Neptune's Bounty"})
-        # 16 more checks make room for 16 more of the useful items, 81 of the 90: the rest is filler.
-        self.assertEqual(self.pool(), Counter(progression=8, useful=81, filler=122))
+        self.assertEqual(len(garden), 273)
+        self.assertEqual(len({location.parent_region.name for location in garden}), 10, "one Garden per level")
+        # The checks make room for every useful item; the rest is filler.
+        self.assertEqual(self.pool(), Counter(progression=8, useful=90, filler=370))
+
+    def test_first_appearances(self) -> None:
+        self.options = {"shop_checks": "first_appearances"}
+        self.world_setup()
+        garden = {location.name for location in self.real_locations()
+                  if CATEGORY[location.name] == LocationCategory.GATHERERS_GARDEN}
+        self.assertEqual(len(garden), 61)
+        self.assertIn("Medical Pavilion - Gatherer's Garden: Enrage!", garden)
+        self.assertIn("Neptune's Bounty - Gatherer's Garden: Sonic Boom", garden)
+        self.assertNotIn("Neptune's Bounty - Gatherer's Garden: Enrage!", garden, "sold first in Medical Pavilion")
+        self.assertIn("Fort Frolic - Gatherer's Garden: Sonic Boom 2", garden)
+        self.assertNotIn("Fort Frolic - Gatherer's Garden: Sonic Boom", garden)
 
     def test_no_progression_in_a_shop(self) -> None:
         self.fill()
@@ -361,7 +373,7 @@ class TestShopChecks(PoolTestBase):
         self.assertBeatable(True)
 
     def test_slot_data(self) -> None:
-        self.assertEqual(self.world.fill_slot_data()["shop_checks"], 1)
+        self.assertEqual(self.world.fill_slot_data()["shop_checks"], 2)
 
 
 class TestEveryCombination(PoolTestBase):
