@@ -468,7 +468,17 @@ function makeRuntime({
     };
     // The placeholder: class chips, whose default values (an array in the class at +0x54C) hold its texts.
     const item = cls('Item', objectClass);
-    fields(item, [['Description', strProperty, 0x44], ['FriendlyName', strProperty, 0x50]]);
+    const floatProperty = cls('FloatProperty', objectClass);
+    fields(item, [['Description', strProperty, 0x44], ['FriendlyName', strProperty, 0x50],
+      ['CreditValue', floatProperty, 0x60]]);
+    // An item class worth `credit` ADAM, with its default values in an array at +0x54C like chips.
+    const itemClass = (className, credit) => {
+      const at = cls(className, item);
+      const values = runtime.object(0x100);
+      poke(at + 0x54C, values); poke(at + 0x550, 188); poke(at + 0x554, 188);
+      runtime.string(values + 0x50, className); poke(values + 0x60, credit * 10);
+      return at;
+    };
     const chips = make('chips', classClass, 0x1100); poke(chips + 0x40, cls('Consumable', item));
     for (let at = 0x1000; at < 0x1100; at += 0x1000) { poke(chips + at, 0); }
     poke(chips + 0xFFC, 0); poke(chips + 0x10FC, 0);
@@ -476,7 +486,7 @@ function makeRuntime({
     poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
     runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
     return { spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults };
+      finishInClass, weapon, garden, chips, defaults, itemClass };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1473,6 +1483,24 @@ const tests = {
     assert.strictEqual(r.memory.get(lines[1] + 0xC), 10);
     assert.strictEqual(state(r).gardenLines, 2);
     assert.strictEqual(state(r).gardenTrouble, null);
+  },
+  'our own BioShock items cost what the game charges for them': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const enrage = model.itemClass('BerserkRage', 30); model.itemClass('SlowFlow', 20);
+    const { lines } = model.garden(4);
+    r.poke(lines[3], enrage); r.poke(lines[3] + 0xC, 20); // line 4 sells Enrage at twice its value
+    r.load(); r.frames(2);
+    gardenLines(r, 1, [
+      { line: 1, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
+      { line: 2, name: 'Speedy Hacker', description: '', price: 80, class: 'SlowFlow', known: false },
+      { line: 3, name: 'Clever Inventor', description: '', price: 80, class: 'EfficientCrafter', known: false },
+      { line: 4, name: 'Hookshot', description: '', price: 20 },
+    ]);
+    r.frames(8);
+    assert.strictEqual(r.memory.get(lines[0] + 0xC), 150, 'Enrage: 30 x 2 = 60 ADAM, as the Garden sells it here');
+    assert.strictEqual(r.memory.get(lines[1] + 0xC), 50, 'Speedy Hacker is not sold here: its value, 20 ADAM');
+    assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, 'a class that is not loaded: the client\'s price');
+    assert.strictEqual(r.memory.get(lines[3] + 0xC), 50, 'someone else\'s item: the client\'s price');
   },
   'a Garden line bought is reported by map, and sold out in every Garden of the level': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();

@@ -672,11 +672,17 @@ class BridgeCore:
             if item is None:
                 return  # wait for the server's answer
             name, description = game_data.garden_text(item.item, item.player, item.flags, item.own)
-            lines.append({
+            entry = {
                 "line": line, "name": name, "description": description,
                 "price": game_data.garden_price(item.item, item.flags, item.own),
                 "bought": location in self.checked or location in self.sent or location in self.collected,
-            })
+            }
+            # The agent prices one of our own BioShock items as the game would, from its class, when it can.
+            game_class = game_data.garden_class(item.item, item.own)
+            if game_class is not None:
+                entry["class"] = game_class
+                entry["known"] = game_data.garden_price_known(item.item, item.own)
+            lines.append(entry)
         if not lines:
             return
         offer = {"level": self.level, "map": self.state.map, "lines": lines}

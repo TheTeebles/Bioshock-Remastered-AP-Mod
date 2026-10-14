@@ -1290,6 +1290,9 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual([offer[n]["price"] for n in (1, 2, 3, 5)], [40, game_data.USEFUL_PRICE,
                                                                      game_data.FILLER_PRICE, game_data.USEFUL_PRICE])
         self.assertIn("Yours", offer[1]["description"])
+        self.assertEqual((offer[1]["class"], offer[1]["known"]), ("AirBlast", True))
+        self.assertEqual((offer[5]["class"], offer[5]["known"]), ("SlowFlow", False))
+        self.assertNotIn("class", offer[2], "someone else's item has no class of ours")
 
     def test_every_gene_price_is_for_an_item(self) -> None:
         self.assertLessEqual(set(game_data.GENE_PRICES), {entry.name for entry in ITEM_TABLE})

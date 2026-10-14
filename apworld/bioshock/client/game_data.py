@@ -779,6 +779,21 @@ def garden_price(item: str, flags: int, own: bool) -> int:
     return FILLER_PRICE
 
 
+def garden_class(item: str, own: bool) -> str | None:
+    """The game class of one of this slot's own BioShock items, so the agent can read what the game charges for it."""
+    if not own or item not in ITEM_KIND:
+        return None
+    if ITEM_KIND[item] == ItemKind.PLASMID:  # a progressive plasmid: priced as its first level
+        item = plasmid_levels(item)[0]
+    give = GIVE_CLASS.get(item)
+    return None if give is None else give.rpartition(".")[2]
+
+
+def garden_price_known(item: str, own: bool) -> bool:
+    """Whether garden_price is the item's vanilla Garden price rather than one by importance."""
+    return own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES
+
+
 def garden_text(item: str, player: str, flags: int, own: bool) -> tuple[str, str]:
     """The name and description a Garden line shows for the multiworld item it holds."""
     kind = "a key item" if flags & 0b001 else "a useful item" if flags & 0b010 else "an item"

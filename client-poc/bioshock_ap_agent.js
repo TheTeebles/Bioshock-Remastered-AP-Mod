@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.1';
+const AGENT_VERSION = '2026-10-14.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1417,7 +1417,9 @@ function watchSisters(level, map, now) {
 const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
-const scan = { next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, map: null };
+const scan = {
+  next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
+};
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
 const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station', 'weapon', 'garden', 'class'
@@ -1471,6 +1473,9 @@ function watchObjects(map, now) {
     scan.weapons = [];
     scan.gardens = [];
     gardens.list = [];
+    scan.classes = new Map();
+    gardens.classes = new Map(); // classes can be loaded somewhere else in another level
+    gardens.defaultsOf.clear();
   }
   const table = carefulPtr(base.add(objectModel.objects));
   const count = carefulS32(base.add(objectModel.objects + 4));
@@ -1494,8 +1499,13 @@ function watchObjects(map, now) {
       scan.weapons.push(object);
     } else if (kind === 'garden') {
       scan.gardens.push(object);
-    } else if (kind === 'class' && scan.placeholder === null && nameOfObject(object) === GARDEN_PLACEHOLDER) {
-      scan.placeholder = object;
+    } else if (kind === 'class') {
+      const name = nameOfObject(object);
+      if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
+        scan.placeholder = object;
+      } else if (gardens.wanted.has(name)) {
+        scan.classes.set(name, object);
+      }
     }
   }
   scan.next = end;
@@ -1513,6 +1523,8 @@ function watchObjects(map, now) {
       gardens.placeholder = scan.placeholder;
       scan.placeholder = null;
     }
+    gardens.classes = scan.classes;
+    scan.classes = new Map();
     if (quests.flag === null && quests.trouble === null && quests.list.length > 0) {
       quests.flag = findBoolProperty(classOfObject(quests.list[0]), 'Completed');
       if (quests.flag === null) {
@@ -1660,6 +1672,10 @@ const gardens = {
   clones: new Map(), // `${name}\n${description}` -> copy of the placeholder class
   clonesOf: null, // the placeholder class those copies were made from
   bought: new Map(), // map -> Set of lines (from 1) seen bought there
+  vanilla: new Map(), // map -> Map(line -> { className, adjustment }): what each line sold before it was changed
+  wanted: new Set(), // classes of our own items the lines hold, to price them as the game does
+  classes: new Map(), // ... and where those classes are, from the object scan
+  defaultsOf: new Map(), // class address -> its default values, or null
   trouble: null,
 };
 
@@ -1770,20 +1786,18 @@ function gardenLines(garden, layout) {
   return Array.from({ length: count }, (_, n) => data.add(n * layout.size));
 }
 
-// Where the placeholder class keeps its default values (an array in the class object) and its two texts.
-function placeholderDefaults(cls) {
-  if (gardens.defaults !== undefined) {
-    return gardens.defaults;
+// Where an item class keeps its default values (an array in the class object, found by the text of its
+// FriendlyName) and its two texts: { at, data, count, name, description }, or null.
+function itemDefaults(cls) {
+  const key = cls.toString();
+  if (gardens.defaultsOf.has(key)) {
+    return gardens.defaultsOf.get(key);
   }
-  gardens.defaults = null;
+  let found = null;
   const name = findProperty(cls, 'FriendlyName', 'StrProperty');
   const description = findProperty(cls, 'Description', 'StrProperty');
-  if (name === null || description === null) {
-    gardens.trouble = `${GARDEN_PLACEHOLDER} has no FriendlyName or Description`;
-    return null;
-  }
-  const end = Math.max(name.offset, description.offset) + 12;
-  for (let at = 0x30; at + 12 <= CLASS_MIN_SIZE; at += 4) {
+  const end = name === null || description === null ? 0 : Math.max(name.offset, description.offset) + 12;
+  for (let at = 0x30; end > 0 && at + 12 <= CLASS_MIN_SIZE; at += 4) {
     const data = carefulPtr(cls.add(at));
     const count = carefulS32(cls.add(at + 4));
     const capacity = carefulS32(cls.add(at + 8));
@@ -1792,14 +1806,59 @@ function placeholderDefaults(cls) {
       continue;
     }
     if (stringAt(data.add(name.offset)) !== null) {
-      gardens.defaults = { at, count, name: name.offset, description: description.offset };
-      log(`stand-ins for Garden lines are copies of ${GARDEN_PLACEHOLDER}: ` +
-        `default values at class+0x${at.toString(16)}`);
-      return gardens.defaults;
+      found = { at, data, count, name: name.offset, description: description.offset };
+      break;
     }
   }
-  gardens.trouble = `could not find the default values of ${GARDEN_PLACEHOLDER}`;
-  return null;
+  gardens.defaultsOf.set(key, found);
+  return found;
+}
+
+// Where the placeholder class keeps its default values and its two texts.
+function placeholderDefaults(cls) {
+  if (gardens.defaults !== undefined) {
+    return gardens.defaults;
+  }
+  gardens.defaults = itemDefaults(cls);
+  if (gardens.defaults === null) {
+    gardens.trouble = `could not find the default values of ${GARDEN_PLACEHOLDER}`;
+  } else {
+    log(`stand-ins for Garden lines are copies of ${GARDEN_PLACEHOLDER}: ` +
+      `default values at class+0x${gardens.defaults.at.toString(16)}`);
+  }
+  return gardens.defaults;
+}
+
+// What an item is worth to the game (Item.CreditValue, in its default values): a Garden line charges that times the
+// line's CostAdjustment (probe gardenGenes, 2026-10-14). Null if it cannot be read.
+function creditValue(cls) {
+  const defaults = cls === undefined || cls === null ? null : itemDefaults(cls);
+  const value = defaults === null ? null : findProperty(cls, 'CreditValue', 'FloatProperty');
+  if (value === null || value.offset + 4 > defaults.count) {
+    return null;
+  }
+  const at = defaults.data.add(value.offset);
+  const credit = readable(at) ? at.readFloat() : null;
+  return credit !== null && credit >= 0 && credit < 100000 ? credit : null;
+}
+
+// The price of a line: one of our own BioShock items costs what the game charges for it (its value times the
+// multiplier of the line that sold it here, or the vanilla price the client knows, or its value alone); anything
+// else costs what the client says.
+function linePrice(wanted, map) {
+  if (wanted.className === null) {
+    return wanted.price;
+  }
+  const value = creditValue(gardens.classes.get(wanted.className));
+  const vanilla = [...(gardens.vanilla.get(map) || new Map()).values()]
+    .find((v) => v.className === wanted.className);
+  if (value !== null && vanilla !== undefined) {
+    return Math.round(value * vanilla.adjustment);
+  }
+  if (wanted.known || value === null) {
+    return wanted.price;
+  }
+  return Math.round(value);
 }
 
 function writeText(at, text) {
@@ -1821,6 +1880,7 @@ function standIn(name, description) {
     gardens.clones.clear(); // the class moved (a level change can reload it): copies of the old one are stale
     gardens.clonesOf = cls;
     gardens.defaults = undefined;
+    gardens.defaultsOf.clear();
   }
   const key = `${name}\n${description}`;
   if (gardens.clones.has(key)) {
@@ -1834,15 +1894,14 @@ function standIn(name, description) {
   while (size >= CLASS_MIN_SIZE && !readableRange(cls, size)) {
     size -= 0x10; // as much of the class as can be read: the memory after it may belong to nobody
   }
-  const values = carefulPtr(cls.add(defaults.at));
-  if (size < CLASS_MIN_SIZE || values === null) {
+  if (size < CLASS_MIN_SIZE) {
     gardens.trouble = `could not read the class ${GARDEN_PLACEHOLDER}`;
     return null;
   }
   const copy = Memory.alloc(CLASS_COPY_SIZE);
   Memory.copy(copy, cls, size);
   const ownValues = Memory.alloc(defaults.count);
-  Memory.copy(ownValues, values, defaults.count);
+  Memory.copy(ownValues, defaults.data, defaults.count);
   copy.add(defaults.at).writePointer(ownValues);
   copy.add(defaults.at + 8).writeU32(defaults.count);
   const texts = [writeText(ownValues.add(defaults.name), name),
@@ -1856,16 +1915,24 @@ function setGardenLines(config) {
     return `changing Garden lines is not supported on the ${build.name} build yet`;
   }
   const lines = new Map();
+  const wanted = new Set();
   for (const entry of Array.isArray(config.lines) ? config.lines : []) {
     if (Number.isInteger(entry.line) && entry.line > 0 && typeof entry.name === 'string') {
+      const className = typeof entry.class === 'string' && /^\w{1,64}$/.test(entry.class) ? entry.class : null;
       lines.set(entry.line, {
         name: entry.name.slice(0, 60),
         description: String(entry.description || '').slice(0, 200),
         price: Math.max(0, Number(entry.price) || 0),
         bought: entry.bought === true,
+        className,
+        known: entry.known === true,
       });
+      if (className !== null) {
+        wanted.add(className);
+      }
     }
   }
+  gardens.wanted = wanted;
   gardens.config = { map: typeof config.map === 'string' ? config.map : null, lines };
   log(`Garden lines to sell multiworld items: ${lines.size}${config.level ? ` in ${config.level}` : ''}`);
   return gardens.trouble;
@@ -1883,8 +1950,16 @@ function readGardens(map) {
   const applies = config !== null && (config.map === null || config.map === normalizeMap(map));
   const all = gardens.list.map((garden) => gardenLines(garden, layout));
   const bought = gardens.bought.get(map) || new Set();
+  const vanilla = gardens.vanilla.get(map) || new Map();
+  gardens.vanilla.set(map, vanilla);
   for (const lines of all) {
     lines.forEach((line, n) => {
+      const sold = carefulPtr(line.add(layout.ItemClass));
+      const className = sold === null || sold.isNull() ? null : nameOfObject(sold);
+      if (!vanilla.has(n + 1) && className !== null && className !== GARDEN_PLACEHOLDER &&
+          readable(line.add(layout.CostAdjustment))) {
+        vanilla.set(n + 1, { className, adjustment: line.add(layout.CostAdjustment).readFloat() });
+      }
       const amount = carefulS32(line.add(layout.AmountPurchased));
       if (amount !== null && amount > 0 && !bought.has(n + 1)) {
         bought.add(n + 1);
@@ -1916,7 +1991,10 @@ function readGardens(map) {
       }
       if (!same(carefulPtr(line.add(layout.ItemClass)), copy)) {
         line.add(layout.ItemClass).writePointer(copy);
-        line.add(layout.CostAdjustment).writeFloat(wanted.price / PLACEHOLDER_PRICE);
+      }
+      const adjustment = linePrice(wanted, map) / PLACEHOLDER_PRICE;
+      if (Math.abs(line.add(layout.CostAdjustment).readFloat() - adjustment) > 0.01) {
+        line.add(layout.CostAdjustment).writeFloat(adjustment); // the price can change once the item's class is found
       }
     });
   }
