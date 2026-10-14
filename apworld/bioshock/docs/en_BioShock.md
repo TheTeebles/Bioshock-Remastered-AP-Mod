@@ -16,6 +16,13 @@ With the default **Level Access** setting, every level after Medical Pavilion ha
 access item. Anything you already collected there is sent the moment the access item arrives, so you never need to go
 back for it.
 
+**Open Rapture** (Level Access: `open_rapture`, not playable yet) goes further: access items open travel itself, one
+per chapter. After Medical Pavilion, the bathysphere takes you to Neptune's Bounty, Arcadia or Fort Frolic in any
+order, as soon as you hold that chapter's access item. Hephaestus opens once you hold its item and the three before it,
+and Olympus Heights and Point Prometheus follow in story order, each behind its own item. A way into a chapter you
+can't enter yet (the submarine out of Smuggler's Hideout, the way out of Ryan's office) takes you back to Medical
+Pavilion's bathysphere instead.
+
 ## What counts as a check?
 
 These can hold anything, including the items you and other players need:
