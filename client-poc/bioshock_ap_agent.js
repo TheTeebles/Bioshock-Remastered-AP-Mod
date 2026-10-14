@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.12';
+const AGENT_VERSION = '2026-10-14.13';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2561,27 +2561,79 @@ function springTrap(pawn, trap) {
 }
 
 // A number written straight into the player is not shown until the HUD is told (Teebs, 2026-10-14: the EVE bar and
-// the dollars stayed as they were). Calling ShockPlayer's UpdateUIStats failed like the Remove functions (access
-// violation at 0x74), so the agent takes one more dollar and gives it back with the console's GiveItem, the way a
-// dollars item arrives: the game's own pickup path then redraws the stats.
-const HUD_NUDGE = 'GiveItem 1 ShockGame.Credits';
-const hud = { redraw: false };
+// the dollars stayed as they were). Calling ShockPlayer's UpdateUIStats as a script function failed like the Remove
+// functions (access violation at 0x74), and a dollar given back through GiveItem showed a "Collected" message. Its
+// C++ body, called directly with a frame the agent builds, redraws the EVE bar (probe 2026-10-14.16; the dollars
+// counter does not flash up, which Teebs accepts).
+const NATIVE_ENTRY = 0xc0; // a native function's C++ body, inside its UFunction
+const HUD_REDRAWS = ['UpdateUIStats', 'UpdateUIBioAmmoBank'];
+const EX_END_FUNCTION_PARMS = 0x16; // the bytecode a native steps over once its (here: no) parameters are read
+const hud = { redraw: false, trouble: null, calls: new Map() };
+
+function nativeCall(pawn, name) {
+  if (hud.calls.has(name)) {
+    return hud.calls.get(name);
+  }
+  const fn = findFunction(pawn, name);
+  const entry = fn === null ? null : carefulPtr(fn.add(NATIVE_ENTRY));
+  let call = null;
+  if (entry !== null && entry.toUInt32() >= moduleStart && entry.toUInt32() < moduleEnd) {
+    call = { fn, run: new NativeFunction(entry, 'void', ['pointer', 'pointer', 'pointer'], 'thiscall') };
+    log(`${name}'s C++ body is at module+${entry.sub(base)}`);
+  } else {
+    log(`${name} has no C++ body the agent can call`);
+  }
+  hud.calls.set(name, call);
+  return call;
+}
+
+function callNative(pawn, call) {
+  const code = Memory.alloc(16);
+  for (let at = 0; at < 16; at += 4) {
+    code.add(at).writeU32(EX_END_FUNCTION_PARMS * 0x01010101);
+  }
+  const frame = Memory.alloc(0x40);
+  const locals = Memory.alloc(0x40);
+  const result = Memory.alloc(0x10);
+  for (let at = 0; at < 0x40; at += 4) {
+    frame.add(at).writeU32(0);
+    locals.add(at).writeU32(0);
+  }
+  frame.writePointer(scriptCalls.template.words[0]); // the frame's vtable, from the game's own call
+  frame.add(4).writePointer(call.fn);
+  frame.add(8).writePointer(pawn);
+  frame.add(0xC).writePointer(code);
+  frame.add(0x10).writePointer(locals);
+  call.run(pawn, frame, result);
+  [code, frame, locals, result].forEach((m) => m.isNull()); // kept alive until the call is done
+}
 
 function redrawHud(pawn) {
-  if (!hud.redraw || pawn === null) {
+  if (!hud.redraw || pawn === null || hud.trouble !== null) {
     return;
+  }
+  hud.trouble = scriptCallsTrouble();
+  if (hud.trouble !== null) {
+    log(`the HUD is not redrawn: ${hud.trouble}`);
+    return;
+  }
+  if (!readyToCallScript()) {
+    return; // watching for a call to copy the frame's vtable from; redrawn in a later tick
   }
   hud.redraw = false;
-  const offset = statOf(pawn, TRAPS.pickpocket);
-  if (offset === null) {
-    return;
+  for (const name of HUD_REDRAWS) {
+    const call = nativeCall(pawn, name);
+    if (call === null) {
+      continue;
+    }
+    try {
+      callNative(pawn, call);
+    } catch (e) {
+      hud.trouble = `${name} failed: ${e.message}`;
+      log(`the HUD is not redrawn again this session: ${hud.trouble}`);
+      return;
+    }
   }
-  const at = pawn.add(offset);
-  const dollars = at.readS32();
-  if (dollars > 0) {
-    at.writeS32(dollars - 1);
-  }
-  queue.push({ id: null, command: HUD_NUDGE });
 }
 
 function dropLateTraps(now) {

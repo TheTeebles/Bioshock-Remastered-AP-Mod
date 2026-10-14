@@ -23,7 +23,7 @@ client that ships inside it, and the script the client puts into the running gam
 | Gatherer's Garden purchases (Shop Checks option) | Off by default; `first_appearances` (61 checks) or `all` (273), every level's Garden, read from the game's map files. Each line is renamed after the multiworld item it holds, priced and given an icon, and buying it sends the check (Steam). Works in the real game at Neptune's Bounty; the other levels' Gardens are not tried in game yet |
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink in the game | Works in the real game, both ways: your deaths are sent, and a received death kills Jack through the game's own OnKilled, so he collapses and wakes in a Vita-Chamber |
-| The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the HUD redraw is not tried yet |
+| The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the EVE bar redraws at once; the dollars counter does not flash up (accepted by Teebs) |
 | The GOG and Epic versions | Not supported yet |
 
 [claude/bioshock-ap-design.md](claude/bioshock-ap-design.md) has the whole picture: what was found out about the

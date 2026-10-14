@@ -186,6 +186,14 @@ function makeRuntime({
           const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
         };
       }
+      if (runtime.nativeBodies && runtime.nativeBodies.has(address.value)) { // a script function's C++ body
+        return (self, frame, result) => {
+          const read = (at) => runtime.memory.get(frame.value + at);
+          runtime.nativeCalls.push({ name: runtime.nativeBodies.get(address.value), self: self.value, fn: read(4),
+            object: read(8), vtable: read(0), result: result.value });
+          if (runtime.onNativeCall) { runtime.onNativeCall(); }
+        };
+      }
       if (address.value === BASE + PROCESS_EVENT) {
         return (self, frame) => {
           const read = (at) => runtime.memory.get(frame.value + at);
@@ -1678,15 +1686,46 @@ const tests = {
     assert.strictEqual(r.scriptCalls.length, called, 'RemoveCredits is not tried again');
     assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 50);
   },
-  'a number written by a trap is redrawn on the HUD through a dollar given back': () => {
+  'a number written by a trap is redrawn on the HUD by calling UpdateUIStats\'s C++ body': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false); r.creditsAt = game.pawn + 0xAEC;
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false, true); r.creditsAt = game.pawn + 0xAEC;
+    r.poke(model.updateUIStats + 0xC0, BASE + 0x1D86F0); r.poke(model.updateUIBioAmmoBank + 0xC0, BASE + 0x1D8910);
+    r.nativeBodies = new Map([[BASE + 0x1D86F0, 'UpdateUIStats'], [BASE + 0x1D8910, 'UpdateUIBioAmmoBank']]);
+    r.nativeCalls = [];
     r.load(); r.frames(2);
     r.context.rpc.exports.action(1, 'eve_drain');
-    r.frames(10);
+    r.frames(3);
     assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
-    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 123, 'one dollar taken and given back by the game');
-    assert.deepStrictEqual(r.execCalls.map((c) => c.command), ['GiveItem 1 ShockGame.Credits']);
+    assert.strictEqual(r.nativeCalls.length, 0, 'waiting for a call to copy the frame\'s vtable from');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(2);
+    assert.strictEqual(r.scriptCalls.length, 0, 'no script function called through ProcessEvent');
+    assert.deepStrictEqual(r.nativeCalls.map((c) => [c.name, c.self, c.fn, c.object]),
+      [['UpdateUIStats', game.pawn, model.updateUIStats, game.pawn],
+        ['UpdateUIBioAmmoBank', game.pawn, model.updateUIBioAmmoBank, game.pawn]]);
+    assert.ok(r.nativeCalls.every((c) => c.vtable !== 0 && c.vtable !== undefined), 'the copied frame\'s vtable');
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 123, 'no dollar taken or given');
+    assert.deepStrictEqual(r.execCalls.map((c) => c.command), [], 'no console command, so no "Collected" message');
+    r.frames(5);
+    assert.strictEqual(r.nativeCalls.length, 2, 'redrawn once per trap');
+  },
+  'a HUD redraw that fails is not tried again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false, true); r.creditsAt = game.pawn + 0xAEC;
+    r.poke(model.updateUIStats + 0xC0, BASE + 0x1D86F0); r.poke(model.updateUIBioAmmoBank + 0xC0, 0x1234);
+    r.nativeBodies = new Map([[BASE + 0x1D86F0, 'UpdateUIStats']]);
+    r.nativeCalls = [];
+    r.onNativeCall = () => { throw new Error('access violation accessing 0x74'); };
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.frames(3);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(2);
+    assert.strictEqual(r.nativeCalls.length, 1, 'UpdateUIBioAmmoBank is not reached either');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(3);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61, 'the trap still works');
+    assert.strictEqual(r.nativeCalls.length, 1, 'not called again');
   },
   'without the Remove functions the trap writes the number itself': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
