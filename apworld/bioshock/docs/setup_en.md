@@ -1,9 +1,8 @@
 # BioShock Remastered Randomizer Setup Guide
 
 > **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
-> version, and notices every kind of check there. No whole seed has been played through in the real game yet, and the
-> EVE Drain and Pickpocket traps are not tried in the game yet. "What to expect from the real game today" below says
-> exactly where things stand.
+> version, and notices every kind of check there. No whole seed has been played through in the real game yet.
+> "What to expect from the real game today" below says exactly where things stand.
 
 ## Quick start
 
@@ -99,9 +98,9 @@ If the game was started as administrator, Archipelago has to be started as admin
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
-- **EVE Drain and Pickpocket traps (Steam):** built, not tried in the game yet. EVE Drain empties your EVE and
-  Pickpocket takes half your dollars (rounded up), through the game's own RemoveBioAmmo and RemoveCredits. If the
-  game can't be reached, the client says it could not deliver the trap and keeps it for later.
+- **EVE Drain and Pickpocket traps (Steam):** work in the real game (2026-10-14): EVE Drain empties your EVE and
+  Pickpocket takes half your dollars (rounded up). If the game can't be reached, the client says it could not deliver
+  the trap and keeps it for later.
 
 ## Client commands
 

@@ -506,14 +506,20 @@ function makeRuntime({
     // The player's EVE and dollars as ShockPlayer declares them, and (unless left out) its functions for taking some.
     const removeBioAmmo = make('RemoveBioAmmo', functionClass);
     const removeCredits = make('RemoveCredits', functionClass);
-    const playerStats = (functions = true) => {
+    const updateUIStats = make('UpdateUIStats', functionClass);
+    const updateUIBioAmmoBank = make('UpdateUIBioAmmoBank', functionClass);
+    const playerStats = (functions = true, redraws = false) => {
       fields(playerClass, [['BioAmmo', floatProperty, 0xAF8], ['Credits', intProperty, 0xAEC]]);
       if (functions) { // in front of the properties
         poke(removeCredits + 0x44, runtime.memory.get(playerClass + 0x5C));
         poke(removeBioAmmo + 0x44, removeCredits); poke(playerClass + 0x5C, removeBioAmmo);
       }
+      if (redraws) { // the HUD's natives, in front as well
+        poke(updateUIBioAmmoBank + 0x44, runtime.memory.get(playerClass + 0x5C));
+        poke(updateUIStats + 0x44, updateUIBioAmmoBank); poke(playerClass + 0x5C, updateUIStats);
+      }
     };
-    return { playerStats, removeBioAmmo, removeCredits, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1667,6 +1673,21 @@ const tests = {
     r.frames(2);
     assert.strictEqual(r.scriptCalls.length, called, 'RemoveCredits is not tried again');
     assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 50);
+  },
+  'a number written by a trap is redrawn on the HUD': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(true, true);
+    r.load(); r.frames(2);
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.removeBioAmmo || fn === model.removeCredits) { throw new Error('access violation accessing 0x74'); }
+    };
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.frames(2);
+    r.gameEvent(game.hud, model.tick);
+    r.frames(3);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
+    const redraws = r.scriptCalls.map((c) => c.fn).filter((fn) => fn === model.updateUIStats || fn === model.updateUIBioAmmoBank);
+    assert.deepStrictEqual(redraws, [model.updateUIStats, model.updateUIBioAmmoBank]);
   },
   'without the Remove functions the trap writes the number itself': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();

@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.10';
+const AGENT_VERSION = '2026-10-14.11';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2556,7 +2556,39 @@ function springTrap(pawn, trap) {
     at.writeS32(target);
   }
   log(`${trap.stat} written: ${shown(now)} -> ${shown(readStat(at, trap))} (${why})`);
+  hud.redraw = true;
   return null;
+}
+
+// A number written straight into the player is not shown until the HUD is told (Teebs, 2026-10-14: the EVE bar and
+// the dollars stayed as they were). ShockPlayer has natives without parameters that redraw them.
+const HUD_REDRAWS = ['UpdateUIStats', 'UpdateUIBioAmmoBank'];
+const hud = { redraw: false, failed: false };
+
+function redrawHud(pawn) {
+  if (!hud.redraw || hud.failed || pawn === null || scriptCallsTrouble() !== null || !readyToCallScript()) {
+    return;
+  }
+  hud.redraw = false;
+  for (const name of HUD_REDRAWS) {
+    const fn = findFunction(pawn, name);
+    if (fn === null) {
+      log(`the player has no ${name}; the HUD shows the old number until the game redraws it`);
+      continue;
+    }
+    const parms = Memory.alloc(0x40);
+    for (let n = 0; n < 0x40; n += 4) {
+      parms.add(n).writeU32(0);
+    }
+    try {
+      callScript(pawn, fn, parms);
+      parms.isNull();
+    } catch (e) {
+      hud.failed = true; // not tried again this session
+      log(`${name} failed (${e.message}); the HUD shows the old number until the game redraws it`);
+      return;
+    }
+  }
 }
 
 function dropLateTraps(now) {
@@ -2569,6 +2601,7 @@ function dropLateTraps(now) {
 
 function carryOutTraps(pawn, now) {
   dropLateTraps(now);
+  redrawHud(pawn);
   while (traps.length > 0) {
     let trouble;
     try {
