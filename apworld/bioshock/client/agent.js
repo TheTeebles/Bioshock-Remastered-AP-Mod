@@ -2465,19 +2465,22 @@ function keepLevelChanges(map, layout, rules) {
     }
     const redirect = rules.redirects.find((r) => r.from === map && r.to === target);
     if (redirect !== undefined) {
-      travel.armed.push(redirect);
       if (original !== undefined) {
-        continue; // already pointed at the hub
+        travel.armed.push({ ...redirect, used: original.now });
+        continue; // already pointed elsewhere
       }
-      const saved = { map: stringAt(change.add(layout.map)), label: stringAt(change.add(layout.label)) || '', rows: {},
-        now: redirect.map };
+      const saved = { map: stringAt(change.add(layout.map)), label: stringAt(change.add(layout.label)) || '', rows: {} };
       for (const { at, property } of changeRows(change, layout)) {
         saved.rows[property] = carefulS32(at);
       }
-      if (pointChange(change, layout, redirect.mapName, redirect.arrival,
-        { mapname: redirect.mapIndex, startlocationlabel: redirect.arrivalIndex })) {
+      // The hub first; where its names do not fit, the client's fallback, which always does.
+      const goal = [redirect, redirect.fallback].find((g) => g && pointChange(change, layout, g.mapName, g.arrival,
+        { mapname: g.mapIndex, startlocationlabel: g.arrivalIndex }));
+      if (goal !== undefined) {
+        saved.now = goal.map;
         travel.originals.set(key, saved);
-        log(`Open Rapture: the way from ${map} to ${target} now leads to ${redirect.map} (${redirect.arrival})`);
+        travel.armed.push({ ...redirect, used: goal.map });
+        log(`Open Rapture: the way from ${map} to ${target} now leads to ${goal.map} (${goal.arrival})`);
       } else {
         travelTrouble(`could not point the level change to ${target} elsewhere (its strings have no room)`);
       }
@@ -2515,9 +2518,9 @@ function keepTravel(map) {
 function noteTravel(from, to) {
   const before = normalizeMap(from);
   const after = normalizeMap(to);
-  const taken = travel.armed.find((r) => r.from === before && r.map === after);
+  const taken = travel.armed.find((r) => r.from === before && r.used === after && after !== before);
   if (taken !== undefined) {
-    send({ type: 'travel_redirected', from: before, to: taken.to });
+    send({ type: 'travel_redirected', from: before, to: taken.to, landed: after });
   }
   travel.armed = [];
   travel.originals.clear(); // the level's objects are gone; a new level has its own
@@ -2528,12 +2531,13 @@ function setTravelRules(config) {
     return 'this build gives the agent no way to find the bathysphere';
   }
   const named = (text) => (typeof text === 'string' && text ? indexOfName(text) : -1);
+  const goal = (g) => (g ? { map: String(g.map).toLowerCase(), mapName: mapFileName(g.map), arrival: g.arrival,
+    mapIndex: named(mapFileName(g.map)), arrivalIndex: named(g.arrival) } : null);
   const rules = {
     stops: (config.stops || []).map((s) => ({ map: String(s.map).toLowerCase(), arrival: s.arrival,
       arrivalIndex: named(s.arrival) })),
     redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
-      map: String(r.map).toLowerCase(), mapName: mapFileName(r.map), arrival: r.arrival,
-      mapIndex: named(mapFileName(r.map)), arrivalIndex: named(r.arrival) })),
+      ...goal(r), fallback: goal(r.fallback) })),
   };
   const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
     ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];

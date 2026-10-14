@@ -569,7 +569,7 @@ function makeRuntime({
       ['Arcadia', '3-Arcadia', 'ArcBathyEndPS'], ['Fort Frolic', '4-Recreation', 'PlayerStart'],
       ['Hephaestus', '5-Hephaestus', 'EngBathyStartPS'], ['Apollo Square', '6-Slums', 'PlayerStart_FromDeck7Bathy'],
       ['Point Prometheus', '7-Science', 'FromResidential'], ['', 'None', 'None']];
-    ['FromFisheriesPS', 'FromSubBayPS', '3-Arcadia', '2-SubBay', 'MapName', 'StartLocationLabel'].forEach(name);
+    ['FromFisheriesPS', 'FromSubBayPS', '3-Arcadia', '2-SubBay', 'FromArcadiaPS', 'MapName', 'StartLocationLabel'].forEach(name);
     // The manager: every destination, `unlocked` offered, with room for `room`; `onHeap` if its buffer is the
     // process heap's.
     const bathysphere = (unlocked, room = unlocked.length, onHeap = false) => {
@@ -1677,6 +1677,21 @@ const tests = {
     r.frames(4);
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected').map((m) => [m.from, m.to]),
       [['2-subbay', '3-arcadia']]);
+  },
+  'where the hub does not fit, a crossing takes the fallback, which does': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '2-SubBay', label: 'FromArcadiaPS', rows: ['2-SubBay', 'FromArcadiaPS'] });
+    assert.strictEqual(state(r).travelTrouble, null);
+    r.frames(6);
+    assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
   },
   'a level change whose strings have no room and are not on the process heap is left alone and said': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();

@@ -74,8 +74,10 @@ class LittleSisterResolved:
 
 @dataclass(frozen=True)
 class TravelRedirected:
-    """The agent sent a level change into a locked chapter somewhere else. `to` is the map it was going to."""
+    """The agent sent a level change into a locked chapter somewhere else. `to` is the map it was going to, `landed`
+    the map it went to instead."""
     to: str | None
+    landed: str | None = None
 
 
 AgentEvent = (CommandStarted | CommandResult | ActionResult | PlayerDied | AgentMessage | LittleSisterResolved

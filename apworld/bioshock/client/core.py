@@ -119,6 +119,7 @@ class BridgeCore:
         self._travel_command_id: int | None = None  # the last travel rules sent to the agent went under this id
         self._travel_sent: str | None = None  # ... and were these
         self._travel_trouble_shown = False
+        self._entered: str | None = None  # the level the player was last told about where its way on leads
         # Makes the Garden's menu with the AP icon and returns the folder it is in (None: not for this agent, such as
         # the simulated game). Raises an exception whose message says why it cannot.
         self.prepare_movies: Callable[[], str | None] = lambda: None
@@ -304,7 +305,7 @@ class BridgeCore:
                 self._notice(f"The bathysphere and the level changes are not locked to your access items: "
                              f"{event.reason}.", warning=True)
         elif isinstance(event, TravelRedirected):
-            text = travel.blocked_notice(event.to or "", self._received_names)
+            text = travel.blocked_notice(event.to or "", event.landed, self._received_names)
             if text is not None:
                 self._notice(text, warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._movies_command_id:
@@ -489,6 +490,11 @@ class BridgeCore:
         if level not in self.visited:
             self.visited.add(level)
             self._dirty = True
+        if self.open_rapture and level != self._entered:
+            self._entered = level
+            text = travel.locked_way_on(level, self._received_names)
+            if text is not None:
+                self._notice(text)
 
     def _completed_levels(self, state: GameState) -> list[str]:
         if self.open_rapture:  # levels come in any order: what counts is where the player has been, and the story

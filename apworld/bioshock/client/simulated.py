@@ -198,7 +198,7 @@ class SimulatedGame:
         for redirect in (self.travel_rules or {}).get("redirects", ()):
             if redirect["to"] == wanted and MAP_LEVEL.get(redirect["from"]) == self.level:
                 self.travel(MAP_LEVEL[redirect["map"]])
-                self._events.append(TravelRedirected(wanted))
+                self._events.append(TravelRedirected(wanted, redirect["map"]))
                 return self.level
         self.travel(level)
         return level

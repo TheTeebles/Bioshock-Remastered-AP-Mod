@@ -170,7 +170,7 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
     if kind == "little_sister":
         return LittleSisterResolved(normalize_map(payload.get("map")))
     if kind == "travel_redirected":
-        return TravelRedirected(normalize_map(payload.get("to")))
+        return TravelRedirected(normalize_map(payload.get("to")), normalize_map(payload.get("landed")))
     if kind == "exec_disabled":
         return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
     return None

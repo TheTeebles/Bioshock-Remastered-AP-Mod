@@ -18,6 +18,7 @@ from ..data import (
     APOLLO_SQUARE, ARCADIA, CHAPTER_OF_LEVEL, CHAPTERS, FARMERS_MARKET, FORT_FROLIC, FREE_CHAPTERS, MEDICAL_PAVILION,
     OLYMPUS_HEIGHTS, POINT_PROMETHEUS, RAPTURE_CENTRAL_CONTROL, SMUGGLERS_HIDEOUT,
 )
+from .game_data import MAP_LEVEL
 
 
 class Stop(NamedTuple):
@@ -48,11 +49,17 @@ class Crossing(NamedTuple):
     from_map: str
     to_map: str
     chapter: int  # the chapter it enters
+    # Where it goes when the hub's names do not fit its strings (the agent cannot always make them longer): back into
+    # the level it starts from, at the arrival point of the way it leads out. Both names are no longer than the
+    # crossing's own ("2-SubBay" for "3-Arcadia", "FromArcadiaPS" for "FromFisheriesPS"; "5-Ryan" for "6-Resi",
+    # "FromBulkhead" for "PlayerStart_First"), so they always fit.
+    bounce_map: str
+    bounce_arrival: str
 
 
 CROSSINGS: tuple[Crossing, ...] = (
-    Crossing("2-subbay", "3-arcadia", 3),
-    Crossing("5-ryan", "6-resi", 6),
+    Crossing("2-subbay", "3-arcadia", 3, "2-subbay", "FromArcadiaPS"),
+    Crossing("5-ryan", "6-resi", 6, "5-ryan", "FromBulkhead"),
 )
 
 # Open Rapture's Level Complete: a level is finished when the next level of its chapter has been reached, or, for the
@@ -118,7 +125,8 @@ def travel_rules(held: Collection[str], visited: Collection[str]) -> dict[str, A
                    "arrival": FIRST_ARRIVALS.get(stop.level, stop.arrival) if stop.level not in visited
                    else stop.arrival}
                   for stop in stops],
-        "redirects": [{"from": crossing.from_map, "to": crossing.to_map, "map": HUB.map, "arrival": HUB.arrival}
+        "redirects": [{"from": crossing.from_map, "to": crossing.to_map, "map": HUB.map, "arrival": HUB.arrival,
+                       "fallback": {"map": crossing.bounce_map, "arrival": crossing.bounce_arrival}}
                       for crossing in CROSSINGS if crossing.chapter not in opened],
     }
 
@@ -137,12 +145,25 @@ def completed_levels(visited: Collection[str], quests: Collection[str]) -> list[
     return done
 
 
-def blocked_notice(crossing_to: str, held: Collection[str]) -> str | None:
-    """What the player is told when a crossing is sent to the hub."""
+def locked_way_on(level: str, held: Collection[str]) -> str | None:
+    """Said on entering a level whose way on leads into a chapter still locked."""
+    for crossing in CROSSINGS:
+        if MAP_LEVEL.get(crossing.from_map) == level and crossing.chapter not in open_chapters(held):
+            chapter = next(c for c in CHAPTERS if c.number == crossing.chapter)
+            return (f"The way on to {chapter.levels[0]} is locked until you receive {chapter.access_item}. "
+                    f"Use a bathysphere to go elsewhere meanwhile.")
+    return None
+
+
+def blocked_notice(crossing_to: str, landed: str | None, held: Collection[str]) -> str | None:
+    """What the player is told when a crossing into a locked chapter went somewhere else (`landed`, a map)."""
     for crossing in CROSSINGS:
         if crossing.to_map == crossing_to and crossing.chapter not in open_chapters(held):
             chapter = next(c for c in CHAPTERS if c.number == crossing.chapter)
-            return (f"{chapter.levels[0]} is locked until you receive {chapter.access_item}: "
-                    f"the way there took you back to {HUB.level}'s bathysphere.")
+            if landed == crossing.bounce_map:
+                where = (f"you stay in {MAP_LEVEL.get(landed, landed)}; go back to a bathysphere "
+                         f"({HUB.level}'s goes everywhere you can)")
+            else:
+                where = f"the way there took you back to {HUB.level}'s bathysphere"
+            return f"{chapter.levels[0]} is locked until you receive {chapter.access_item}: {where}."
     return None
-

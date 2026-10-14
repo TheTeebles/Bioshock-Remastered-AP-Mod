@@ -154,3 +154,26 @@ class TestOpenRaptureClient(unittest.TestCase):
         h.step(2)
         rules = h.game.travel_rules or {}
         self.assertEqual(next(s["arrival"] for s in rules["stops"] if s["map"] == "3-arcadia"), "ArcBathyEndPS")
+
+
+class TestLockedWayOn(unittest.TestCase):
+    def test_entering_a_level_whose_way_on_is_locked_says_so_once(self) -> None:
+        h = open_rapture().connect().attach()
+        h.receive(NEPTUNES_BOUNTY_ACCESS)
+        h.game.travel("Smuggler's Hideout")
+        h.step(5)
+        said = [n.text for n in h.notices if "The way on to Arcadia is locked" in n.text]
+        self.assertEqual(len(said), 1)
+
+    def test_a_bounce_back_says_where_you_are(self) -> None:
+        text = travel.blocked_notice("3-arcadia", "2-subbay", set())
+        self.assertIn("you stay in Smuggler's Hideout", text)
+        self.assertIn("took you back to Medical Pavilion", travel.blocked_notice("3-arcadia", "1-medical", set()))
+        self.assertIsNone(travel.blocked_notice("3-arcadia", "1-medical", {ARCADIA_ACCESS}))
+
+    def test_every_redirect_has_a_fallback_no_longer_than_the_crossing(self) -> None:
+        arrivals = {"3-arcadia": "FromFisheriesPS", "6-resi": "PlayerStart_First"}
+        for redirect in travel.travel_rules(set(), set())["redirects"]:
+            fallback = redirect["fallback"]
+            self.assertLessEqual(len(fallback["map"]), len(redirect["to"]))
+            self.assertLessEqual(len(fallback["arrival"]), len(arrivals[redirect["to"]]))
