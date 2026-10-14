@@ -36,7 +36,8 @@ class BioShockWorld(World):
     # Universal Tracker builds the player's world again from the slot data, without their YAML.
     ut_can_gen_without_yaml = True
     TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
-                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link")
+                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
+                       "start_with_research_camera")
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:

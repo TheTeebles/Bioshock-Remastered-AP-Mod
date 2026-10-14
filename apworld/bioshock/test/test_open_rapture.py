@@ -1,5 +1,5 @@
-"""Open Rapture (level_access: open_rapture): travel opens chapter by chapter. The world side only; the game side,
-which really locks the bathysphere, is not built yet."""
+"""Open Rapture (level_access: open_rapture): travel opens chapter by chapter. The world side only; the client side
+is in test_client_travel.py."""
 import itertools
 
 from Options import OptionError
@@ -73,6 +73,15 @@ class TestOpenRaptureWithoutStartingCamera(BioShockTestBase):
         self.assertFalse(any(self.can_reach_location(name) for name in photos))
         self.collect_by_name(ACCESS[2])
         self.assertTrue(all(self.can_reach_location(name) for name in photos))
+
+    def test_universal_tracker_knows_the_camera_was_not_given(self) -> None:
+        slot_data = dict(self.world.fill_slot_data())
+        self.world.options.start_with_research_camera.value = True
+        self.world.options.level_access.value = 0
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        self.assertFalse(self.world.options.start_with_research_camera)
+        self.assertEqual(self.world.options.level_access.value, 2)
 
 
 class TestOpenRaptureGenerates(PoolTestBase):
