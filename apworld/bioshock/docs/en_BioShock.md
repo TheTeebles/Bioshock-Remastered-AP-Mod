@@ -68,6 +68,10 @@ has little or no filler, and then little or nothing becomes a trap.
 Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are for now. The game hands
 those out itself, so shuffling them has to wait until the client can suppress vanilla pickups.
 
+You start with the Research Camera (the `start_with_research_camera` option, on by default), so you can research
+enemies from the start. Some later ones, such as spider splicers, are hard to hurt without it. The camera in Neptune's
+Bounty is still there and gives film.
+
 ## What is the goal?
 
 Defeat Frank Fontaine at the end of Proving Grounds. With Level Access on, you also need Point Prometheus Access.

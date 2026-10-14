@@ -543,3 +543,26 @@ class TestWeaponStationsOff(PoolTestBase):
     def test_no_weapon_upgrades_in_the_pool(self) -> None:
         names = {item.name for item in self.multiworld.itempool}
         self.assertFalse(names & set(WEAPON_UPGRADES))
+
+
+class TestResearchCamera(BioShockTestBase):
+    def precollected(self) -> list[str]:
+        return [item.name for item in self.multiworld.precollected_items[self.player]]
+
+    def test_on_by_default(self) -> None:
+        self.assertEqual(self.precollected().count("Research Camera"), 1)
+        self.assertNotIn("Research Camera", [item.name for item in self.multiworld.itempool])
+
+
+class TestNoResearchCamera(BioShockTestBase):
+    options = {"start_with_research_camera": False}
+
+    def test_not_given(self) -> None:
+        self.assertNotIn("Research Camera", [item.name for item in self.multiworld.precollected_items[self.player]])
+
+
+class TestResearchCameraAlreadyInStartInventory(PoolTestBase):
+    def test_given_once(self) -> None:
+        multiworld = self.generate_for_real({"start_inventory": {"Research Camera": 1}})
+        names = [item.name for item in multiworld.precollected_items[1]]
+        self.assertEqual(names.count("Research Camera"), 1)

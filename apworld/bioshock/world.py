@@ -9,7 +9,8 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.22"
+WORLD_VERSION = "0.1.23"
+RESEARCH_CAMERA = "Research Camera"
 SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
 # 4: station_touch, and shop_checks is 0/1/2
 
@@ -79,6 +80,8 @@ class BioShockWorld(World):
                 f"multiworld and need 12 checks that may hold useful items, but these options leave room for "
                 f"{max(room, 0)}. Filler-only collectibles and locations under exclude_locations do not count. "
                 "Turn on more kinds of checks, set audio diaries to 'all' or exclude fewer locations.")
+        if self.options.start_with_research_camera and RESEARCH_CAMERA not in self.options.start_inventory.value:
+            self.multiworld.push_precollected(self.create_item(RESEARCH_CAMERA))
 
     def _open_from_the_start(self, open_checks: list[LocationData]) -> list[LocationData]:
         """The checks among these that need no access item the player does not start with."""
