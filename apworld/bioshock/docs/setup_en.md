@@ -2,7 +2,7 @@
 
 > **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
 > version, and notices every kind of check there. No whole seed has been played through in the real game yet, and the
-> EVE Drain and Pickpocket traps are not built. "What to expect from the real game today" below says
+> EVE Drain and Pickpocket traps are not tried in the game yet. "What to expect from the real game today" below says
 > exactly where things stand.
 
 ## Required Software
@@ -88,8 +88,9 @@ If the game was started as administrator, Archipelago has to be started as admin
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
-- **Not yet, on any version:** the EVE Drain and Pickpocket traps. The client names every item it could not give you
-  and keeps it for later.
+- **EVE Drain and Pickpocket traps (Steam):** built, not tried in the game yet. EVE Drain empties your EVE and
+  Pickpocket takes half your dollars. The game is only changed once its own description of Jack says the number is
+  where the client expects; otherwise the client says it could not deliver the trap and keeps it for later.
 
 ## Client commands
 

@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.6';
+const AGENT_VERSION = '2026-10-14.7';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2444,6 +2444,94 @@ function carryOutKills(pawn, now) {
   }
 }
 
+// ---------------------------------------------------------------------------------------------------------------
+// Traps
+// ---------------------------------------------------------------------------------------------------------------
+
+// EVE Drain empties the player's EVE, Pickpocket takes half their dollars. Both write the player's own number where
+// the older build's Cheat Engine table has it (PAWN_STATS), and only once the game's own description of the player's
+// class says a property of the right kind sits at that offset, so a build that moved it is refused, not written over.
+// Its name goes to the log. Like kills, they are carried out on the game thread once the player has a body.
+const TRAPS = {
+  eve_drain: { stat: 'EVE', kind: 'FloatProperty', change: (eve) => 0 },
+  pickpocket: { stat: 'dollars', kind: 'IntProperty', change: (dollars) => Math.floor(dollars / 2) },
+};
+const traps = []; // { id, name, at }: traps asked for and not carried out yet
+const statProperties = new Map(); // `${class}/${stat}` -> { offset, name } or null when the class has none there
+
+// The property of this class (or a class it extends) at this offset: its name and the name of its kind.
+function propertyAt(cls, offset) {
+  for (const owner of lineageOf(cls)) {
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      const kind = nameOfObject(classOf(field));
+      if (kind !== null && kind.endsWith('Property') && carefulS32(field.add(objectModel.propertyOffset)) === offset) {
+        return { name: nameOfObject(field), kind };
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return null;
+}
+
+function statOf(pawn, trap) {
+  const cls = classOfObject(pawn);
+  if (objectModel === null || cls === null) {
+    return null;
+  }
+  const key = `${cls}/${trap.stat}`;
+  if (!statProperties.has(key)) {
+    const stat = PAWN_STATS.find((candidate) => candidate.name === trap.stat);
+    const found = propertyAt(cls, stat.offset);
+    const fits = found !== null && found.kind === trap.kind;
+    statProperties.set(key, fits ? { offset: stat.offset, name: found.name } : null);
+    log(fits ? `the player's ${trap.stat} is ${found.name} at +0x${stat.offset.toString(16)}`
+      : `the player's ${trap.stat} is not at +0x${stat.offset.toString(16)}: ` +
+        `${found === null ? 'no property there' : `${found.name} there is a ${found.kind}`}`);
+  }
+  return statProperties.get(key);
+}
+
+function springTrap(pawn, trap) {
+  const stat = statOf(pawn, trap);
+  if (stat === null) {
+    return `this build does not keep the player's ${trap.stat} where the agent expects`;
+  }
+  const at = pawn.add(stat.offset);
+  if (trap.kind === 'FloatProperty') {
+    const before = at.readFloat();
+    at.writeFloat(trap.change(before));
+    log(`${trap.stat}: ${Math.round(before * 10) / 10} -> ${Math.round(at.readFloat() * 10) / 10}`);
+  } else {
+    const before = at.readS32();
+    at.writeS32(trap.change(before));
+    log(`${trap.stat}: ${before} -> ${at.readS32()}`);
+  }
+  return null;
+}
+
+function dropLateTraps(now) {
+  while (traps.length > 0 && now - traps[0].at > KILL_PATIENCE_MS) {
+    const late = traps.shift();
+    send({ type: 'action_result', id: late.id, name: late.name, ok: false,
+      reason: 'the player could not be reached in time (a menu or a loading screen)' });
+  }
+}
+
+function carryOutTraps(pawn, now) {
+  dropLateTraps(now);
+  for (const trap of traps.splice(0)) {
+    let trouble;
+    try {
+      trouble = springTrap(pawn, TRAPS[trap.name]);
+    } catch (e) {
+      trouble = `the player's numbers could not be changed (${e.message})`;
+    }
+    send(trouble === null ? { type: 'action_result', id: trap.id, name: trap.name, ok: true }
+      : { type: 'action_result', id: trap.id, name: trap.name, ok: false, reason: trouble });
+  }
+}
+
 function watchPlayer(level, info, map, now) {
   const loading = readPath(build.loading, (p) => p.readS32());
   if (loading) {
@@ -2454,6 +2542,7 @@ function watchPlayer(level, info, map, now) {
     return;
   }
   carryOutKills(body.pawn, now);
+  carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
 }
@@ -2489,6 +2578,7 @@ function onLevelTick(level) {
       probeTick(level, now);
     }
     dropLateKills(now);
+    dropLateTraps(now);
     runQueuedCommand(level, info, now);
   } catch (e) {
     if (!complained) {
@@ -2598,11 +2688,19 @@ rpc.exports = {
   },
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
-  // 'redirect_movies {json}' (Flash movies from the client's folder) at once.
-  // The traps are not built yet.
+  // 'redirect_movies {json}' (Flash movies from the client's folder) at once. The traps 'eve_drain' and
+  // 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
+      return;
+    }
+    if (Object.prototype.hasOwnProperty.call(TRAPS, name)) {
+      if (objectModel === null || virtualQuery === null) {
+        send({ type: 'action_result', id, name, ok: false, reason: 'this build gives the agent no way to find it' });
+      } else {
+        traps.push({ id, name, at: Date.now() });
+      }
       return;
     }
     for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
