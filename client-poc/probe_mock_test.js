@@ -488,6 +488,12 @@ test('stock() lists each shop with the values of its own properties', () => {
   assert.strictEqual(rt.context.stock('^Nope$'), 'no shops loaded here');
 });
 
+test('garden() and gardenItem() say so when no Gatherer\'s Garden is loaded', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.garden(), "no Gatherer's Garden loaded here");
+  assert.strictEqual(rt.context.gardenItem(0, 'chips'), "no Gatherer's Garden loaded here");
+});
+
 test('without an object table it says so and goes on to the script calls', () => {
   const rt = startedProbe({ gobjects: false });
   assert.match(rt.logs.join('\n'), /could not find the object table/);

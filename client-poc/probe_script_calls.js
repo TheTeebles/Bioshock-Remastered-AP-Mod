@@ -36,6 +36,10 @@
  *   stock()           every shop loaded in the level (vending machines, Gatherer's Gardens, Power to the People
  *                     stations): where it is and the values of its own properties, arrays and structs opened up.
  *                     stock('Vend') lists the objects of the classes matching 'Vend' instead
+ *   garden()          the nearest Gatherer's Garden's lines, numbered: what each gives, how many are left, bought
+ *   gardenItem(7, 'chips')  make line 7 of garden() give the class named 'chips' instead, to see whether buying it
+ *                     then gives that (and not the gene) while AmountPurchased still counts the purchase.
+ *                     gardenItem(7) puts the line's own class back
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
  *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
@@ -67,7 +71,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-13.17';
+const PROBE_VERSION = '2026-10-14.1';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1089,6 +1093,127 @@ globalThis.stock = function (pattern) {
     n++;
   }
   return n === 0 ? 'no shops loaded here' : `${n} shops`;
+};
+
+// ---- a Gatherer's Garden's lines, and what buying one gives ----
+
+const gardenSwaps = new Map();  // line address -> the ItemClass it had
+
+function nearestGarden() {
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const cache = new Map();
+  let best = null;
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null || classNameOf(object) === 'Class' || !extendsClass(cls, 'GrowthStation', cache)) {
+      continue;
+    }
+    const place = actorPlace(object);
+    const away = from === null || from.error || place.error ? 0 :
+      Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
+    if (best === null || away < best.away) {
+      best = { object, away };
+    }
+  }
+  return best;
+}
+
+// The lines of a Garden's VendingLootSpec array: where each sits and its fields.
+function gardenLines(garden) {
+  const station = learnAnyClass(classNameOf(garden));
+  const tableProperty = station.error ? undefined : station.properties.get('VendingTable');
+  if (tableProperty === undefined) {
+    return { error: station.error || 'no VendingTable property' };
+  }
+  const table = pointerAt(garden.add(tableProperty.offset));
+  if (table === null || table.isNull()) {
+    return { error: 'the Garden has no VendingTable' };
+  }
+  const lootTable = learnAnyClass('VendingLootTable');
+  const specs = lootTable.error ? undefined : lootTable.properties.get('VendingLootSpec');
+  if (specs === undefined) {
+    return { error: lootTable.error || 'no VendingLootSpec array' };
+  }
+  const inner = innerOf(specs.field);
+  const struct = inner === null ? null : structOf(inner);
+  const size = inner === null ? null : sizeOf({ kind: 'StructProperty', field: inner });
+  if (struct === null || size === null) {
+    return { error: 'the VendingLootSpec struct could not be read' };
+  }
+  const fields = new Map(structFields(struct).map((f) => [f.name, f]));
+  const data = pointerAt(table.add(specs.offset));
+  const count = u32(table.add(specs.offset + 4)) || 0;
+  const lines = [];
+  for (let n = 0; data !== null && !data.isNull() && n < count && n < 100; n++) {
+    lines.push(data.add(n * size));
+  }
+  return { table, lines, fields };
+}
+
+function lineText(line, fields) {
+  return [...fields.values()].map((f) => `${f.name}: ${valueText(line.add(f.offset), f)}`).join(', ');
+}
+
+globalThis.garden = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  if (found === null) {
+    return "no Gatherer's Garden loaded here";
+  }
+  const read = gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  log(`${nameOfObject(found.object)} ${found.away.toFixed(0)} away, table ${nameOfObject(read.table)}:`);
+  read.lines.forEach((line, n) => {
+    const swapped = gardenSwaps.has(line.toString()) ? ' (swapped)' : '';
+    log(`  ${n}: ${lineText(line, read.fields)}${swapped}`);
+  });
+  return `${read.lines.length} lines`;
+};
+
+globalThis.gardenItem = function (n, className) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const itemClass = read.fields.get('ItemClass');
+  if (line === undefined || itemClass === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no ItemClass field';
+  }
+  const at = line.add(itemClass.offset);
+  const key = line.toString();
+  let wanted;
+  if (className === undefined) {
+    if (!gardenSwaps.has(key)) {
+      return 'that line was not swapped';
+    }
+    wanted = ptr(gardenSwaps.get(key));
+    gardenSwaps.delete(key);
+  } else {
+    wanted = findClass(className);
+    if (wanted === null) {
+      return `no class named ${className} is loaded`;
+    }
+    if (!gardenSwaps.has(key)) {
+      gardenSwaps.set(key, u32(at));
+    }
+  }
+  const before = valueText(at, itemClass);
+  at.writePointer(wanted);
+  log(`line ${n}: ItemClass ${before} -> ${valueText(at, itemClass)}`);
+  log(`  now ${lineText(line, read.fields)}`);
+  return className === undefined ? 'put back' : 'open the Garden and buy that line';
 };
 
 // ---- weapon upgrades, for taking back what a Power to the People station gave ----
