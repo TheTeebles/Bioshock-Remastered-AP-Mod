@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.7';
+const AGENT_VERSION = '2026-10-14.8';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2448,25 +2448,26 @@ function carryOutKills(pawn, now) {
 // Traps
 // ---------------------------------------------------------------------------------------------------------------
 
-// EVE Drain empties the player's EVE, Pickpocket takes half their dollars. Both write the player's own number where
-// the older build's Cheat Engine table has it (PAWN_STATS), and only once the game's own description of the player's
-// class says a property of the right kind sits at that offset, so a build that moved it is refused, not written over.
-// Its name goes to the log. Like kills, they are carried out on the game thread once the player has a body.
+// EVE Drain empties the player's EVE, Pickpocket takes half their dollars. ShockPlayer keeps them as BioAmmo (float)
+// and Credits (int), and has RemoveBioAmmo and RemoveCredits for taking some away (its script, exported 2026-10-13).
+// The trap reads the number by its property's name and calls the Remove function the way DeathLink calls OnKilled,
+// so the game does its own bookkeeping (the HUD, limits). Where script calls are not possible, it writes the number.
+// Like kills, traps are carried out on the game thread once the player has a body.
 const TRAPS = {
-  eve_drain: { stat: 'EVE', kind: 'FloatProperty', change: (eve) => 0 },
-  pickpocket: { stat: 'dollars', kind: 'IntProperty', change: (dollars) => Math.floor(dollars / 2) },
+  eve_drain: { stat: 'BioAmmo', kind: 'FloatProperty', remove: 'RemoveBioAmmo', take: (eve) => eve },
+  pickpocket: { stat: 'Credits', kind: 'IntProperty', remove: 'RemoveCredits', take: (dollars) => Math.ceil(dollars / 2) },
 };
 const traps = []; // { id, name, at }: traps asked for and not carried out yet
-const statProperties = new Map(); // `${class}/${stat}` -> { offset, name } or null when the class has none there
+const statProperties = new Map(); // `${class}/${stat}` -> offset, or null when the class has no such property
 
-// The property of this class (or a class it extends) at this offset: its name and the name of its kind.
-function propertyAt(cls, offset) {
+// Where a property of this name and kind sits in an object of this class (or a class it extends).
+function findPropertyOfKind(cls, wanted, kind) {
   for (const owner of lineageOf(cls)) {
     let field = carefulPtr(owner.add(objectModel.structChildren));
-    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
-      const kind = nameOfObject(classOf(field));
-      if (kind !== null && kind.endsWith('Property') && carefulS32(field.add(objectModel.propertyOffset)) === offset) {
-        return { name: nameOfObject(field), kind };
+    for (let n = 0; field !== null && !field.isNull() && n < 5000; n++) {
+      if (nameOfObject(field) === wanted && nameOfObject(classOf(field)) === kind) {
+        const offset = carefulS32(field.add(objectModel.propertyOffset));
+        return offset === null || offset < 0x30 || offset > 0x8000 ? null : offset;
       }
       field = carefulPtr(field.add(objectModel.fieldNext));
     }
@@ -2481,32 +2482,54 @@ function statOf(pawn, trap) {
   }
   const key = `${cls}/${trap.stat}`;
   if (!statProperties.has(key)) {
-    const stat = PAWN_STATS.find((candidate) => candidate.name === trap.stat);
-    const found = propertyAt(cls, stat.offset);
-    const fits = found !== null && found.kind === trap.kind;
-    statProperties.set(key, fits ? { offset: stat.offset, name: found.name } : null);
-    log(fits ? `the player's ${trap.stat} is ${found.name} at +0x${stat.offset.toString(16)}`
-      : `the player's ${trap.stat} is not at +0x${stat.offset.toString(16)}: ` +
-        `${found === null ? 'no property there' : `${found.name} there is a ${found.kind}`}`);
+    const offset = findPropertyOfKind(cls, trap.stat, trap.kind);
+    statProperties.set(key, offset);
+    log(offset === null ? `the player has no ${trap.kind} ${trap.stat}`
+      : `the player's ${trap.stat} is at +0x${offset.toString(16)}`);
   }
   return statProperties.get(key);
 }
 
+function readStat(at, trap) {
+  return trap.kind === 'FloatProperty' ? at.readFloat() : at.readS32();
+}
+
+function shown(value) {
+  return Math.round(value * 10) / 10;
+}
+
+// Carries out one trap. Returns null when done, a reason when it can't be, or undefined to try again next tick.
 function springTrap(pawn, trap) {
-  const stat = statOf(pawn, trap);
-  if (stat === null) {
-    return `this build does not keep the player's ${trap.stat} where the agent expects`;
+  const offset = statOf(pawn, trap);
+  if (offset === null) {
+    return `the game has no ${trap.stat} on the player where the agent can find it`;
   }
-  const at = pawn.add(stat.offset);
+  const at = pawn.add(offset);
+  const before = readStat(at, trap);
+  const amount = trap.take(before);
+  const remove = findFunction(pawn, trap.remove);
+  if (remove !== null && scriptCallsTrouble() === null) {
+    if (!readyToCallScript()) {
+      return undefined; // watching for a call to copy; the trap follows in a later tick
+    }
+    const parms = Memory.alloc(0x10);
+    if (trap.kind === 'FloatProperty') {
+      parms.writeFloat(amount);
+    } else {
+      parms.writeS32(amount);
+    }
+    callScript(pawn, remove, parms);
+    parms.isNull();
+    log(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
+    return null;
+  }
   if (trap.kind === 'FloatProperty') {
-    const before = at.readFloat();
-    at.writeFloat(trap.change(before));
-    log(`${trap.stat}: ${Math.round(before * 10) / 10} -> ${Math.round(at.readFloat() * 10) / 10}`);
+    at.writeFloat(before - amount);
   } else {
-    const before = at.readS32();
-    at.writeS32(trap.change(before));
-    log(`${trap.stat}: ${before} -> ${at.readS32()}`);
+    at.writeS32(before - amount);
   }
+  log(`${trap.stat} written: ${shown(before)} -> ${shown(readStat(at, trap))}` +
+    `${remove === null ? ` (the player has no ${trap.remove})` : ` (${scriptCallsTrouble()})`}`);
   return null;
 }
 
@@ -2520,13 +2543,17 @@ function dropLateTraps(now) {
 
 function carryOutTraps(pawn, now) {
   dropLateTraps(now);
-  for (const trap of traps.splice(0)) {
+  while (traps.length > 0) {
     let trouble;
     try {
-      trouble = springTrap(pawn, TRAPS[trap.name]);
+      trouble = springTrap(pawn, TRAPS[traps[0].name]);
     } catch (e) {
       trouble = `the player's numbers could not be changed (${e.message})`;
     }
+    if (trouble === undefined) {
+      return;
+    }
+    const trap = traps.shift();
     send(trouble === null ? { type: 'action_result', id: trap.id, name: trap.name, ok: true }
       : { type: 'action_result', id: trap.id, name: trap.name, ok: false, reason: trouble });
   }

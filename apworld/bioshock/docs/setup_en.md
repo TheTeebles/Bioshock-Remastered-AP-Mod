@@ -89,8 +89,8 @@ If the game was started as administrator, Archipelago has to be started as admin
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
 - **EVE Drain and Pickpocket traps (Steam):** built, not tried in the game yet. EVE Drain empties your EVE and
-  Pickpocket takes half your dollars. The game is only changed once its own description of Jack says the number is
-  where the client expects; otherwise the client says it could not deliver the trap and keeps it for later.
+  Pickpocket takes half your dollars (rounded up), through the game's own RemoveBioAmmo and RemoveCredits. If the
+  game can't be reached, the client says it could not deliver the trap and keeps it for later.
 
 ## Client commands
 

@@ -503,10 +503,17 @@ function makeRuntime({
     const defaults = runtime.object(0x100);
     poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
     runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
-    // The player's EVE and dollars, as the game describes them (names made up: the real ones are not known yet).
-    const playerStats = (eveKind = floatProperty) => fields(playerClass, [['Tick', functionClass, 0],
-      ['EveAmount', eveKind, 0xAF8], ['Money', intProperty, 0xAEC]]);
-    return { playerStats, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    // The player's EVE and dollars as ShockPlayer declares them, and (unless left out) its functions for taking some.
+    const removeBioAmmo = make('RemoveBioAmmo', functionClass);
+    const removeCredits = make('RemoveCredits', functionClass);
+    const playerStats = (functions = true) => {
+      fields(playerClass, [['BioAmmo', floatProperty, 0xAF8], ['Credits', intProperty, 0xAEC]]);
+      if (functions) { // in front of the properties
+        poke(removeCredits + 0x44, runtime.memory.get(playerClass + 0x5C));
+        poke(removeBioAmmo + 0x44, removeCredits); poke(playerClass + 0x5C, removeBioAmmo);
+      }
+    };
+    return { playerStats, removeBioAmmo, removeCredits, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1607,29 +1614,46 @@ const tests = {
     assert.ok(r.memory.get(lines[0]) < 0x70000000);
   },
   // ---- Traps ----
-  'eve_drain empties the EVE and pickpocket takes half the dollars, where the game says they are': () => {
+  'eve_drain and pickpocket call the game\'s RemoveBioAmmo and RemoveCredits': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     r.poke(game.pawn + 0x30, model.playerClass); model.playerStats();
     r.load(); r.frames(2);
     r.context.rpc.exports.action(1, 'eve_drain');
     r.context.rpc.exports.action(2, 'pickpocket');
     r.frames(2);
-    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0);
-    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'action_result').length, 0, 'waiting for a call to copy');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(1);
+    const calls = r.scriptCalls.map((c) => [c.self, c.fn, r.memory.get(c.parms)]);
+    const fns = calls.map(([self, fn]) => [self, fn]);
+    assert.deepStrictEqual(fns, [[game.pawn, model.removeBioAmmo], [game.pawn, model.removeCredits]]);
+    assert.strictEqual(calls[0][2], 1000, 'all 100 EVE');
+    assert.strictEqual(calls[1][2], 62, 'half of 123 dollars, rounded up');
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
       [[1, 'eve_drain', true], [2, 'pickpocket', true]]);
-    assert.ok(r.logs.some((line) => line.includes("the player's EVE is EveAmount at +0xaf8")), r.logs.join('\n'));
   },
-  'a trap is refused where the game keeps something else at the offset': () => {
+  'without the Remove functions the trap writes the number itself': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(model.playerClass); // not a FloatProperty
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false);
+    r.load(); r.frames(2);
+    r.context.rpc.exports.action(1, 'eve_drain');
+    r.context.rpc.exports.action(2, 'pickpocket');
+    r.frames(2);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 61);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[1, true], [2, true]]);
+  },
+  'a trap is refused where the player has no such number': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); // no BioAmmo declared
     r.load(); r.frames(2);
     r.context.rpc.exports.action(1, 'eve_drain');
     r.frames(2);
     assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 1000, 'left alone');
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[1, false]]);
-    assert.ok(answers[0].reason.includes("does not keep the player's EVE"), answers[0].reason);
+    assert.ok(answers[0].reason.includes('no BioAmmo'), answers[0].reason);
   },
   'a trap waits for a body and gives up after a while': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
