@@ -76,11 +76,21 @@
  *                     (events() looks for ProcessEvent: the function that calls the one it watched)
  *   peek()            after events(): prints the start of that function's machine code, and the raw words of a few
  *                     script functions, to see what it checks before it runs one
+ *
+ * Open Rapture (level randomization), 2026-10-14:
+ *   bathy()           the bathysphere network in this level: every destination (index, title, map, arrival point),
+ *                     which are unlocked, whether their memory can be grown, the switches, and the functions of the
+ *                     bathysphere classes (to find one that unlocks a destination)
+ *   bathySet([0, 1, 2, 3])  the bathysphere offers exactly these destinations (indexes from bathy()). Save first
+ *   bathyDest(2, '3-Arcadia', 'FromFisheriesPS')  points destination 2 at that map and arrival point (names only)
+ *   levels()          every scripted level change loaded now: map, arrival point, and the values it is handed
+ *   route(0, '2-Fisheries', 'PlayerStart')  level change 0 of levels() goes there instead. Save first
+ *   facts()           the story facts (FactDatabase) carried from level to level; dump('Class', 'Array') for others
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.16';
+const PROBE_VERSION = '2026-10-14.17';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -179,7 +189,7 @@ function pointerAt(pointer) {
 // The name table (GNames): a TArray {data, count, max} of FNameEntry pointers in the module's data, entry 0 "None"
 // ---------------------------------------------------------------------------------------------------------------
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const IDENTIFIER = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/; // map names such as 2-Fisheries too
 
 function entryText(entry, offset, wide) {
   const at = entry.add(offset);
@@ -941,7 +951,7 @@ function structOf(field) {
 }
 
 const KIND_SIZE = {
-  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 4, ObjectProperty: 4,
+  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 8, ObjectProperty: 4, // a name is {index, number}
   ClassProperty: 4, StrProperty: 12, ArrayProperty: 12,
 };
 
@@ -3573,6 +3583,368 @@ function addWatched(wanted, update) {
   }
   return true;
 }
+
+// ---------------------------------------------------------------------------------------------------------------
+// Open Rapture: the bathysphere network and level changes (2026-10-14)
+// ---------------------------------------------------------------------------------------------------------------
+// Known from the last probe (safes_bathysphere log) and the map files: the level's BioshockBathyspheres object
+// (BathysphereManager) keeps Destinations {Title, MapName, StartLocationLabel} and UnlockedDestinations (indexes
+// into Destinations); a level's scripts unlock destinations with ActionUnlockBathysphereDestination as it starts,
+// and scripted level changes are ActionChangeLevel actions holding MapName and StartLocationLabel as strings.
+
+// The process heap: if the game's arrays live there, an array can be grown the way the game would grow it.
+const heapApi = (() => {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const fn = (name, ret, args) => new NativeFunction(kernel32.getExportByName(name), ret, args, 'stdcall');
+    const heap = fn('GetProcessHeap', 'pointer', [])();
+    return {
+      heap,
+      validate: fn('HeapValidate', 'int', ['pointer', 'uint', 'pointer']),
+      alloc: fn('HeapAlloc', 'pointer', ['pointer', 'uint', 'uint']),
+      realloc: fn('HeapReAlloc', 'pointer', ['pointer', 'uint', 'pointer', 'uint']),
+    };
+  } catch (e) {
+    log(`no process heap functions: ${e.message}`);
+    return null;
+  }
+})();
+
+function onProcessHeap(pointer) {
+  if (heapApi === null || pointer === null || pointer.isNull()) {
+    return false;
+  }
+  try {
+    return heapApi.validate(heapApi.heap, 0, pointer) !== 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+// An array property of an object: where it is, its {data, count, max}, and how its elements are laid out.
+function arrayOf(object, className, propertyName) {
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return { error: learned.error };
+  }
+  const property = learned.properties.get(propertyName);
+  if (property === undefined || property.kind !== 'ArrayProperty') {
+    return { error: `${className} has no array ${propertyName}` };
+  }
+  const at = object.add(property.offset);
+  const inner = innerOf(property.field);
+  const kind = inner === null ? null : classNameOf(inner);
+  const element = inner === null ? null : { kind, field: inner, mask: kind === 'BoolProperty' ? 1 : null };
+  const struct = kind === 'StructProperty' ? structOf(inner) : null;
+  return {
+    at, data: pointerAt(at), count: u32(at.add(4)), max: u32(at.add(8)), element,
+    size: element === null ? null : sizeOf(element), fields: struct === null ? [] : structFields(struct),
+  };
+}
+
+function arrayHead(array) {
+  return `data ${array.data}, count ${array.count}, max ${array.max}, ` +
+    `${array.size === null ? '?' : array.size} bytes each, ` +
+    `${array.data === null || array.data.isNull() ? 'no buffer' : (onProcessHeap(array.data) ? 'buffer on the process heap' : 'buffer NOT on the process heap')}`;
+}
+
+// The script functions a class declares itself (not the ones it inherits): name, parameters, and whether it is a
+// native (a C++ body at function+0xc0) or bytecode.
+function functionsOf(className) {
+  const cls = findClass(className);
+  if (cls === null) {
+    log(`  no class ${className} loaded`);
+    return;
+  }
+  const code = mod.enumerateRanges('r-x');
+  const inCode = (p) => p !== null && code.some((r) => p.compare(r.base) >= 0 && p.compare(r.base.add(r.size)) < 0);
+  let field = pointerAt(cls.add(objects.layout.childrenOffset));
+  const lines = [];
+  for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0xd0); n++) {
+    const kind = classNameOf(field);
+    if (kind === 'Function' || kind === 'State') {
+      const parameters = [];
+      let parameter = pointerAt(field.add(objects.layout.childrenOffset));
+      for (let k = 0; parameter !== null && !parameter.isNull() && k < 40 && readable(parameter, 0x80); k++) {
+        if (/Property$/.test(classNameOf(parameter) || '')) {
+          parameters.push(`${nameOfObject(parameter)} +${hex(u32(parameter.add(objects.propertyOffset)))} ` +
+            `${classNameOf(parameter)}`);
+        }
+        parameter = pointerAt(parameter.add(objects.layout.nextOffset));
+      }
+      const entry = pointerAt(field.add(0xc0));
+      const bytecode = u32(field.add(FUNCTION_SCRIPT + 4));
+      lines.push(`  ${kind === 'State' ? 'state ' : ''}${nameOfObject(field)}(${parameters.join(', ')})` +
+        `${inCode(entry) ? ` native ${rel(entry)}` : ''}${bytecode ? `, ${bytecode} bytes of script` : ''}`);
+    }
+    field = pointerAt(field.add(objects.layout.nextOffset));
+  }
+  log(`${className}: ${lines.length} functions and states of its own`);
+  lines.forEach((line) => log(line));
+}
+
+function bathyManagers() {
+  return matchingObjects('^BathysphereManager$').get('BathysphereManager') || [];
+}
+
+function destinationsOf(manager) {
+  const array = arrayOf(manager, 'BathysphereManager', 'Destinations');
+  if (array.error || array.data === null || array.count === null || array.size === null) {
+    return { array, list: [] };
+  }
+  const field = (name) => array.fields.find((f) => f.name === name);
+  const title = field('Title');
+  const map = field('MapName');
+  const label = field('StartLocationLabel');
+  const list = [];
+  for (let i = 0; i < Math.min(array.count, 64); i++) {
+    const at = array.data.add(i * array.size);
+    list.push({
+      at,
+      title: title === undefined ? '?' : stringAt(at.add(title.offset)),
+      map: map === undefined ? '?' : (nameOf(u32(at.add(map.offset))) || `#${u32(at.add(map.offset))}`),
+      label: label === undefined ? '?' : (nameOf(u32(at.add(label.offset))) || `#${u32(at.add(label.offset))}`),
+    });
+  }
+  return { array, list, fields: { title, map, label } };
+}
+
+function unlockedOf(manager) {
+  const array = arrayOf(manager, 'BathysphereManager', 'UnlockedDestinations');
+  const list = [];
+  if (!array.error && array.data !== null && !array.data.isNull() && array.count !== null) {
+    for (let i = 0; i < Math.min(array.count, 64); i++) {
+      list.push(array.data.add(i * 4).readS32());
+    }
+  }
+  return { array, list };
+}
+
+// bathy(): everything about the bathysphere network in this level, and the functions that could unlock a destination.
+globalThis.bathy = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const managers = bathyManagers();
+  log(`bathy: ${managers.length} BathysphereManager objects`);
+  for (const manager of managers) {
+    log(`${nameOfObject(manager)} at ${manager}:`);
+    ownValues(manager, '  ', 1);
+    const { array, list, fields } = destinationsOf(manager);
+    if (array.error) {
+      log(`  ${array.error}`);
+      continue;
+    }
+    log(`  Destinations: ${arrayHead(array)}; fields ` +
+      array.fields.map((f) => `${f.name} +${hex(f.offset)} ${f.kind}`).join(', '));
+    list.forEach((d, i) => log(`    [${i}] ${JSON.stringify(d.title)} ${d.map} at ${d.label}`));
+    if (fields.map !== undefined) {
+      log(`    raw: ${list.map((d) => bytesText(d.at, array.size)).join(' | ')}`);
+    }
+    const unlocked = unlockedOf(manager);
+    log(`  UnlockedDestinations: ${arrayHead(unlocked.array)}: [${unlocked.list.join(', ')}]`);
+  }
+  for (const className of ['BathysphereManager', 'ActionUnlockBathysphereDestination', 'ActionShowBathysphereUI',
+    'ActionEnableBathysphereModeForPlayer', 'BathysphereSwitch', 'ActionChangeLevel', 'Action']) {
+    functionsOf(className);
+  }
+  const switches = matchingObjects('BathysphereSwitch').get('BathysphereSwitch') || [];
+  switches.forEach((s, i) => {
+    log(`switch ${i}: ${nameOfObject(s)}`);
+    ownValues(s, '  ', 1);
+  });
+  return `${managers.length} managers, ${switches.length} switches`;
+};
+
+// bathySet([0, 1, 2, 3, 4, 5, 6, 7]): makes the bathysphere offer exactly these destinations (indexes of bathy()'s
+// list). Save first. Grows the array only if it lives on the process heap; otherwise uses the room it has.
+globalThis.bathySet = function (indexes) {
+  const manager = bathyManagers()[0];
+  if (manager === undefined) {
+    return 'no BathysphereManager in this level';
+  }
+  const { array } = unlockedOf(manager);
+  if (array.error) {
+    return array.error;
+  }
+  runOnGameThread(() => {
+    let { data } = array;
+    let max = array.max || 0;
+    if (indexes.length > max) {
+      if (data !== null && !data.isNull() && onProcessHeap(data)) {
+        data = heapApi.realloc(heapApi.heap, 0, data, indexes.length * 4);
+      } else if (data === null || data.isNull()) {
+        data = heapApi === null ? ptr(0) : heapApi.alloc(heapApi.heap, 0, indexes.length * 4);
+      } else {
+        log(`bathySet: the array has room for ${max} and its buffer is not on the process heap; ` +
+          `writing the first ${max} only`);
+        indexes = indexes.slice(0, max);
+        data = array.data;
+      }
+      if (data.isNull()) {
+        log('bathySet: could not get memory');
+        return;
+      }
+      max = Math.max(max, indexes.length);
+    }
+    indexes.forEach((index, i) => data.add(i * 4).writeS32(index));
+    array.at.writePointer(data);
+    array.at.add(4).writeU32(indexes.length);
+    array.at.add(8).writeU32(max);
+    log(`bathySet: UnlockedDestinations now [${unlockedOf(manager).list.join(', ')}] (${arrayHead(unlockedOf(manager).array)}). ` +
+      'Open the bathysphere menu.');
+  });
+  return 'queued for the game thread';
+};
+
+// bathyDest(3, '4-Recreation', 'SomeStartLabel'): points destination 3 at another map and arrival point (both must
+// be names the game already knows). Only names are written, so nothing is allocated.
+globalThis.bathyDest = function (i, mapName, label) {
+  const manager = bathyManagers()[0];
+  if (manager === undefined) {
+    return 'no BathysphereManager in this level';
+  }
+  const { list, fields } = destinationsOf(manager);
+  if (i < 0 || i >= list.length) {
+    return `pick i from 0 to ${list.length - 1}`;
+  }
+  const writes = [];
+  for (const [field, text] of [[fields.map, mapName], [fields.label, label]]) {
+    if (text === undefined || field === undefined) {
+      continue;
+    }
+    const index = indexOfName(text);
+    if (index < 0) {
+      return `"${text}" is not in the name table; pick a name the game knows`;
+    }
+    writes.push([list[i].at.add(field.offset), index]);
+  }
+  writes.forEach(([at, index]) => {
+    at.writeU32(index);
+    at.add(4).writeU32(0);
+  });
+  const after = destinationsOf(manager).list[i];
+  return `[${i}] now ${JSON.stringify(after.title)} ${after.map} at ${after.label}`;
+};
+
+// levels(): every scripted level change (ActionChangeLevel) loaded now, with its strings and the values its
+// resolveInfoList hands it when it runs.
+globalThis.levels = function () {
+  const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
+  const learned = learnAnyClass('ActionChangeLevel');
+  if (learned.error) {
+    return learned.error;
+  }
+  actions.forEach((action, n) => {
+    const outer = outerNameOf(action);
+    log(`${n}: ${nameOfObject(action)} in ${outer}`);
+    for (const name of ['MapName', 'StartLocationLabel']) {
+      const p = learned.properties.get(name);
+      if (p !== undefined) {
+        const at = action.add(p.offset);
+        log(`  ${name} +${hex(p.offset)} = ${JSON.stringify(stringAt(at))} (buffer ${pointerAt(at)}, ` +
+          `count ${u32(at.add(4))}, max ${u32(at.add(8))}, ${onProcessHeap(pointerAt(at)) ? '' : 'NOT '}on the process heap)`);
+      }
+    }
+    const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
+    if (!rows.error && rows.data !== null && rows.size !== null) {
+      log(`  resolveInfoList: ${arrayHead(rows)}; fields ` +
+        rows.fields.map((f) => `${f.name} +${hex(f.offset)} ${f.kind}`).join(', '));
+      for (let i = 0; i < Math.min(rows.count || 0, 16); i++) {
+        log(`    ${valueText(rows.data.add(i * rows.size), rows.element)}`);
+      }
+    }
+  });
+  return `${actions.length} level changes`;
+};
+
+// route(0, '2-Fisheries', 'PlayerStart'): level change 0 of levels() loads that map at that PlayerStart instead.
+// Rewrites the strings (in their own buffers if they fit, else a new one from the process heap) and the
+// resolveInfoList rows that feed them, if those hold names. Save first, then trigger the level change.
+globalThis.route = function (n, mapName, label) {
+  const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
+  const action = actions[n];
+  if (action === undefined) {
+    return `pick n from 0 to ${actions.length - 1}`;
+  }
+  const learned = learnAnyClass('ActionChangeLevel');
+  const wanted = { MapName: mapName, StartLocationLabel: label };
+  for (const [name, text] of Object.entries(wanted)) {
+    const p = learned.properties.get(name);
+    if (text === undefined || p === undefined) {
+      continue;
+    }
+    const at = action.add(p.offset);
+    const capacity = u32(at.add(8)) || 0;
+    if (text.length + 1 <= capacity) {
+      writeInPlace(at, text);
+    } else if (heapApi !== null) {
+      const buffer = heapApi.alloc(heapApi.heap, 8, (text.length + 1) * 2);
+      buffer.writeUtf16String(text);
+      at.writePointer(buffer);
+      at.add(4).writeU32(text.length + 1);
+      at.add(8).writeU32(text.length + 1);
+    }
+    log(`route: ${name} now ${JSON.stringify(stringAt(at))}`);
+  }
+  const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
+  if (!rows.error && rows.data !== null && rows.size !== null) {
+    const nameField = rows.fields.find((f) => f.name === 'PropertyName');
+    const valueField = rows.fields.find((f) => f.name === 'Variable');
+    for (let i = 0; i < (rows.count || 0) && nameField && valueField; i++) {
+      const row = rows.data.add(i * rows.size);
+      const property = nameOf(u32(row.add(nameField.offset)));
+      const text = wanted[property];
+      if (text === undefined) {
+        continue;
+      }
+      if (valueField.kind !== 'NameProperty') {
+        log(`route: row ${i} (${property}) holds a ${valueField.kind}, left alone`);
+        continue;
+      }
+      const index = indexOfName(text);
+      if (index < 0) {
+        log(`route: "${text}" is not in the name table, so row ${i} (${property}) is left alone`);
+        continue;
+      }
+      row.add(valueField.offset).writeU32(index);
+      row.add(valueField.offset + 4).writeU32(0);
+      log(`route: row ${i} (${property}) now ${nameOf(index)}`);
+    }
+  }
+  return 'trigger the level change now';
+};
+
+// dump('FactDatabase', 'FactStore'): every element of an array property of every object of a class.
+// facts() is dump('FactDatabase') over all its arrays: the story facts carried from level to level.
+globalThis.dump = function (className, propertyName) {
+  const list = matchingObjects(`^${className}$`).get(className) || [];
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return learned.error;
+  }
+  const arrays = [...learned.properties.entries()].filter(([name, p]) =>
+    p.kind === 'ArrayProperty' && (propertyName === undefined || name === propertyName));
+  for (const object of list) {
+    log(`${nameOfObject(object)} (${className}) at ${object}:`);
+    ownValues(object, '  ', 1);
+    for (const [name] of arrays) {
+      const array = arrayOf(object, className, name);
+      if (array.error || array.data === null || array.size === null || !array.count) {
+        continue;
+      }
+      log(`  ${name}: ${array.count} entries`);
+      for (let i = 0; i < Math.min(array.count, 3000); i++) {
+        log(`    [${i}] ${valueText(array.data.add(i * array.size), array.element)}`);
+      }
+    }
+  }
+  return `${list.length} objects`;
+};
+
+globalThis.facts = function () {
+  return globalThis.dump('FactDatabase');
+};
 
 // ---------------------------------------------------------------------------------------------------------------
 // The prompt

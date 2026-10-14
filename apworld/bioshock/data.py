@@ -89,6 +89,29 @@ ACCESS_ITEMS: tuple[str, ...] = (
     POINT_PROMETHEUS_ACCESS,
 )
 
+# The game's seven chapters (the number its map names start with). Open Rapture gates travel by chapter: the
+# levels of a chapter depend on each other's story, so they open together. Chapter 1 always comes first; 2 to 4 can
+# be played in any order; 5 (Ryan) needs 2 to 4 behind it, and 6 and 7 follow it in order.
+class Chapter(NamedTuple):
+    number: int
+    levels: tuple[str, ...]
+    access_item: str | None  # the item that opens the chapter in Open Rapture
+
+
+CHAPTERS: tuple[Chapter, ...] = (
+    Chapter(1, (WELCOME_TO_RAPTURE, MEDICAL_PAVILION), None),
+    Chapter(2, (NEPTUNES_BOUNTY, SMUGGLERS_HIDEOUT), NEPTUNES_BOUNTY_ACCESS),
+    Chapter(3, (ARCADIA, FARMERS_MARKET), ARCADIA_ACCESS),
+    Chapter(4, (FORT_FROLIC,), FORT_FROLIC_ACCESS),
+    Chapter(5, (HEPHAESTUS, RAPTURE_CENTRAL_CONTROL), HEPHAESTUS_ACCESS),
+    Chapter(6, (OLYMPUS_HEIGHTS, APOLLO_SQUARE), OLYMPUS_HEIGHTS_ACCESS),
+    Chapter(7, (POINT_PROMETHEUS, PROVING_GROUNDS), POINT_PROMETHEUS_ACCESS),
+)
+CHAPTER_OF_LEVEL: dict[str, Chapter] = {level: chapter for chapter in CHAPTERS for level in chapter.levels}
+FREE_CHAPTERS: tuple[int, ...] = (2, 3, 4)  # the chapters before Ryan, in any order
+CHAPTER_ACCESS_ITEMS: tuple[str, ...] = tuple(chapter.access_item for chapter in CHAPTERS if chapter.access_item)
+HUB = "Bathysphere"  # the region the bathysphere network is, once Medical Pavilion is behind the player
+
 # The goal: the last phase of the Frank Fontaine fight at the end of Proving Grounds.
 GOAL_LOCATION = "Defeat Frank Fontaine"
 GOAL_LEVEL = PROVING_GROUNDS

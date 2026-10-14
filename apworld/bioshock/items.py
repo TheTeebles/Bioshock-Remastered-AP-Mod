@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING
 from BaseClasses import Item, ItemClassification
 
 from .data import (
-    ACCESS_ITEMS, CHARACTER_UPGRADES, FILLER_ITEMS, GAME_NAME, ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS,
+    ACCESS_ITEMS, CHAPTER_ACCESS_ITEMS, CHAPTER_OF_LEVEL, CHARACTER_UPGRADES, LEVEL_BY_NAME, FILLER_ITEMS, GAME_NAME, ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS,
     WEAPON_UPGRADES, ItemKind, Source,
 )
 from .options import LevelAccess
@@ -63,7 +63,18 @@ def get_random_filler_item_name(world: BioShockWorld) -> str:
 
 def progression_item_names(world: BioShockWorld) -> list[str]:
     """The items the logic depends on."""
+    if world.options.level_access == LevelAccess.option_open_rapture:
+        return list(CHAPTER_ACCESS_ITEMS)
     return list(ACCESS_ITEMS) if world.options.level_access == LevelAccess.option_access_items else []
+
+
+def access_item_of(world: BioShockWorld, level: str) -> str | None:
+    """The item a level's checks wait for: per level with Access Items, per chapter with Open Rapture."""
+    if world.options.level_access == LevelAccess.option_open_rapture:
+        return CHAPTER_OF_LEVEL[level].access_item
+    if world.options.level_access == LevelAccess.option_access_items:
+        return LEVEL_BY_NAME[level].access_item
+    return None
 
 
 def stations_shuffled(world: BioShockWorld) -> bool:

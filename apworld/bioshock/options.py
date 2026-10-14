@@ -16,10 +16,16 @@ class LevelAccess(Choice):
     Proving Grounds shares Point Prometheus Access.
 
     Vanilla: no access items. Every check is available from the start.
+
+    Open Rapture (NOT PLAYABLE YET: the game side is still being built): access items open travel itself, one per
+    chapter. After Medical Pavilion the bathysphere takes you to any of Neptune's Bounty, Arcadia and Fort Frolic you
+    hold the access item for, in any order. Hephaestus needs its access item and the three before it; Olympus
+    Heights and Point Prometheus follow in story order, each with its access item.
     """
     display_name = "Level Access"
     option_vanilla = 0
     option_access_items = 1
+    option_open_rapture = 2
     default = option_access_items
 
 

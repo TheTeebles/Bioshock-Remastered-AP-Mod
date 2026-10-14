@@ -6,7 +6,7 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
+from .data import GAME_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
 WORLD_VERSION = "0.1.28"
@@ -91,10 +91,10 @@ class BioShockWorld(World):
         """The checks among these that need no access item the player does not start with."""
         start_items = set(self.options.start_inventory.value) | set(self.options.start_inventory_from_pool.value)
         return [location for location in open_checks
-                if LEVEL_BY_NAME[location.level].access_item in (None, *start_items)]
+                if items.access_item_of(self, location.level) in (None, *start_items)]
 
     def create_regions(self) -> None:
-        regions.create_and_connect_regions(self)
+        regions.create_regions(self)
         locations.create_all_locations(self)
 
     def set_rules(self) -> None:
@@ -110,7 +110,7 @@ class BioShockWorld(World):
         return items.get_random_filler_item_name(self)
 
     def fill_slot_data(self) -> Mapping[str, Any]:
-        access_items = self.options.level_access == bioshock_options.LevelAccess.option_access_items
+        access_items = self.options.level_access != bioshock_options.LevelAccess.option_vanilla
         return {
             "slot_data_version": SLOT_DATA_VERSION,
             "world_version": WORLD_VERSION,
@@ -118,5 +118,6 @@ class BioShockWorld(World):
             # Stations open no menu: using one sends its check and closes it, and the upgrades come from the pool.
             "station_touch": items.stations_shuffled(self),
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
-            "level_access_items": {level.name: level.access_item for level in LEVELS} if access_items else {},
+            "level_access_items": {level.name: items.access_item_of(self, level.name) for level in LEVELS}
+            if access_items else {},
         }
