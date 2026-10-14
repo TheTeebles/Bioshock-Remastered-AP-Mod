@@ -40,6 +40,8 @@
  *   gardenItem(7, 'chips')  make line 7 of garden() give the class named 'chips' instead, to see whether buying it
  *                     then gives that (and not the gene) while AmountPurchased still counts the purchase.
  *                     gardenItem(7) puts the line's own class back
+ *   gardenCost(7, 20) set line 7's CostAdjustment (the price multiplier) to 20, to see how the price follows it
+ *                     and which currency the line asks for
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
  *   preview(2, 'Hookshot', 'For Halthrax')  retitle upgrade line 2 of upgrades() and hide the others
@@ -71,7 +73,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.1';
+const PROBE_VERSION = '2026-10-14.2';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1214,6 +1216,34 @@ globalThis.gardenItem = function (n, className) {
   log(`line ${n}: ItemClass ${before} -> ${valueText(at, itemClass)}`);
   log(`  now ${lineText(line, read.fields)}`);
   return className === undefined ? 'put back' : 'open the Garden and buy that line';
+};
+
+globalThis.gardenCost = function (n, adjustment) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const field = read.fields.get('CostAdjustment');
+  if (line === undefined || field === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no CostAdjustment field';
+  }
+  const at = line.add(field.offset);
+  const before = valueText(at, field);
+  if (field.kind === 'FloatProperty') {
+    at.writeFloat(adjustment);
+  } else if (field.kind === 'ByteProperty') {
+    at.writeU8(adjustment);
+  } else {
+    at.writeS32(adjustment);
+  }
+  log(`line ${n}: CostAdjustment (${field.kind}) ${before} -> ${valueText(at, field)}`);
+  log(`  now ${lineText(line, read.fields)}`);
+  return 'open the Garden and look at that line\'s price';
 };
 
 // ---- weapon upgrades, for taking back what a Power to the People station gave ----
