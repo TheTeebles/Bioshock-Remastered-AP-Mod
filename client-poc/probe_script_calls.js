@@ -83,14 +83,16 @@
  *                     bathysphere classes (to find one that unlocks a destination)
  *   bathySet([0, 1, 2, 3])  the bathysphere offers exactly these destinations (indexes from bathy()). Save first
  *   bathyDest(2, '3-Arcadia', 'FromFisheriesPS')  points destination 2 at that map and arrival point (names only)
- *   levels()          every scripted level change loaded now: map, arrival point, and the values it is handed
+ *   levels()          every scripted level change loaded now: map, arrival point, every other setting, and the
+ *                     values it is handed
+ *   A crash is logged with where it happened (CRASH ... called from ...), from 2026-10-14.18
  *   route(0, '2-Fisheries', 'PlayerStart')  level change 0 of levels() goes there instead. Save first
  *   facts()           the story facts (FactDatabase) carried from level to level; dump('Class', 'Array') for others
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.17';
+const PROBE_VERSION = '2026-10-14.18';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -122,6 +124,32 @@ function rel(pointer) {
 }
 
 log(`probe ${PROBE_VERSION}, ${GAME} at ${base}, size ${mod.size}`);
+
+// If the game crashes, say where: the faulting instruction and the calls that led there, as module offsets.
+// Nothing is handled here, so the game crashes exactly as it would have.
+let crashesLogged = 0;
+try {
+  Process.setExceptionHandler((details) => {
+    if (crashesLogged >= 5 || details.type !== 'access-violation' && details.type !== 'illegal-instruction') {
+      return false;
+    }
+    crashesLogged++;
+    const memory = details.memory ? ` (${details.memory.operation} at ${details.memory.address})` : '';
+    log(`CRASH ${details.type} at ${rel(details.address)}${memory}`);
+    try {
+      const frames = Thread.backtrace(details.context, Backtracer.FUZZY).slice(0, 16).map(rel);
+      log(`  called from ${frames.join(' < ')}`);
+      const c = details.context;
+      log(`  eax ${c.eax} ebx ${c.ebx} ecx ${c.ecx} edx ${c.edx} esi ${c.esi} edi ${c.edi} esp ${c.esp} ebp ${c.ebp}`);
+    } catch (e) {
+      log(`  (no backtrace: ${e.message})`);
+    }
+    Thread.sleep(1); // let the log reach the file before the game goes
+    return false;
+  });
+} catch (e) {
+  log(`cannot watch for crashes (${e.message})`);
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Careful reads: only committed, unguarded memory is touched
@@ -3846,6 +3874,7 @@ globalThis.levels = function () {
           `count ${u32(at.add(4))}, max ${u32(at.add(8))}, ${onProcessHeap(pointerAt(at)) ? '' : 'NOT '}on the process heap)`);
       }
     }
+    ownValues(action, '  ', 1);
     const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
     if (!rows.error && rows.data !== null && rows.size !== null) {
       log(`  resolveInfoList: ${arrayHead(rows)}; fields ` +
