@@ -5,6 +5,7 @@ Reads BioShock Remastered map files (.bsm) and lists what the randomizer could u
   player at, with the script that runs it;
 - starts: the PlayerStarts a level change can arrive at (their Label is what StartLocationLabel names);
 - bathysphere: the BathysphereSwitch actors (by Label) and the bathysphere destinations the map's scripts unlock;
+- quests: each quest the map's scripts start or complete, with what starts the script;
 - diaries: the audio diaries lying in the map (LogPickup actors), by item class;
 - given: what the map's scripts hand the player (ActionGiveItemsToPlayer): radio messages, story items and so on;
 - pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each.
@@ -26,6 +27,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from map_stock import SIZES, Package, compact  # noqa: E402
 
+QUEST_ACTIONS = {"ActionInitiateQuest": "start", "ActionCompleteQuest": "complete",
+                 "ActionCompleteQuestObjective": "complete objective"}
 SKIP_MAPS = ("_deu", "_esn", "_fra", "_ita", "_jpn", "_pol", "_rus", "_cze", "_hun")  # localized copies, empty
 
 
@@ -95,7 +98,7 @@ class Survey(Package):
                     found, _ = self.properties(b, start)
                 except (ValueError, IndexError, struct.error, UnicodeDecodeError):
                     continue
-                if len(found) > len(best):
+                if score(found) > score(best):
                     best = found
             self._props[i] = best
         return self._props[i]
@@ -136,6 +139,16 @@ class Survey(Package):
         return rows
 
 
+# Properties that only turn up where a parse started in the right place; a parse that finds them wins over a longer one
+# made of whatever the bytes happened to spell.
+KNOWN = frozenset({"parentScript", "resolveInfoList", "Level", "Tag", "Label", "ItemClass", "LootSpec", "LootSlot",
+                   "MapName", "scriptMessageClass", "Actions", "CheckpointTypePadding"})
+
+
+def score(found):
+    return (len(KNOWN & found.keys()), len(found))
+
+
 def text(value):
     n, p = compact(value, 0)
     raw = value[p:p - n] if n < 0 else value[p:p + 2 * n]
@@ -145,7 +158,7 @@ def text(value):
 def survey(path):
     pkg = Survey(path.read_bytes())
     result = {"map": path.name, "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [],
-              "menus": 0}, "diaries": [], "given": [], "pickups": {}}
+              "menus": 0}, "quests": [], "diaries": [], "given": [], "pickups": {}}
     pickups = Counter()
     for i, e in enumerate(pkg.exports, 1):
         cls = pkg.class_of(e)
@@ -163,6 +176,11 @@ def survey(path):
                                                      "script": pkg.name_of(e["outer"]), **pkg.trigger_of(e["outer"])})
         elif cls == "ActionShowBathysphereUI":
             result["bathysphere"]["menus"] += 1
+        elif cls in QUEST_ACTIONS:
+            quest = pkg.resolved(i).get("QuestName")
+            if quest:
+                result["quests"].append({"action": QUEST_ACTIONS[cls], "quest": quest, "script": pkg.name_of(e["outer"]),
+                                         **pkg.trigger_of(e["outer"])})
         elif cls == "ActionGiveItemsToPlayer":
             given = pkg.name_of(pkg.props(i).get("ItemClass"))
             if given:
