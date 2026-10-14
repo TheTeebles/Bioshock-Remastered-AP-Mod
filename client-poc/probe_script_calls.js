@@ -45,6 +45,9 @@
  *   defaults('chips') the text properties of a class's default values (what a new chips object starts with)
  *   placeholders()    every loaded item class (Item and below) with its shown name and how many objects of it exist,
  *                     to pick placeholder items for Garden lines
+ *   gardenClone(7, 'Hookshot')  make line 7 give a copy of the chips class made in memory, named 'Hookshot', so
+ *                     each line can have its own name without renaming real items (save first: the game has
+ *                     never seen this class, so buying it, saving or changing levels may crash)
  *   rename('chips', 'FriendlyName', 'Archipelago Item')  rewrite one of them, to see whether the Garden shows it
  *   upgrades()        every weapon upgrade stat (UpgradeableWeaponStat) with its values, numbered
  *   setUpgrade(4, 0)  set PointsAllocated of stat number 4 to 0, to see whether that takes the upgrade back
@@ -77,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.6';
+const PROBE_VERSION = '2026-10-14.7';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1392,6 +1395,73 @@ globalThis.placeholders = function () {
     log(`${name}: ${JSON.stringify(friendly)}, ${counts.get(cls.toString()) || 0} objects (${lineage.slice(1, -1).join(' < ')})`);
   }
   return `${classes.length} item classes`;
+};
+
+// A copy of an item class made in memory: the class object's bytes copied, with its own copy of the default values
+// so its texts can differ. The copy is not in the object table; it keeps the original's name and index.
+const CLASS_COPY_SIZE = 0x1000;
+const clones = [];
+
+function cloneClass(className, friendlyName, description) {
+  const found = classDefaults(className, true);
+  const cls = findClass(className);
+  if (found.error || cls === null || found.at === undefined) {
+    return { error: found.error || `${className}'s default values are not in the class` };
+  }
+  if (!readable(cls, CLASS_COPY_SIZE)) {
+    return { error: `cannot read ${hex(CLASS_COPY_SIZE)} bytes of class ${className}` };
+  }
+  const copy = Memory.alloc(CLASS_COPY_SIZE);
+  Memory.copy(copy, cls, CLASS_COPY_SIZE);
+  const count = u32(cls.add(found.at + 4));
+  const defaults = Memory.alloc(count);
+  Memory.copy(defaults, found.data, count);
+  copy.add(found.at).writePointer(defaults);
+  copy.add(found.at + 8).writeU32(count);
+  const kept = { copy, defaults, texts: [] };
+  for (const [name, text] of [['FriendlyName', friendlyName], ['Description', description]]) {
+    const entry = found.texts.find(([n]) => n === name);
+    if (entry === undefined || text === undefined) {
+      continue;
+    }
+    const buffer = Memory.allocUtf16String(text);
+    kept.texts.push(buffer);
+    const at = defaults.add(entry[1].offset);
+    at.writePointer(buffer);
+    at.add(4).writeU32(text.length + 1);
+    at.add(8).writeU32(text.length + 1);
+  }
+  clones.push(kept);
+  return kept;
+}
+
+globalThis.gardenClone = function (n, friendlyName, description, className = 'chips') {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const line = read.lines[n];
+  const itemClass = read.fields.get('ItemClass');
+  if (line === undefined || itemClass === undefined) {
+    return line === undefined ? `pick n from 0 to ${read.lines.length - 1}` : 'no ItemClass field';
+  }
+  const clone = cloneClass(className, friendlyName || `AP Item ${n}`, description || 'Sends a check to the multiworld.');
+  if (clone.error) {
+    log(clone.error);
+    return clone.error;
+  }
+  const at = line.add(itemClass.offset);
+  const key = line.toString();
+  if (!gardenSwaps.has(key)) {
+    gardenSwaps.set(key, u32(at));
+  }
+  at.writePointer(clone.copy);
+  log(`line ${n}: ItemClass -> a copy of ${className} at ${clone.copy}, named ${JSON.stringify(friendlyName || `AP Item ${n}`)}`);
+  return 'open the Garden and look at that line; gardenItem(n) puts the line back';
 };
 
 // ---- weapon upgrades, for taking back what a Power to the People station gave ----
