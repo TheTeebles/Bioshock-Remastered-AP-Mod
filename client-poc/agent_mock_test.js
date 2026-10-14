@@ -204,6 +204,10 @@ function makeRuntime({
         if ([...runtime.refuse].some((text) => command.includes(text))) { return 0; }
         const playerCommand = [...runtime.playerOnly].some((text) => command.includes(text));
         if (onPlayer !== playerCommand) { return 0; } // each side only takes its own kind of command
+        const dollars = /^GiveItem (\d+) ShockGame\.Credits$/.exec(command);
+        if (dollars && runtime.creditsAt) { // the game adds them to the player's Credits
+          runtime.memory.set(runtime.creditsAt, (runtime.memory.get(runtime.creditsAt) || 0) + Number(dollars[1]));
+        }
         for (const [part, raised] of runtime.raises) {
           if (!command.includes(part)) { continue; }
           for (const spec of raised) {
@@ -1637,7 +1641,7 @@ const tests = {
   // ---- Traps ----
   'eve_drain and pickpocket call the game\'s RemoveBioAmmo and RemoveCredits': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
     r.load(); r.frames(2);
     r.context.rpc.exports.action(1, 'eve_drain');
     r.context.rpc.exports.action(2, 'pickpocket');
@@ -1655,7 +1659,7 @@ const tests = {
   },
   'a Remove function that fails is not called again, and the trap writes the number instead': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
     r.load(); r.frames(2);
     r.onScriptCall = () => { throw new Error('access violation accessing 0x74'); }; // as seen in the game
     r.context.rpc.exports.action(1, 'eve_drain');
@@ -1674,24 +1678,19 @@ const tests = {
     assert.strictEqual(r.scriptCalls.length, called, 'RemoveCredits is not tried again');
     assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 50);
   },
-  'a number written by a trap is redrawn on the HUD': () => {
+  'a number written by a trap is redrawn on the HUD through a dollar given back': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(true, true);
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false); r.creditsAt = game.pawn + 0xAEC;
     r.load(); r.frames(2);
-    r.onScriptCall = (self, fn) => {
-      if (fn === model.removeBioAmmo || fn === model.removeCredits) { throw new Error('access violation accessing 0x74'); }
-    };
     r.context.rpc.exports.action(1, 'eve_drain');
-    r.frames(2);
-    r.gameEvent(game.hud, model.tick);
-    r.frames(3);
+    r.frames(10);
     assert.strictEqual(r.memory.get(game.pawn + 0xAF8), 0, 'EVE emptied');
-    const redraws = r.scriptCalls.map((c) => c.fn).filter((fn) => fn === model.updateUIStats || fn === model.updateUIBioAmmoBank);
-    assert.deepStrictEqual(redraws, [model.updateUIStats, model.updateUIBioAmmoBank]);
+    assert.strictEqual(r.memory.get(game.pawn + 0xAEC), 123, 'one dollar taken and given back by the game');
+    assert.deepStrictEqual(r.execCalls.map((c) => c.command), ['GiveItem 1 ShockGame.Credits']);
   },
   'without the Remove functions the trap writes the number itself': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false);
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(false); r.creditsAt = game.pawn + 0xAEC;
     r.load(); r.frames(2);
     r.context.rpc.exports.action(1, 'eve_drain');
     r.context.rpc.exports.action(2, 'pickpocket');
@@ -1714,7 +1713,7 @@ const tests = {
   },
   'a trap waits for a body and gives up after a while': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerStats(); r.creditsAt = game.pawn + 0xAEC;
     r.load(); r.frames(2);
     r.poke(game.controller + 0x450, 0); // between two levels
     r.context.rpc.exports.action(3, 'pickpocket'); r.frames(3);
