@@ -61,6 +61,8 @@ def candidates(maps):
     safes_per_level = {}
     for entry in sorted(maps, key=story_order):
         level = level_of(entry["map"])
+        if level not in LEVEL_NAMES:
+            continue  # not one of Rapture's levels (Autoplay.bsm, the Lighthouse)
         for spot in entry["world"]:
             kind = kind_of(spot["class"])
             if kind is None:

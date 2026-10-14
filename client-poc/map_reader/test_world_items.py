@@ -78,3 +78,9 @@ def test_too_many_spots_for_the_id_range_is_refused():
                                                 for i in range(100)]}
     with pytest.raises(ValueError, match="safe"):
         candidates([many])
+
+
+def test_maps_that_are_not_levels_are_left_out():
+    autoplay = {"map": "Autoplay.bsm", "world": [spot("SecurityCrate_Safe", "SecurityCrate_Safe0")]}
+    rows, _, _ = candidates([autoplay, MEDICAL])
+    assert [row["map"] for row in rows if row["kind"] == "safe"] == ["1-Medical.bsm"]
