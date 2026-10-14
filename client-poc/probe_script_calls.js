@@ -80,7 +80,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.8';
+const PROBE_VERSION = '2026-10-14.9';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -1333,6 +1333,64 @@ globalThis.defaults = function (className) {
     log(`  +${hex(p.offset)} ${name} (${p.owner}) = ${JSON.stringify(text)}`);
   }
   return `${found.filled} of ${found.texts.length} text properties filled`;
+};
+
+// Every default value of an item class (its price and icon are somewhere in there), or only the properties whose
+// names match a pattern.
+function itemValues(className, pattern, indent = '  ') {
+  const found = classDefaults(className, true);
+  if (found.error) {
+    log(`${indent}${className}: ${found.error}`);
+    return 0;
+  }
+  const learned = learnAnyClass(className);
+  // an array of default values is this many bytes long; a default object is taken to be big enough
+  const count = found.at === undefined ? 0x2000 : (u32(findClass(className).add(found.at + 4)) || 0);
+  const sorted = [...learned.properties.entries()].sort((a, b) => a[1].offset - b[1].offset)
+    .filter(([name, p]) => p.offset < count && (pattern === undefined || pattern.test(name)));
+  for (const [name, p] of sorted) {
+    log(`${indent}+${hex(p.offset)} ${name} (${p.kind}, ${p.owner}) = ${valueText(found.data.add(p.offset), p)}`);
+  }
+  return sorted.length;
+}
+
+globalThis.values = function (className, pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const n = itemValues(className, pattern === undefined ? undefined : new RegExp(pattern, 'i'));
+  return `${n} values`;
+};
+
+// What each line of the nearest Garden sells: the item class, its price and anything that looks like an icon.
+const PRICE_OR_ICON = /price|cost|adam|value|icon|tex|mat|image|hud|inventory|sprite|portrait|picture/i;
+globalThis.gardenGenes = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const found = nearestGarden();
+  const read = found === null ? { error: "no Gatherer's Garden loaded here" } : gardenLines(found.object);
+  if (read.error) {
+    return read.error;
+  }
+  const field = (line, name) => {
+    const f = read.fields.get(name);
+    return f === undefined ? '?' : valueText(line.add(f.offset), f);
+  };
+  const seen = new Set();
+  read.lines.forEach((line, n) => {
+    const itemClass = pointerAt(line.add(read.fields.get('ItemClass').offset));
+    const className = itemClass === null || itemClass.isNull() ? null : nameOfObject(itemClass);
+    log(`${n}: ${className} CostAdjustment ${field(line, 'CostAdjustment')} cost ${field(line, 'cost')} ` +
+        `PickupClass ${field(line, 'PickupClass')}`);
+    if (className !== null && !seen.has(className)) {
+      seen.add(className);
+      itemValues(className, PRICE_OR_ICON, '    ');
+    }
+  });
+  log('chips:');
+  itemValues('chips', PRICE_OR_ICON, '    ');
+  return `${read.lines.length} lines; open the Garden first so cost is filled`;
 };
 
 globalThis.rename = function (className, propertyName, text) {
