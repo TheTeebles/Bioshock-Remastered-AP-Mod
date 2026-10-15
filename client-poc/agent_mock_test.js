@@ -2211,6 +2211,19 @@ const tests = {
     assert.ok(r.logged('research: Bouncer at level 1'));
     assert.strictEqual(state(r).researchTrouble, null);
   },
+  'research awards can be emptied': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    const sportBoost = model.itemClass('SportBoost', 10);
+    const fill = model.research([['ThuggishSplicer', 0]], [['ThuggishSplicer', 1, 10, 0], ['ThuggishSplicer', 2, 25, sportBoost]]);
+    fill.tracks(game.pawn); const levels = fill.levels(game.pawn);
+    r.load(); r.frames(15);
+    r.context.rpc.exports.action(5, 'empty_research_awards'); r.frames(15);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[5, true]]);
+    assert.strictEqual(r.memory.get(levels + 20 + 0x10), model.chips);
+    assert.strictEqual(r.memory.get(levels + 0x10), 0, 'a level that gives nothing is left alone');
+    assert.strictEqual(state(r).researchAwardsEmptied, 1);
+  },
   'a player without research tables says so once': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     r.poke(game.pawn + 0x30, model.playerClass);

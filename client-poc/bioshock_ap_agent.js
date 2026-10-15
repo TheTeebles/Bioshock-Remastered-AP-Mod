@@ -618,6 +618,7 @@ function readState() {
     researchLevels: research.levels,
     researchTable: research.table,
     researchTrouble: research.trouble,
+    researchAwardsEmptied: research.emptied,
     // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
     apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
@@ -1891,7 +1892,9 @@ function setEmptyPickups(config) {
 // ScoreRequired its CurrentScore has reached (GetResearchLevelForScore), and reaching a level gives that row's
 // AwardItemClass. The agent reports every subject's level and, once, the table itself. Not tried in game yet.
 const RESEARCH_INTERVAL_MS = 1000;
-const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null };
+// With research checks the client asks for the awards to be emptied: each level's AwardItemClass becomes the
+// placeholder (a bag of chips), as the Garden lines and shuffled pickups do, and the multiworld hands them out.
+const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null, empty: false, emptied: 0 };
 
 function researchTrouble(text) {
   if (research.trouble === null) {
@@ -1976,6 +1979,27 @@ function readResearch(pawn, now) {
     }
   }
   research.levels = levels;
+  if (research.empty && gardens.placeholder !== null) {
+    for (const row of levelRows) {
+      const at = row.add(level.fields.AwardItemClass);
+      const award = carefulPtr(at);
+      if (award !== null && !award.isNull() && !same(award, gardens.placeholder)) {
+        at.writePointer(gardens.placeholder);
+        research.emptied++;
+        const subject = nameOf(carefulS32(row.add(level.fields.ResearchName)));
+        log(`research: ${subject} level ${carefulS32(row.add(level.fields.LevelNumber))} now gives ` +
+          `${GARDEN_PLACEHOLDER} instead of ${nameOfObject(award)}`);
+      }
+    }
+  }
+}
+
+function setEmptyResearchAwards() {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the research table';
+  }
+  research.empty = true;
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -3834,10 +3858,10 @@ rpc.exports = {
         return;
       }
     }
-    if (name === 'touch_stations') {
+    if (name === 'touch_stations' || name === 'empty_research_awards') {
       let trouble;
       try {
-        trouble = enableTouch();
+        trouble = name === 'touch_stations' ? enableTouch() : setEmptyResearchAwards();
       } catch (e) {
         trouble = e.message;
       }
