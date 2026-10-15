@@ -66,11 +66,12 @@ class Crossing(NamedTuple):
     # "FromBulkhead" for "PlayerStart_First"), so they always fit.
     bounce_map: str
     bounce_arrival: str
+    arrival: str  # where the story's crossing arrives
 
 
 CROSSINGS: tuple[Crossing, ...] = (
-    Crossing("2-subbay", "3-arcadia", 3, "2-subbay", "FromArcadiaPS"),
-    Crossing("5-ryan", "6-resi", 6, "5-ryan", "FromBulkhead"),
+    Crossing("2-subbay", "3-arcadia", 3, "2-subbay", "FromArcadiaPS", "FromFisheriesPS"),
+    Crossing("5-ryan", "6-resi", 6, "5-ryan", "FromBulkhead", "PlayerStart_First"),
 )
 
 # Open Rapture's Level Complete: a level is finished when the next level of its chapter has been reached, or, for the
@@ -143,7 +144,15 @@ def travel_rules(held: Collection[str], visited: Collection[str]) -> dict[str, A
         "redirects": [{"from": crossing.from_map, "to": crossing.to_map, "map": HUB.map, "arrival": HUB.arrival,
                        "fallback": {"map": crossing.bounce_map, "arrival": crossing.bounce_arrival}}
                       for crossing in CROSSINGS if crossing.chapter not in opened],
+        # A save made while a crossing was redirected keeps it so: once its chapter is open it is put back.
+        "restores": [{"from": crossing.from_map, "to": crossing.to_map, "arrival": crossing.arrival,
+                      "hub": HUB.map, "hubArrival": HUB.arrival}
+                     for crossing in CROSSINGS if crossing.chapter in opened],
     }
+
+
+# For a slot that is not Open Rapture, after rules were sent in this session: undo them.
+TRAVEL_RULES_OFF: dict[str, Any] = {"off": True}
 
 
 def completed_levels(visited: Collection[str], quests: Collection[str]) -> list[str]:

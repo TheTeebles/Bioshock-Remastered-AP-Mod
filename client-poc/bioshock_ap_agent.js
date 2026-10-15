@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.6';
+const AGENT_VERSION = '2026-10-15.7';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1555,6 +1555,10 @@ function watchObjects(map, now, level) {
     world.pickups = []; // the last level's objects: they may be freed, and their memory used by others
     world.containers = [];
   }
+  if (levelKey !== travel.level) {
+    travel.level = levelKey; // a save loaded, even in the same map: the travel objects are the last level's
+    forgetTravelObjects();
+  }
   const end = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
   for (let i = scan.next; i < end; i++) {
     const object = carefulPtr(table.add(i * 4));
@@ -1603,11 +1607,12 @@ function watchObjects(map, now, level) {
     scan.weapons = [];
     gardens.list = scan.gardens;
     scan.gardens = [];
-    travel.managers = scan.bathyspheres;
+    // A pass a save load cut into lists objects of two levels: wait for the next one.
+    travel.managers = scan.unsure ? [] : scan.bathyspheres;
     scan.bathyspheres = [];
-    travel.changes = scan.changes;
+    travel.changes = scan.unsure ? [] : scan.changes;
     scan.changes = [];
-    travel.notes = scan.notes;
+    travel.notes = scan.unsure ? [] : scan.notes;
     scan.notes = [];
     try {
       noteWorldThings(map, level, scan.pickups, scan.containers, scan.unsure);
@@ -2612,7 +2617,19 @@ const travel = {
   unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
   lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
   flagsSet: new Set(), // `name=value` story flags already set, this attachment
+  level: null, // the level object the lists above are about
 };
+
+// The level object changed (another map, or a save loaded in the same one): its travel objects are gone.
+function forgetTravelObjects() {
+  travel.managers = [];
+  travel.changes = [];
+  travel.notes = [];
+  travel.borrowed = new Set();
+  travel.unlockAsked = new Set();
+  travel.lines = new Map();
+  travel.originals.clear();
+}
 
 const heapApi = (() => {
   try {
@@ -2747,7 +2764,7 @@ function nameAt(at) {
 function borrowString(room) {
   for (const note of travel.notes) {
     const cls = classOfObject(note);
-    if (cls === null) {
+    if (cls === null || kindOf(cls) !== 'note') {
       continue;
     }
     const key = cls.toString();
@@ -2940,6 +2957,13 @@ function keepBathysphere(manager, layout, rules) {
       !readableRange(data, count * entry.size)) {
     return;
   }
+  if (rules.off) { // not Open Rapture (any more): lines pointed elsewhere go back where the level made them go
+    for (let i = 0; i < count; i++) {
+      const destination = data.add(i * entry.size);
+      pointLine(destination, entry, lineOf(manager, i, destination, entry), null);
+    }
+    return;
+  }
   const wanted = [];
   for (let i = 0; i < count; i++) {
     const destination = data.add(i * entry.size);
@@ -2965,6 +2989,8 @@ function keepBathysphere(manager, layout, rules) {
     current.push(unlockedData.add(i * 4).readS32());
   }
   travel.offered = current;
+  // Once the game has added a destination it was asked for, it may be asked again if it drops it (a save loaded).
+  current.forEach((i) => travel.unlockAsked.delete(`${manager}:${i}`));
   if (current.join(',') === wanted.join(',')) {
     return;
   }
@@ -3037,6 +3063,10 @@ function pointChange(change, layout, map, label, values) {
 function keepLevelChanges(map, layout, rules) {
   travel.armed = [];
   for (const change of travel.changes) {
+    const cls = classOfObject(change);
+    if (cls === null || kindOf(cls) !== 'changelevel') {
+      continue; // gone since the scan
+    }
     const key = change.toString();
     let original = travel.originals.get(key);
     const current = normalizeMap(stringAt(change.add(layout.map)));
@@ -3046,6 +3076,9 @@ function keepLevelChanges(map, layout, rules) {
     }
     const target = original === undefined ? current : normalizeMap(original.map);
     if (target === null) {
+      continue;
+    }
+    if (original === undefined && restoreSaved(change, layout, map, current, rules)) {
       continue;
     }
     const redirect = rules.redirects.find((r) => r.from === map && r.to === target);
@@ -3078,6 +3111,24 @@ function keepLevelChanges(map, layout, rules) {
   }
 }
 
+// A crossing redirected to the hub is level state, so a save keeps it redirected. Once its chapter is open, the
+// client names it in `restores`: a level change in its map that leads exactly to the hub's map and arrival is put
+// back where the story sends it. (Never the fallback's goal: those maps have level changes of their own that lead
+// there.) True when this change was one.
+function restoreSaved(change, layout, map, current, rules) {
+  const restore = rules.restores.find((r) => r.from === map && r.hub === current);
+  if (restore === undefined || stringAt(change.add(layout.label)) !== restore.hubArrival) {
+    return false;
+  }
+  if (pointChange(change, layout, restore.mapName, restore.arrival,
+    { mapname: restore.mapIndex, startlocationlabel: restore.arrivalIndex })) {
+    log(`Open Rapture: the way from ${map} that a save kept pointed at ${current} leads to ${restore.to} again`);
+  } else {
+    travelTrouble(`could not point the level change a save kept at ${current} back to ${restore.to}`);
+  }
+  return true;
+}
+
 // Every few ticks, with the scan's lists of bathysphere managers and level changes for the map being played.
 function keepTravel(map) {
   const rules = travel.rules;
@@ -3088,7 +3139,7 @@ function keepTravel(map) {
     rules.namesFor = map;
     resolveNames(rules);
   }
-  for (const flag of rules.flags) {
+  for (const flag of rules.off ? [] : rules.flags) {
     if (!travel.flagsSet.has(`${flag.name}=${flag.value}`)) {
       const trouble = setStoryFlag(flag.name, flag.value);
       if (trouble === null) {
@@ -3140,6 +3191,11 @@ function setTravelRules(config) {
     redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
       ...goal(r), fallback: goal(r.fallback) })),
     flags: Object.entries(config.flags || {}).map(([name, value]) => ({ name: String(name), value: String(value) })),
+    restores: (config.restores || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
+      mapName: mapFileName(r.to), mapIndex: named(mapFileName(r.to)),
+      arrival: r.arrival, arrivalIndex: named(r.arrival),
+      hub: String(r.hub).toLowerCase(), hubArrival: r.hubArrival })),
+    off: config.off === true, // the slot is not Open Rapture: undo what earlier rules changed, and change nothing
   };
   const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
     ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];

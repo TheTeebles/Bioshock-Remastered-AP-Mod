@@ -90,6 +90,13 @@ class TestOpenRaptureWithoutStartingCamera(BioShockTestBase):
         self.collect_by_name(ACCESS[2])
         self.assertTrue(all(self.can_reach_location(name) for name in photos))
 
+    def test_the_whole_of_fort_frolic_needs_the_camera(self) -> None:
+        # Cohen opens the rest of Fort Frolic only once Fitzpatrick's photograph is placed.
+        present = {location.name for location in self.multiworld.get_locations(self.player)}
+        fort_frolic = [name for name in locations_in_chapter(4) if name in present]
+        self.assertGreater(len(fort_frolic), 10)
+        self.assertAccessDependency(fort_frolic, [[ACCESS[2]]], only_check_listed=True)
+
     def test_universal_tracker_knows_the_camera_was_not_given(self) -> None:
         slot_data = dict(self.world.fill_slot_data())
         self.world.options.start_with_research_camera.value = True

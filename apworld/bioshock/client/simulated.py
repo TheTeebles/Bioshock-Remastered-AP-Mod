@@ -132,7 +132,8 @@ class SimulatedGame:
             self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("travel_rules "):  # a setting too: where the bathysphere and level changes may go
-            self.travel_rules = json.loads(action.partition(" ")[2])
+            rules = json.loads(action.partition(" ")[2])
+            self.travel_rules = None if rules.get("off") else rules  # off: back to the game's own
             self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("empty_pickups ") and "empty_pickups" not in self.unsupported_actions:

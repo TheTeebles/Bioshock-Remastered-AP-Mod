@@ -122,6 +122,7 @@ class BridgeCore:
         self._travel_command_id: int | None = None  # the last travel rules sent to the agent went under this id
         self._travel_sent: str | None = None  # ... and were these
         self._travel_trouble_shown = False
+        self._travel_ever_sent = False  # this agent has had travel rules (it keeps them across slots)
         self._entered: str | None = None  # the level the player was last told about where its way on leads
         # Makes the Garden's menu with the AP icon and returns the folder it is in (None: not for this agent, such as
         # the simulated game). Raises an exception whose message says why it cannot.
@@ -266,6 +267,7 @@ class BridgeCore:
         self._garden_sent = None
         self._travel_command_id = None
         self._travel_sent = None
+        self._travel_ever_sent = False  # a new agent has no rules to undo
         self._movies_asked = False
         self._movies_command_id = None
         # ... and what was about to be sent to the agent that has gone must not reach the next one as well.
@@ -815,13 +817,19 @@ class BridgeCore:
 
     def _send_travel_rules(self) -> None:
         """With Open Rapture, tell the agent where the bathysphere may go, whenever that changes."""
-        if not (self.open_rapture and self.connected and self.agent_attached):
+        if not (self.connected and self.agent_attached):
             return
-        rules = travel.travel_rules(self._received_names, self.visited)
+        if self.open_rapture:
+            rules = travel.travel_rules(self._received_names, self.visited)
+        elif self._travel_ever_sent:
+            rules = travel.TRAVEL_RULES_OFF  # this agent still has another slot's rules
+        else:
+            return
         action = "travel_rules " + json.dumps(rules, separators=(",", ":"))
         if action == self._travel_sent:
             return
         self._travel_sent = action
+        self._travel_ever_sent = True
         self._travel_command_id = self._next_command_id
         self._next_command_id += 1
         self._out.append(RunAction(self._travel_command_id, action))

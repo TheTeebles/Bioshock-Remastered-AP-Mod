@@ -1801,6 +1801,24 @@ const tests = {
     assert.deepStrictEqual(model.unlockedOf(manager), [0, 5], 'the rest of the rules still apply');
     assert.match(state(r).travelTrouble, /could not set story flag global_transitionedFromRyan/);
   },
+  'a destination the game unlocked and then lost (a save loaded in the same map) is asked for again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 1], 2);
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '4-recreation' }], redirects: [] });
+    r.frames(4); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 3]);
+    const calls = r.scriptCalls.length;
+    const buffer = r.object(8); r.poke(buffer, 0); r.poke(buffer + 4, 1); // the save's own array, room for 2
+    r.poke(manager + 0x8C, buffer); r.poke(manager + 0x90, 2); r.poke(manager + 0x94, 2);
+    r.frames(4); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.ok(r.scriptCalls.length > calls, 'asked again');
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 3]);
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
   'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '2-SubBay');
@@ -1821,6 +1839,56 @@ const tests = {
     assert.deepStrictEqual(model.changeOf(change),
       { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
     assert.strictEqual(state(r).travelRedirects, 0);
+  },
+  'a crossing a save kept pointed at the hub goes where the story sends it once its chapter is open': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    model.levelChange('3-Arcadia', 'FromArcadiaPS', 32); // nothing to do with it
+    const saved = model.levelChange('1-Medical', 'Backtrack_MedicalStart', 32);
+    const fallback = model.levelChange('2-SubBay', 'FromArcadiaPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [], restores: [
+      { from: '2-subbay', to: '3-arcadia', arrival: 'FromFisheriesPS', hub: '1-medical',
+        hubArrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(saved),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+    assert.deepStrictEqual(model.changeOf(fallback).rows, ['2-SubBay', 'FromArcadiaPS'], 'the fallback is never undone');
+    assert.ok(r.logged('that a save kept pointed at 1-medical leads to 3-arcadia again'));
+  },
+  'rules turned off put a redirected crossing back': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.strictEqual(model.changeOf(change).map, '1-Medical');
+    travelRules(r, 2, { off: true });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+  },
+  'a save loaded in the same map: the last level\'s crossings are forgotten and the new ones redirected': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const old = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.strictEqual(model.changeOf(old).map, '1-Medical');
+    r.poke(old + 0x30, 0); // freed with its level
+    r.levels.splice(1, 1);
+    const again = r.level('2-SubBay', { extra: 6, capacity: 1030 }); r.player(again, { viewport: g.player });
+    const fresh = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.frames(30);
+    assert.strictEqual(model.changeOf(fresh).map, '1-Medical');
+    assert.strictEqual(state(r).travelRedirects, 1);
   },
   'a redirect taken is reported when the hub level comes up': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();

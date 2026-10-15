@@ -55,6 +55,12 @@ class TestTravelRules(unittest.TestCase):
         rules = travel.travel_rules({ARCADIA_ACCESS}, set())
         self.assertEqual([r["to"] for r in rules["redirects"]], ["6-resi"])
 
+    def test_a_crossing_a_save_kept_redirected_is_put_back_once_its_chapter_opens(self) -> None:
+        self.assertEqual(travel.travel_rules(set(), set())["restores"], [])
+        self.assertEqual(travel.travel_rules({ARCADIA_ACCESS}, set())["restores"], [
+            {"from": "2-subbay", "to": "3-arcadia", "arrival": "FromFisheriesPS", "hub": "1-medical",
+             "hubArrival": "Backtrack_MedicalStart"}])
+
     def test_chapters_six_and_seven_open_with_their_items_once_the_chapters_before_are_open(self) -> None:
         held = set(EVERY_CHAPTER)
         self.assertEqual(stops(travel.travel_rules(held - {HEPHAESTUS_ACCESS}, set()))[-2:], ["Arcadia", "Fort Frolic"],
@@ -126,6 +132,16 @@ class TestOpenRaptureClient(unittest.TestCase):
         h.attach()
         h.step(2)
         self.assertEqual(len([a for a in sent if a.startswith("travel_rules ")]), 2, "a new agent is told again")
+
+    def test_another_slot_that_is_not_open_rapture_turns_the_rules_off(self) -> None:
+        h = open_rapture().connect().attach()
+        h.step(3)
+        self.assertIsNotNone(h.game.travel_rules)
+        h.disconnect()
+        h.slot_data["level_access"] = 1
+        h.connect()
+        h.step(3)
+        self.assertIsNone(h.game.travel_rules, "the agent keeps rules across slots, so it is told")
 
     def test_no_rules_outside_open_rapture(self) -> None:
         h = Harness().connect().attach()

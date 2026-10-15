@@ -96,7 +96,8 @@ are items in the multiworld, and all of them are always in the pool. Weapons alw
 
 You start with the Research Camera (the `start_with_research_camera` option, on by default), so you can research
 enemies from the start. Some later ones, such as spider splicers, are hard to hurt without it. The camera in Neptune's
-Bounty is still there and gives film.
+Bounty is still there and gives film. With the option off and Open Rapture, Fort Frolic's checks also need
+Neptune's Bounty Access in logic: Cohen opens most of Fort Frolic only for photographs.
 
 ## What is the goal?
 

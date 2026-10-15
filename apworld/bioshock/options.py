@@ -160,7 +160,8 @@ class StartWithResearchCamera(DefaultOnToggle):
     """
     You start with the Research Camera instead of finding it in Neptune's Bounty. Research makes you deal more
     damage to the enemies you photograph, and some later enemies (spider splicers) are hard to hurt without it.
-    The camera in Neptune's Bounty is still there and gives film.
+    The camera in Neptune's Bounty is still there and gives film. Off with Open Rapture: Fort Frolic's checks also
+    need Neptune's Bounty Access, since Cohen opens most of Fort Frolic only for photographs.
     """
     display_name = "Start With Research Camera"
 
