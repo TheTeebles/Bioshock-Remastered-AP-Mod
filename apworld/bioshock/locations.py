@@ -6,10 +6,10 @@ from BaseClasses import Location, LocationProgressType
 
 from .data import (
     GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, VICTORY_ITEM,
-    LocationCategory, LocationData,
+    WORLD_SPOTS, LocationCategory, LocationData,
 )
 from .items import BioShockItem
-from .options import CollectibleChecks, ShopChecks
+from .options import CollectibleChecks, ShopChecks, WorldItemChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -32,6 +32,9 @@ def _build_location_groups() -> dict[str, set[str]]:
 
 LOCATION_NAME_GROUPS: dict[str, set[str]] = _build_location_groups()
 
+# Holding the Research Camera is no check for a player who starts with it.
+RESEARCH_CAMERA_LOCATION: int = next(spot.id for spot in WORLD_SPOTS if spot.vanilla == "Research Camera")
+
 
 def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
     options = world.options
@@ -44,6 +47,9 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
         LocationCategory.GATHERERS_GARDEN: options.shop_checks == ShopChecks.option_all or (
             options.shop_checks == ShopChecks.option_first_appearances
             and location.id in GATHERERS_GARDEN_FIRST_APPEARANCES),
+        LocationCategory.WORLD_ITEM: options.world_item_checks != WorldItemChecks.option_off and not (
+            options.start_with_research_camera and location.id == RESEARCH_CAMERA_LOCATION),
+        LocationCategory.SAFE: bool(options.safe_checks),
     }[location.category]
 
 

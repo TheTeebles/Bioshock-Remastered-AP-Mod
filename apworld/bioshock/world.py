@@ -6,13 +6,13 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVELS, WEAPON_UPGRADES, LocationData
+from .data import GAME_NAME, LEVELS, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.31"
+WORLD_VERSION = "0.1.32"
 RESEARCH_CAMERA = "Research Camera"
-SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
-# 4: station_touch, and shop_checks is 0/1/2
+SLOT_DATA_VERSION = 5  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
+# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2) and safe_checks
 
 
 class BioShockWorld(World):
@@ -37,7 +37,7 @@ class BioShockWorld(World):
     ut_can_gen_without_yaml = True
     TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
                        "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
-                       "start_with_research_camera")
+                       "start_with_research_camera", "world_item_checks", "safe_checks")
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -80,13 +80,15 @@ class BioShockWorld(World):
                 "access item to start_inventory.")
         # As create_all_items counts it: access items taken back out of the pool still took their place in it.
         room = len(locations.open_locations(self)) - len(items.progression_item_names(self))
-        if items.stations_shuffled(self) and room < len(WEAPON_UPGRADES):
-            # The stations give no upgrade then, so an upgrade left out of the pool could never be had.
+        required = len(items.required_useful_items(self))
+        if required and room < required:
+            # The game gives these no more, so one left out of the pool could never be had.
             raise OptionError(
-                f"{self.player_name}: with Power to the People checks on, the 12 weapon upgrades come only from the "
-                f"multiworld and need 12 checks that may hold useful items, but these options leave room for "
-                f"{max(room, 0)}. Filler-only collectibles and locations under exclude_locations do not count. "
-                "Turn on more kinds of checks, set audio diaries to 'all' or exclude fewer locations.")
+                f"{self.player_name}: {required} items come only from the multiworld (the 12 weapon upgrades with "
+                "Power to the People checks on, the shuffled pickups with World Item Checks set to 'shuffled') and "
+                f"need as many checks that may hold useful items, but these options leave room for {max(room, 0)}. "
+                "Filler-only collectibles and locations under exclude_locations do not count. Turn on more kinds of "
+                "checks, set audio diaries to 'all' or exclude fewer locations.")
 
     def _open_from_the_start(self, open_checks: list[LocationData]) -> list[LocationData]:
         """The checks among these that need no access item the player does not start with."""

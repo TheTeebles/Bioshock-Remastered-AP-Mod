@@ -104,6 +104,32 @@ class ShopChecks(Choice):
     default = option_off
 
 
+class WorldItemChecks(Choice):
+    """
+    Experimental, not tried in game yet. Taking the plasmids and gene tonics that lie in the levels sends checks
+    (31), and so does holding each weapon for the first time (7, or 6 when you start with the Research Camera).
+
+    Off: nothing lying in the levels is a check.
+    Keep Items: each pickup still gives its own plasmid, tonic or weapon, and sends a check as well.
+    Shuffled: the plasmid and tonic pickups give a bag of chips instead, and what they held goes into the
+    multiworld. Electro Bolt and Incinerate! still give themselves, because the story needs them, and weapons stay
+    where they are.
+    """
+    display_name = "World Item Checks"
+    option_off = 0
+    option_keep_items = 1
+    option_shuffled = 2
+    default = option_off
+
+
+class SafeChecks(Toggle):
+    """
+    Experimental, not tried in game yet. Opening each safe and lockbox sends a check (64). What is inside stays
+    as it is.
+    """
+    display_name = "Safe Checks"
+
+
 class LevelCompletionChecks(DefaultOnToggle):
     """Finishing each level for the first time sends a check (12 checks)."""
     display_name = "Level Completion Checks"
@@ -140,6 +166,8 @@ class BioShockOptions(PerGameCommonOptions):
     level_completion_checks: LevelCompletionChecks
     audio_diary_checks: AudioDiaryChecks
     shop_checks: ShopChecks
+    world_item_checks: WorldItemChecks
+    safe_checks: SafeChecks
     start_with_research_camera: StartWithResearchCamera
     trap_chance: TrapChance
     death_link: DeathLink
@@ -149,7 +177,7 @@ class BioShockOptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
-                           AudioDiaryChecks, ShopChecks]),
+                           AudioDiaryChecks, ShopChecks, WorldItemChecks, SafeChecks]),
     OptionGroup("Item Pool", [StartWithResearchCamera, TrapChance]),
 ]
 

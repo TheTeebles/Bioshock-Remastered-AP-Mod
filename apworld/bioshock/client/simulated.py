@@ -13,16 +13,17 @@ from collections import Counter
 from typing import Any
 
 from ..data import (
-    AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
-    STORY_MILESTONES, WELCOME_TO_RAPTURE,
+    AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE, POWER_TO_THE_PEOPLE_PER_LEVEL,
+    STORY_MILESTONES, WELCOME_TO_RAPTURE, WORLD_SPOTS, SpotKind,
 )
-from .game_data import MAP_LEVEL
+from .game_data import MAP_LEVEL, WEAPON_CLASS
 from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied, TravelRedirected
 
 _GIVE_ITEM = re.compile(r"^GiveItem (\d+) ([A-Za-z_][\w.]*)$")
 _GIVE_WEAPON = re.compile(r"^GiveWeapon ([A-Za-z_][\w.]*)$")
 _WEAPON_UPGRADE = re.compile(r"^AddWeaponStatUpgrade ([A-Za-z]+) ([A-Za-z]+)$")
 _SUMMON = re.compile(r"^summon ([A-Za-z_][\w.]*)$")
+_WEAPON_CLASS = {name: game_class.rsplit(".", 1)[-1] for name, game_class in WEAPON_CLASS.items()}
 
 
 def resolve_level(text: str) -> str:
@@ -62,6 +63,9 @@ class SimulatedGame:
         self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
         self.quests: set[str] = set()  # the game's quests completed, by name
         self.travel_rules: dict[str, Any] | None = None  # Open Rapture: where the bathysphere goes, as the client said
+        self.pickups_taken: dict[str, set[str]] = {}  # map -> plasmid and tonic pickups taken there (actor names)
+        self.containers_opened: dict[str, set[str]] = {}  # map -> safes and lockboxes opened there
+        self.empty_pickups: dict[str, Any] | None = None  # the pickups the client said should give the placeholder
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -101,6 +105,8 @@ class SimulatedGame:
             weapons_pending=self.weapons_pending,
             garden_bought={level: frozenset(lines) for level, lines in self.garden_bought.items()},
             quests=frozenset(self.quests),
+            pickups_taken={name: frozenset(actors) for name, actors in self.pickups_taken.items()},
+            containers_opened={name: frozenset(actors) for name, actors in self.containers_opened.items()},
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -125,6 +131,13 @@ class SimulatedGame:
         if action.startswith("travel_rules "):  # a setting too: where the bathysphere and level changes may go
             self.travel_rules = json.loads(action.partition(" ")[2])
             self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("empty_pickups ") and "empty_pickups" not in self.unsupported_actions:
+            self.empty_pickups = json.loads(action.partition(" ")[2])  # a setting as well
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("empty_pickups "):
+            self._events.append(ActionResult(command_id, False, "the simulated game does not support it"))
             return
         if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is
             self.movies = json.loads(action.partition(" ")[2])
@@ -235,6 +248,35 @@ class SimulatedGame:
             raise ValueError(f"Line {line} has been bought already.")
         self.garden_bought.setdefault(self.level, set()).add(line)
         return f"{offer[line]['name']} for {offer[line]['price']} ADAM"
+
+    def take_here(self, text: str) -> str:
+        """take_from_world for the one pickup, weapon, safe or lockbox of this level whose name contains `text`."""
+        wanted = text.strip().lower()
+        ids = {spot.id for spot in WORLD_SPOTS if spot.level == self.level}
+        names = [location.name for location in LOCATION_TABLE if location.id in ids]
+        matches = [name for name in names if name.lower() == wanted or name.lower().endswith(f": {wanted}")
+                   or name.lower().endswith(f" - {wanted}")] or [name for name in names if wanted in name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"'{text.strip()}' is not one pickup, weapon, safe or lockbox of {self.level}"
+                             + (f". There are: {', '.join(names)}" if names else ": it has none."))
+        return f"{self.take_from_world(matches[0])} ({matches[0]})"
+
+    def take_from_world(self, location_name: str) -> str:
+        """Take the pickup, open the safe or lockbox, or pick up the weapon that is this location. Returns what the
+        player got (a pickup the client has emptied gives a bag of chips)."""
+        location_id = next((location.id for location in LOCATION_TABLE if location.name == location_name), None)
+        spot = next((spot for spot in WORLD_SPOTS if spot.id == location_id), None)
+        if spot is None:
+            raise ValueError(f"{location_name} is no pickup, weapon, safe or lockbox.")
+        if spot.kind == SpotKind.WEAPON:
+            self.held_weapons.add(_WEAPON_CLASS[spot.vanilla])
+            return spot.vanilla
+        if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX):
+            self.containers_opened.setdefault(spot.map, set()).add(spot.actor)
+            return f"the {spot.kind}'s contents"
+        self.pickups_taken.setdefault(spot.map, set()).add(spot.actor)
+        emptied = (self.empty_pickups or {}).get("maps", {}).get(spot.map, ())
+        return self.empty_pickups["placeholder"] if spot.actor in emptied else spot.vanilla
 
     def reach_milestone(self, level: str | None = None) -> str:
         """Do the next story milestone of a level. Returns what it was."""

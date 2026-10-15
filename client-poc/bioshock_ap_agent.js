@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.3';
+const AGENT_VERSION = '2026-10-15.4';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -606,6 +606,13 @@ function readState() {
     travelOffered: travel.offered,
     travelRedirects: travel.originals.size,
     travelTrouble: travel.trouble,
+    // Plasmid and tonic pickups seen taken, by map; the ones lying in the player's map ({ map, names }, null until a
+    // pass has listed them); safes and lockboxes seen open, by map; and how many pickups give the placeholder.
+    pickupsTaken: Object.fromEntries([...world.taken].map(([map, names]) => [map, [...names].sort()])),
+    pickupsHere: world.here,
+    containersOpened: Object.fromEntries([...world.opened].map(([map, names]) => [map, [...names].sort()])),
+    pickupsEmptied: world.emptied.size,
+    worldTrouble: world.trouble,
     // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
     apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
@@ -1430,7 +1437,7 @@ const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = {
   next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
-  bathyspheres: [], changes: [],
+  bathyspheres: [], changes: [], pickups: [], containers: [],
 };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
@@ -1463,6 +1470,10 @@ function kindOf(cls) {
         kind = 'changelevel';
       } else if (lineage.includes('ActionScriptNote') || lineage.includes('ActionLog')) {
         kind = 'note';
+      } else if (lineage.some((c) => typeof c === 'string' && c.endsWith('PlasmidPickup'))) {
+        kind = 'pickup';
+      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('Lockbox')) {
+        kind = 'container';
       }
     }
     if (classKinds.size > 20000) {
@@ -1478,7 +1489,7 @@ function classOfObject(object) {
   return cls === null || cls.isNull() ? null : cls;
 }
 
-function watchObjects(map, now) {
+function watchObjects(map, now, level) {
   if (objectModel === null || virtualQuery === null) {
     return;
   }
@@ -1506,6 +1517,13 @@ function watchObjects(map, now) {
     weapons.reported = '';
     scan.gardens = [];
     gardens.list = [];
+    scan.pickups = [];
+    scan.containers = [];
+    world.level = null;
+    world.pickups = [];
+    world.containers = [];
+    world.here = null;
+    world.emptied = new Set();
     scan.classes = new Map();
     gardens.classes = new Map(); // classes can be loaded somewhere else in another level
     gardens.defaultsOf.clear();
@@ -1538,6 +1556,10 @@ function watchObjects(map, now) {
       scan.changes.push(object);
     } else if (kind === 'note') {
       scan.notes.push(object);
+    } else if (kind === 'pickup') {
+      scan.pickups.push(object);
+    } else if (kind === 'container') {
+      scan.containers.push(object);
     } else if (kind === 'class') {
       const name = nameOfObject(object);
       if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
@@ -1565,6 +1587,9 @@ function watchObjects(map, now) {
     scan.changes = [];
     travel.notes = scan.notes;
     scan.notes = [];
+    noteWorldThings(map, level, scan.pickups, scan.containers);
+    scan.pickups = [];
+    scan.containers = [];
     if (scan.placeholder !== null) {
       gardens.placeholder = scan.placeholder;
       scan.placeholder = null;
@@ -1599,6 +1624,11 @@ function watchObjects(map, now) {
     keepTravel(map);
   } catch (e) {
     travelTrouble(e.message);
+  }
+  try {
+    readWorldThings(map);
+  } catch (e) {
+    worldTrouble(e.message);
   }
   if (quests.flag === null) {
     return;
@@ -1648,6 +1678,202 @@ function readStations(map) {
     stations.used.set(map, used);
     log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Plasmids and tonics lying in the level, safes and lockboxes: World Item Checks and Safe Checks
+// ---------------------------------------------------------------------------------------------------------------
+
+// A plasmid or tonic lying in a level is an actor whose class ends in PlasmidPickup (ActivePlasmidPickup, and the
+// Physical, Engineering and Weapons kinds). Taking one deletes it, the way taking a diary deletes its LogPickup
+// (bDeleteMe, seen 2026-10-08). Only actors the player's level lists count, so nothing left over from the last level
+// does. After each pass over the objects the agent compares the names of the pickups lying in the level with the
+// last pass's: a name that has gone is a pickup taken. Names, not addresses, because loading a save makes every
+// object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
+// the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
+// before the agent was watching. Not tried in game yet.
+// A safe is a SecurityCrate_Safe, a lockbox a Lockbox. Both are AnimatedContainers, whose bIsOpened turns true when
+// they are opened and stays true in a save (safes confirmed 2026-10-14; lockboxes not tried yet).
+// With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
+// of their item: the class the pickup holds is swapped, as the probe's pickupItem() does. Not tried in game yet.
+const world = {
+  level: null, // the level object the lists below are about
+  pickups: [], // { object, name } lying in the level at the last pass
+  containers: [], // safes and lockboxes found by the last pass
+  taken: new Map(), // map -> names of the pickups seen taken there
+  here: null, // { map, names }: the pickups lying in the player's map, once a pass has listed them all
+  opened: new Map(), // map -> names of the safes and lockboxes seen open there
+  deleteFlags: new Map(), // class address -> where bDeleteMe is
+  openFlags: new Map(), // class address -> where bIsOpened is
+  itemFields: new Map(), // class address -> offset of the class a pickup gives, or null
+  empty: null, // { placeholder, maps }: what the client asked for
+  emptied: new Set(), // names of the pickups made to give the placeholder in this level
+  trouble: null,
+};
+
+function worldTrouble(text) {
+  if (world.trouble === null) {
+    world.trouble = text;
+    log(`world items: ${text}`);
+  }
+}
+
+function flagOf(cache, cls, wanted) {
+  const key = cls.toString();
+  if (!cache.has(key)) {
+    const flag = findBoolProperty(cls, wanted);
+    if (flag === null) {
+      worldTrouble(`objects of class ${nameOfObject(cls)} have no ${wanted}`);
+    }
+    cache.set(key, flag);
+  }
+  return cache.get(key);
+}
+
+function flagSet(object, flag) {
+  const word = flag === null ? null : carefulS32(object.add(flag.offset));
+  return word !== null && ((word >>> 0) & flag.mask) !== 0;
+}
+
+function addTo(byMap, map, name) {
+  if (!byMap.has(map)) {
+    byMap.set(map, new Set());
+  }
+  const names = byMap.get(map);
+  if (names.has(name)) {
+    return false;
+  }
+  names.add(name);
+  return true;
+}
+
+// After a pass over the objects: the pickups and containers it found, among the actors of the player's level.
+function noteWorldThings(map, level, pickups, containers) {
+  const { addresses } = actorsOf(level);
+  const inLevel = (object) => addresses.has(object.toUInt32());
+  const key = level.toString();
+  const lying = [];
+  let unnamed = false;
+  for (const object of pickups) {
+    const cls = classOfObject(object);
+    const name = nameOfObject(object);
+    if (!inLevel(object) || cls === null || flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
+      continue;
+    }
+    if (name === null) {
+      unnamed = true;
+    } else {
+      lying.push({ object, name });
+    }
+  }
+  if (world.level === key && map !== null && !unnamed) {
+    const names = new Set(lying.map((p) => p.name));
+    for (const { name } of world.pickups) {
+      if (!names.has(name) && addTo(world.taken, map, name)) {
+        log(`${name} taken in ${map}`);
+      }
+    }
+  }
+  if (world.level !== key) {
+    world.level = key;
+    world.emptied = new Set();
+  }
+  world.pickups = lying;
+  // A list with a name the agent could not read would make that pickup look taken.
+  world.here = unnamed || map === null ? null : { map, names: lying.map((p) => p.name).sort() };
+  world.containers = containers.filter(inLevel);
+}
+
+function readWorldThings(map) {
+  if (map === null) {
+    return;
+  }
+  for (const container of world.containers) {
+    const cls = classOfObject(container);
+    if (cls === null || kindOf(cls) !== 'container') {
+      continue; // gone since the scan
+    }
+    const name = nameOfObject(container);
+    if (name !== null && flagSet(container, flagOf(world.openFlags, cls, 'bIsOpened')) &&
+      addTo(world.opened, map, name)) {
+      log(`${name} open in ${map}`);
+    }
+  }
+  emptyPickups(map);
+}
+
+// Where a pickup keeps the class of what it gives: the class property whose value is a class that extends Item.
+function itemFieldOf(object, cls) {
+  const key = cls.toString();
+  if (!world.itemFields.has(key)) {
+    let found = null;
+    for (const owner of lineageOf(cls)) {
+      let field = carefulPtr(owner.add(objectModel.structChildren));
+      for (let n = 0; found === null && field !== null && !field.isNull() && n < 1000; n++) {
+        const kind = nameOfObject(classOf(field));
+        const offset = kind === 'ClassProperty' ? carefulS32(field.add(objectModel.propertyOffset)) : null;
+        const value = offset === null || offset < 0x30 || offset > 0x8000 ? null : carefulPtr(object.add(offset));
+        if (value !== null && !value.isNull() && nameOfObject(classOf(value)) === 'Class' &&
+          lineageOf(value).some((c) => nameOfObject(c) === 'Item')) {
+          found = offset;
+        }
+        field = carefulPtr(field.add(objectModel.fieldNext));
+      }
+      if (found !== null) {
+        break;
+      }
+    }
+    if (found === null) {
+      worldTrouble(`could not find what a ${nameOfObject(cls)} gives`);
+    } else {
+      log(`a ${nameOfObject(cls)} gives the class at +0x${found.toString(16)}`);
+    }
+    world.itemFields.set(key, found);
+  }
+  return world.itemFields.get(key);
+}
+
+function emptyPickups(map) {
+  if (world.empty === null) {
+    return;
+  }
+  const wanted = world.empty.maps[map];
+  const placeholder = gardens.placeholder;
+  if (!Array.isArray(wanted) || wanted.length === 0) {
+    return;
+  }
+  if (placeholder === null) {
+    return; // not found yet: the next pass may find it
+  }
+  for (const { object, name } of world.pickups) {
+    if (!wanted.includes(name)) {
+      continue;
+    }
+    const cls = classOfObject(object);
+    const offset = cls === null ? null : itemFieldOf(object, cls);
+    const before = offset === null ? null : carefulPtr(object.add(offset));
+    if (before === null || same(before, placeholder)) {
+      continue; // nothing to swap, or done already (a save keeps the swap too)
+    }
+    object.add(offset).writePointer(placeholder);
+    world.emptied.add(name);
+    log(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(before)}`);
+  }
+}
+
+function setEmptyPickups(config) {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the pickups';
+  }
+  if (config === null || typeof config !== 'object' || typeof config.maps !== 'object') {
+    return 'no pickups named';
+  }
+  if (config.placeholder !== GARDEN_PLACEHOLDER) {
+    return `the agent only knows how to give ${GARDEN_PLACEHOLDER} instead`;
+  }
+  world.empty = { placeholder: config.placeholder, maps: config.maps };
+  world.emptied = new Set();
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -3349,7 +3575,7 @@ function onLevelTick(level) {
       const seen = levelsSeen.get(level.toString());
       if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
         watchSisters(level, seen.map, now);
-        watchObjects(seen.map, now);
+        watchObjects(seen.map, now, level);
         watchPlayer(level, info, seen.map, now);
         finishTouchedStation(now);
       }
@@ -3472,8 +3698,8 @@ rpc.exports = {
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
   // 'redirect_movies {json}' (Flash movies from the client's folder) and 'travel_rules {json}' (Open Rapture: where
-  // the bathysphere and level changes go) at once. The traps 'eve_drain' and
-  // 'pickpocket' are answered like 'kill', once carried out.
+  // the bathysphere and level changes go) and 'empty_pickups {json}' (pickups that give the placeholder) at once.
+  // The traps 'eve_drain' and 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
@@ -3488,7 +3714,7 @@ rpc.exports = {
       return;
     }
     for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies],
-      ['travel_rules', setTravelRules]]) {
+      ['travel_rules', setTravelRules], ['empty_pickups', setEmptyPickups]]) {
       if (typeof name === 'string' && name.startsWith(`${action} `)) {
         let trouble;
         try {

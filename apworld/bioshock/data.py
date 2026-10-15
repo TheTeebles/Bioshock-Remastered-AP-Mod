@@ -451,6 +451,157 @@ def story_location_name(milestone: StoryMilestone) -> str:
     return f"{milestone.level} - Story: {milestone.title}"
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Things lying in the levels: plasmid and tonic pickups, weapons, safes and lockboxes
+# --------------------------------------------------------------------------------------------------------------------
+
+class SpotKind:
+    PLASMID = "plasmid"  # an ActivePlasmidPickup: the check is taking it
+    TONIC = "tonic"  # a Physical, Engineering or Combat (Weapons) PlasmidPickup: the same
+    WEAPON = "weapon"  # the check is holding the weapon for the first time, wherever it came from
+    SAFE = "safe"  # a SecurityCrate_Safe: the check is opening it (its contents stay as they are)
+    LOCKBOX = "lockbox"  # a Lockbox: the same
+
+
+class WorldSpot(NamedTuple):
+    id: int
+    kind: str  # a SpotKind
+    level: str
+    map: str  # the map file it lies in, the way the client's normalize_map spells it
+    actor: str | None  # its actor's name in that map (None for weapons)
+    vanilla: str | None  # the plasmid, tonic or weapon it gives (None for safes and lockboxes)
+
+
+# Read from the map files with client-poc/map_reader/world_items.py on 2026-10-14
+# (notes/logs/map_survey_2026-10-14.json).
+# Weapons are listed once, at the level where the maps first place one. The Pistol and the Shotgun are given by
+# scripts earlier (Welcome to Rapture and Medical Pavilion), which only means their check may come in early and wait
+# for its level's access item, like any check found before its level is unlocked.
+WORLD_SPOTS: tuple[WorldSpot, ...] = (
+    WorldSpot(6001, SpotKind.PLASMID, "Welcome to Rapture", "1-welcome", "ActivePlasmidPickup1", "Electro Bolt"),
+    WorldSpot(6002, SpotKind.PLASMID, "Medical Pavilion", "1-medical", "ActivePlasmidPickup0", "Telekinesis"),
+    WorldSpot(6003, SpotKind.PLASMID, "Medical Pavilion", "1-medical", "ActivePlasmidPickup2", "Incinerate!"),
+    WorldSpot(6004, SpotKind.PLASMID, "Neptune's Bounty", "2-fisheries", "ActivePlasmidPickup0", "Security Bullseye"),
+    WorldSpot(6011, SpotKind.TONIC, "Medical Pavilion", "1-medical", "EngineeringPlasmidPickup0", "Security Expert"),
+    WorldSpot(6012, SpotKind.TONIC, "Medical Pavilion", "1-medical", "PhysicalPlasmidPickup0", "Hacker's Delight"),
+    WorldSpot(6013, SpotKind.TONIC, "Medical Pavilion", "1-medical", "WeaponsPlasmidPickup1", "Wrench Jockey"),
+    WorldSpot(6014, SpotKind.TONIC, "Medical Pavilion", "1-medical", "WeaponsPlasmidPickup5", "Static Discharge"),
+    WorldSpot(6015, SpotKind.TONIC, "Medical Pavilion", "1-medical", "EngineeringPlasmidPickup2", "Speedy Hacker"),
+    WorldSpot(6016, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "EngineeringPlasmidPickup1", "Focused Hacker"),
+    WorldSpot(6017, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "PhysicalPlasmidPickup0", "Medical Expert"),
+    WorldSpot(6018, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "EngineeringPlasmidPickup0", "Shorten Alarms"),
+    WorldSpot(6019, SpotKind.TONIC, "Arcadia", "3-arcadia", "EngineeringPlasmidPickup1", "Hacking Expert"),
+    WorldSpot(6020, SpotKind.TONIC, "Farmer's Market", "3-market", "PhysicalPlasmidPickup0", "EVE Link 2"),
+    WorldSpot(6021, SpotKind.TONIC, "Farmer's Market", "3-market", "WeaponsPlasmidPickup4", "Photographer's Eye"),
+    WorldSpot(6022, SpotKind.TONIC, "Fort Frolic", "4-recreation", "WeaponsPlasmidPickup2", "Electric Flesh"),
+    WorldSpot(6023, SpotKind.TONIC, "Fort Frolic", "4-recreation", "PhysicalPlasmidPickup2", "Extra Nutrition 2"),
+    WorldSpot(6024, SpotKind.TONIC, "Fort Frolic", "4-recreation", "PhysicalPlasmidPickup1", "Medical Expert 2"),
+    WorldSpot(6025, SpotKind.TONIC, "Fort Frolic", "4-recreation", "EngineeringPlasmidPickup0", "Alarm Expert"),
+    WorldSpot(6026, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "WeaponsPlasmidPickup3", "Frozen Field 2"),
+    WorldSpot(6027, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "EngineeringPlasmidPickup0", "Shorten Alarms 2"),
+    WorldSpot(6028, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "PhysicalPlasmidPickup0", "Security Evasion 2"),
+    WorldSpot(6029, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "WeaponsPlasmidPickup0", "Damage Research"),
+    WorldSpot(6030, SpotKind.TONIC, "Olympus Heights", "6-resi", "EngineeringPlasmidPickup0", "Clever Inventor"),
+    WorldSpot(6031, SpotKind.TONIC, "Olympus Heights", "6-resi", "WeaponsPlasmidPickup1", "Electric Flesh 2"),
+    WorldSpot(6032, SpotKind.TONIC, "Apollo Square", "6-slums", "EngineeringPlasmidPickup0", "Focused Hacker 2"),
+    WorldSpot(6033, SpotKind.TONIC, "Apollo Square", "6-slums", "PhysicalPlasmidPickup0", "Medical Expert 3"),
+    WorldSpot(6034, SpotKind.TONIC, "Point Prometheus", "7-science", "EngineeringPlasmidPickup3", "Safecracker 2"),
+    WorldSpot(6035, SpotKind.TONIC, "Point Prometheus", "7-science", "WeaponsPlasmidPickup0", "Damage Research 2"),
+    WorldSpot(6036, SpotKind.TONIC, "Point Prometheus", "7-science", "PhysicalPlasmidPickup0", "Hacker's Delight 3"),
+    WorldSpot(6037, SpotKind.TONIC, "Point Prometheus", "7-science", "EngineeringPlasmidPickup2", "Alarm Expert 2"),
+    WorldSpot(6051, SpotKind.WEAPON, "Medical Pavilion", "1-medical", None, "Machine Gun"),
+    WorldSpot(6052, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Shotgun"),
+    WorldSpot(6053, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Research Camera"),
+    WorldSpot(6054, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Pistol"),
+    WorldSpot(6055, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Grenade Launcher"),
+    WorldSpot(6056, SpotKind.WEAPON, "Arcadia", "3-arcadia", None, "Chemical Thrower"),
+    WorldSpot(6057, SpotKind.WEAPON, "Hephaestus", "5-hephaestus", None, "Crossbow"),
+    WorldSpot(6101, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe0", None),
+    WorldSpot(6102, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe3", None),
+    WorldSpot(6103, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe2", None),
+    WorldSpot(6104, SpotKind.LOCKBOX, "Neptune's Bounty", "2-fisheries", "Lockbox0", None),
+    WorldSpot(6105, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe1", None),
+    WorldSpot(6106, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe3", None),
+    WorldSpot(6107, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe0", None),
+    WorldSpot(6108, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe3", None),
+    WorldSpot(6109, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox1", None),
+    WorldSpot(6110, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox0", None),
+    WorldSpot(6111, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe2", None),
+    WorldSpot(6112, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox2", None),
+    WorldSpot(6113, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox4", None),
+    WorldSpot(6114, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox5", None),
+    WorldSpot(6115, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox3", None),
+    WorldSpot(6116, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox6", None),
+    WorldSpot(6117, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe0", None),
+    WorldSpot(6118, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe3", None),
+    WorldSpot(6119, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox0", None),
+    WorldSpot(6120, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox7", None),
+    WorldSpot(6121, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox8", None),
+    WorldSpot(6122, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox9", None),
+    WorldSpot(6123, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe1", None),
+    WorldSpot(6124, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox6", None),
+    WorldSpot(6125, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox3", None),
+    WorldSpot(6126, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox5", None),
+    WorldSpot(6127, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox4", None),
+    WorldSpot(6128, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox2", None),
+    WorldSpot(6129, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe2", None),
+    WorldSpot(6130, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox1", None),
+    WorldSpot(6131, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe0", None),
+    WorldSpot(6132, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe1", None),
+    WorldSpot(6133, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe2", None),
+    WorldSpot(6134, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe0", None),
+    WorldSpot(6135, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe6", None),
+    WorldSpot(6136, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe3", None),
+    WorldSpot(6137, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe3", None),
+    WorldSpot(6138, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe1", None),
+    WorldSpot(6139, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe0", None),
+    WorldSpot(6140, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe2", None),
+    WorldSpot(6141, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox5", None),
+    WorldSpot(6142, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox4", None),
+    WorldSpot(6143, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox2", None),
+    WorldSpot(6144, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox1", None),
+    WorldSpot(6145, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox0", None),
+    WorldSpot(6146, SpotKind.LOCKBOX, "Rapture Central Control", "5-ryan", "Lockbox0", None),
+    WorldSpot(6147, SpotKind.LOCKBOX, "Rapture Central Control", "5-ryan", "Lockbox1", None),
+    WorldSpot(6148, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe3", None),
+    WorldSpot(6149, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe0", None),
+    WorldSpot(6150, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe4", None),
+    WorldSpot(6151, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe1", None),
+    WorldSpot(6152, SpotKind.LOCKBOX, "Olympus Heights", "6-resi", "Lockbox0", None),
+    WorldSpot(6153, SpotKind.LOCKBOX, "Olympus Heights", "6-resi", "Lockbox1", None),
+    WorldSpot(6154, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe1", None),
+    WorldSpot(6155, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe0", None),
+    WorldSpot(6156, SpotKind.LOCKBOX, "Point Prometheus", "7-science", "Lockbox1", None),
+    WorldSpot(6157, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe2", None),
+    WorldSpot(6158, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe1", None),
+    WorldSpot(6159, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe0", None),
+    WorldSpot(6160, SpotKind.LOCKBOX, "Point Prometheus", "7-science", "Lockbox0", None),
+    WorldSpot(6161, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox1", None),
+    WorldSpot(6162, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox2", None),
+    WorldSpot(6163, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox0", None),
+    WorldSpot(6164, SpotKind.SAFE, "Proving Grounds", "7-gauntlet", "SecurityCrate_Safe2", None),
+)
+
+# Plasmids the story needs (Electro Bolt opens the way out of Welcome to Rapture, Incinerate! melts the ice in the
+# Medical Pavilion). Their pickups stay checks, but always give their own plasmid as well.
+KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!"})
+
+
+def world_spot_location_name(spot: WorldSpot, number: int = 0) -> str:
+    """number: the spot's place among the level's safes (or lockboxes), from 1."""
+    if spot.kind == SpotKind.WEAPON:
+        return f"{spot.level} - Weapon: {spot.vanilla}"
+    if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX):
+        return f"{spot.level} - {spot.kind.capitalize()} {number}"
+    return f"{spot.level} - Pickup: {spot.vanilla}"
+
+
+def shuffled_world_pickups() -> list[WorldSpot]:
+    """The plasmid and tonic pickups whose item goes into the multiworld when World Item Checks is 'shuffled'."""
+    return [spot for spot in WORLD_SPOTS
+            if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC) and spot.vanilla not in KEPT_WORLD_PICKUPS]
+
+
 class LocationData(NamedTuple):
     name: str
     id: int
@@ -466,8 +617,11 @@ class LocationCategory:
     LEVEL_COMPLETION = "Level Completion"
     STORY = "Story"
     GATHERERS_GARDEN = "Gatherer's Garden"
+    WORLD_ITEM = "World Items"
+    SAFE = "Safes"
 
-    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN)
+    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN, WORLD_ITEM,
+           SAFE)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -496,7 +650,14 @@ def _build_location_table() -> tuple[LocationData, ...]:
         table.append(LocationData(level_completion_location_name(level), 5001 + LEVEL_NAMES.index(level), level,
                                   LocationCategory.LEVEL_COMPLETION, False))
 
-    # 6000-6999 is kept for world items and containers.
+    numbers: dict[tuple[str, str], int] = {}
+    for spot in WORLD_SPOTS:
+        number = numbers[spot.level, spot.kind] = numbers.get((spot.level, spot.kind), 0) + 1
+        category = LocationCategory.SAFE if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX) else \
+            LocationCategory.WORLD_ITEM
+        table.append(LocationData(world_spot_location_name(spot, number), spot.id, spot.level, category,
+                                  not LEVEL_BY_NAME[spot.level].revisitable))
+
     for milestone in STORY_MILESTONES:
         table.append(LocationData(story_location_name(milestone), 7000 + milestone.number, milestone.level,
                                   LocationCategory.STORY, False))

@@ -27,8 +27,8 @@ from dataclasses import dataclass
 
 from ..data import (
     ARCADIA, FARMERS_MARKET, FORT_FROLIC, GATHERERS_GARDEN_LINES_PER_LEVEL, ITEM_TABLE, LEVEL_COMPLETION_LEVELS,
-    LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, STORY_MILESTONES, TONICS, ItemKind, LocationCategory,
-    Source, level_completion_location_name, story_location_name,
+    KEPT_WORLD_PICKUPS, LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, STORY_MILESTONES, TONICS,
+    WORLD_SPOTS, ItemKind, LocationCategory, Source, SpotKind, level_completion_location_name, story_location_name,
 )
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -239,16 +239,15 @@ def give_command(count: int, class_name: str) -> str:
 def plasmid_levels(item_name: str, world_items_shuffled: bool = False) -> tuple[str, ...]:
     """The in-game plasmid each successive copy of a plasmid item stands for.
 
-    While world pickups are vanilla, the levels you find lying around are not in the pool, so the first copy of
-    "Progressive Electro Bolt" is Electro Bolt 2. Plasmids that only exist as a world pickup keep their one level, so
-    a copy sent with a server command still does something.
+    While world pickups give their own plasmid, the levels you find lying around are not in the pool, so the first
+    copy of "Progressive Electro Bolt" is Electro Bolt 2. Electro Bolt and Incinerate! always give themselves, even
+    with the pickups shuffled. Plasmids that only exist as a world pickup keep their one level, so a copy sent with a
+    server command still does something.
     """
     levels = _PLASMID_LEVELS[item_name]
-    if not world_items_shuffled:
-        pooled = tuple(name for name, source, _ in levels if source != Source.WORLD)
-        if pooled:
-            return pooled
-    return tuple(name for name, _, _ in levels)
+    pooled = tuple(name for name, source, _ in levels
+                   if source != Source.WORLD or (world_items_shuffled and name not in KEPT_WORLD_PICKUPS))
+    return pooled or tuple(name for name, _, _ in levels)
 
 
 def plan_delivery(item_name: str, copy_number: int, world_items_shuffled: bool = False) -> Delivery | None:
@@ -353,6 +352,31 @@ MILESTONE_LOCATION: dict[str, int] = {
     milestone.key: _LOCATION_ID[story_location_name(milestone)] for milestone in STORY_MILESTONES
 }
 # (level, line) -> location ID of a Gatherer's Garden line. Lines count from 1 in the order of the Garden's stock list.
+# (map, actor) -> location, for the pickups, safes and lockboxes lying in the levels. The map is spelled as
+# normalize_map leaves it.
+PICKUP_LOCATION: dict[tuple[str, str], int] = {
+    (spot.map, spot.actor): spot.id for spot in WORLD_SPOTS if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC)
+}
+CONTAINER_LOCATION: dict[tuple[str, str], int] = {
+    (spot.map, spot.actor): spot.id for spot in WORLD_SPOTS if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX)
+}
+
+
+def _shuffled_pickups() -> dict[str, tuple[str, ...]]:
+    found: dict[str, list[str]] = {}
+    for spot in WORLD_SPOTS:
+        if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC) and spot.vanilla not in KEPT_WORLD_PICKUPS:
+            found.setdefault(spot.map, []).append(spot.actor)
+    return {map_name: tuple(actors) for map_name, actors in found.items()}
+
+
+# With World Item Checks shuffled, these pickups give the placeholder instead: map -> actor names.
+PICKUP_PLACEHOLDER = "chips"  # the class they give, as the Gatherer's Garden lines that sell other items do
+SHUFFLED_PICKUPS: dict[str, tuple[str, ...]] = _shuffled_pickups()
+# The weapon classes the player holds -> location: holding one for the first time is the check.
+WEAPON_LOCATION: dict[str, int] = {
+    WEAPON_CLASS[spot.vanilla].rsplit(".", 1)[-1]: spot.id for spot in WORLD_SPOTS if spot.kind == SpotKind.WEAPON
+}
 GARDEN_LOCATION: dict[tuple[str, int], int] = {
     (location.level, location.id - 8000 - GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(location.level)):
         location.id
@@ -578,6 +602,41 @@ def gardens_of(bought_by_map: object) -> dict[str, frozenset[int]] | None:
         if level is not None and isinstance(lines, list):
             result[level] = result.get(level, frozenset()) | {line for line in lines if isinstance(line, int)}
     return result
+
+
+def actors_of(by_map: object) -> dict[str, frozenset[str]] | None:
+    """Actor names the agent reports by map (pickups taken, safes opened), by map as normalize_map spells it."""
+    if not isinstance(by_map, dict):
+        return None
+    result: dict[str, frozenset[str]] = {}
+    for map_name, names in by_map.items():
+        name = normalize_map(map_name)
+        if name is not None and isinstance(names, list):
+            result[name] = result.get(name, frozenset()) | {actor for actor in names if isinstance(actor, str)}
+    return result
+
+
+def pickups_here_of(here: object) -> tuple[str, frozenset[str]] | None:
+    """The agent's {map, names}: the plasmid and tonic pickups lying in the map the player is in."""
+    if not isinstance(here, dict) or not isinstance(here.get("names"), list):
+        return None
+    map_name = normalize_map(here.get("map"))
+    if map_name is None:
+        return None
+    return map_name, frozenset(name for name in here["names"] if isinstance(name, str))
+
+
+def pickups_missing(here: tuple[str, frozenset[str]] | None) -> set[int]:
+    """The pickup checks of the player's map whose pickup is no longer there: taken before the agent was watching,
+    in this save. Only trusted when the agent sees at least one of the map's pickups by the name the map file gives
+    it, so that a map the agent cannot read (or names it gives differently) never sends all of its pickups."""
+    if here is None:
+        return set()
+    map_name, present = here
+    ours = {actor: location for (spot_map, actor), location in PICKUP_LOCATION.items() if spot_map == map_name}
+    if not present & ours.keys():
+        return set()
+    return {location for actor, location in ours.items() if actor not in present}
 
 
 def diary_location(number: int) -> int | None:

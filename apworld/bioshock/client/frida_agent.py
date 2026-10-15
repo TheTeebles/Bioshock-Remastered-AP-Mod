@@ -25,7 +25,10 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, quests_of, stations_of
+from .game_data import (
+    actors_of, delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, pickups_here_of, quests_of,
+    stations_of,
+)
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
     LittleSisterResolved, PlayerDied, TravelRedirected,
@@ -129,6 +132,9 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         weapons_pending=raw.get("weaponsPending") is True,
         garden_bought=gardens_of(raw.get("gardenBought")),
         quests=quests_of(raw.get("completedQuests")),
+        pickups_taken=actors_of(raw.get("pickupsTaken")),
+        pickups_here=pickups_here_of(raw.get("pickupsHere")),
+        containers_opened=actors_of(raw.get("containersOpened")),
     )
 
 

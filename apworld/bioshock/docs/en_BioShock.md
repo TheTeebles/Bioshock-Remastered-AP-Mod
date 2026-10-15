@@ -51,7 +51,15 @@ otherwise. Your own items show their own icon (a weapon upgrade shows its weapon
 Archipelago icon. Buying a line sends its
 check and gives you a bag of chips instead of the gene.
 
-Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.
+World Item Checks and Safe Checks (both off by default, and not tried in the game yet) make what lies in the levels
+checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
+of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
+as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead and their items go into the
+multiworld, except Electro Bolt and Incinerate!, which the story needs. Safe Checks makes opening each of the 64
+safes and lockboxes a check; their contents stay as they are.
+
+Welcome to Rapture can never be revisited, so its two audio diaries and its Electro Bolt only hold filler whatever
+you choose.
 
 The Remastered Director's Commentary film reels are not checks. A reel unlocks its film for the whole PC rather than
 the save, so a reel found in an earlier playthrough would not be there to pick up.
@@ -74,8 +82,9 @@ that are left out can still be bought, invented or researched in the game as usu
 Traps take the place of filler, so they turn up where filler does. With audio diary checks switched off your own pool
 has little or no filler, and then little or nothing becomes a trap.
 
-Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are for now. The game hands
-those out itself, so shuffling them has to wait until the client can suppress vanilla pickups.
+Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are unless World Item
+Checks is set to Shuffled. Then the plasmids and tonics lying in the levels (all but Electro Bolt and Incinerate!)
+are items in the multiworld, and all of them are always in the pool. Weapons always stay where they are.
 
 You start with the Research Camera (the `start_with_research_camera` option, on by default), so you can research
 enemies from the start. Some later ones, such as spider splicers, are hard to hurt without it. The camera in Neptune's

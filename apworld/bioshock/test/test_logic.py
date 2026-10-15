@@ -58,7 +58,9 @@ class PoolTestBase(BioShockTestBase):
 
 
 class TestAccessItems(BioShockTestBase):
-    options = {"level_access": "access_items", "shop_checks": True}  # every kind of check, so all are tested
+    # Every kind of check, so all are tested
+    options = {"level_access": "access_items", "shop_checks": True, "world_item_checks": "keep_items",
+               "safe_checks": True, "start_with_research_camera": False}
 
     def test_default_pool(self) -> None:
         self.assertEqual(len(self.multiworld.get_unfilled_locations(self.player)) + 1,  # +1 for the goal event
@@ -499,7 +501,7 @@ class TestSlotData(BioShockTestBase):
 
     def test_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
-        self.assertEqual(slot_data["slot_data_version"], 4)
+        self.assertEqual(slot_data["slot_data_version"], 5)
         self.assertEqual(SLOT_DATA_VERSION, SUPPORTED_SLOT_DATA_VERSION, "the client that ships with the world")
         self.assertEqual(slot_data["death_link"], 1)
         self.assertEqual(slot_data["story_checks"], 1)

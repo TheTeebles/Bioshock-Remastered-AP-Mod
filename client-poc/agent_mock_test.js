@@ -642,6 +642,26 @@ function makeRuntime({
       poke(at + 0x88, room);
       return at;
     };
+    // Plasmids and tonics lying in a level (the class they give at +0x520), and safes and lockboxes (bIsOpened).
+    const classProperty = cls('ClassProperty', objectClass);
+    const pickupClass = cls('PlasmidPickup', actor);
+    fields(pickupClass, [['PickupMesh', objectProperty, 0x518], ['InventoryType', classProperty, 0x520]]);
+    const pickupKinds = new Map();
+    const pickup = (className, actorName, gives) => {
+      if (!pickupKinds.has(className)) { pickupKinds.set(className, cls(className, pickupClass)); }
+      const at = make(actorName, pickupKinds.get(className), 0x600); poke(at + 0x520, gives); poke(at + 0xCC, 0);
+      if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); } // the player's level
+      return at;
+    };
+    const containerClass = cls('AnimatedContainer', actor);
+    fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
+    const safeClass = cls('SecurityCrate_Safe', cls('SecurityCrate', containerClass));
+    const lockboxClass = cls('Lockbox', containerClass);
+    const container = (className, actorName) => {
+      const at = make(actorName, className === 'Lockbox' ? lockboxClass : safeClass, 0x600); poke(at + 0x5DC, 0);
+      if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
+      return at;
+    };
     const textOf = (at) => runtime.text.get(runtime.memory.get(at));
     const changeOf = (change) => ({
       map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
@@ -649,7 +669,7 @@ function makeRuntime({
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
     return { nameIndex: name, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, container };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -2072,6 +2092,81 @@ const tests = {
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[1, false]]);
     assert.ok(answers[0].reason.includes('no BioAmmo'), answers[0].reason);
+  },
+  'state() reports the plasmids and tonics taken, and the ones still lying in the map': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const telekinesis = model.itemClass('Telekinesis', 10);
+    const taken = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup0', telekinesis);
+    model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', model.itemClass('WrenchJockey', 10));
+    r.load(); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere),
+      '{"map":"1-medical","names":["ActivePlasmidPickup0","WeaponsPlasmidPickup1"]}');
+    r.poke(taken + 0xCC, 0x2); r.frames(10); // bDeleteMe: the player took it
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["ActivePlasmidPickup0"]}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["WeaponsPlasmidPickup1"]}');
+    assert.ok(r.logged('ActivePlasmidPickup0 taken in 1-medical'));
+  },
+  'a pickup the level no longer lists counts as taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const taken = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, taken); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["PhysicalPlasmidPickup0"]}');
+  },
+  'loading a save makes new pickups with the same names, which are not taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const medic = model.itemClass('Medic', 10);
+    const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.load(); r.frames(10);
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); // the save's level has its own copy
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'pickups of another level object are not compared with the last one': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const gone = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, gone);
+    r.levels.splice(1, 1); // the level is unloaded, and the same map is made anew (a save loaded)
+    const again = r.level('1-medical', { extra: 6, capacity: 1030 }); r.player(again, { viewport: game.player });
+    r.frames(30);
+    assert.strictEqual(state(r).playerReady, true);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":[]}');
+  },
+  'state() reports the safes and lockboxes open, by map': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const safe = model.container('SecurityCrate_Safe', 'SecurityCrate_Safe2');
+    const lockbox = model.container('Lockbox', 'Lockbox0');
+    model.container('Lockbox', 'Lockbox1');
+    r.load(); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
+    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5DC, 1); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox0","SecurityCrate_Safe2"]}');
+    [safe, lockbox].forEach((at) => r.removeActor(game.level, at));
+    r.string(game.level + 0x7C, '2-fisheries'); r.frames(10); // another level: what was open stays reported
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox0","SecurityCrate_Safe2"]}');
+    assert.strictEqual(state(r).worldTrouble, null);
+  },
+  'shuffled pickups give the placeholder, and the kept ones their own item': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10); const incinerate = model.itemClass('Incinerate', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    const kept = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup2', incinerate);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'], '2-fisheries': ['x'] } }));
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[7, true]]);
+    r.frames(10);
+    assert.strictEqual(r.memory.get(shuffled + 0x520), model.chips);
+    assert.strictEqual(r.memory.get(kept + 0x520), incinerate);
+    assert.strictEqual(state(r).pickupsEmptied, 1);
+    assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
+    r.context.rpc.exports.action(8, 'empty_pickups ' + JSON.stringify({ placeholder: 'Bread', maps: {} }));
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[7, true], [8, false]]);
   },
   'a trap waits for a body and gives up after a while': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();

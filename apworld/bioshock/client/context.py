@@ -42,8 +42,9 @@ ATTACH_RETRY_SECONDS = 5.0
 CLOSING_WAIT_SECONDS = 1.0  # how long closing the client waits for the game to confirm an item on its way
 STORAGE_CATEGORY = "bioshock"  # in Archipelago's own settings file on this PC
 
-SIM_HELP = ("story | sister | station | buy <line> | diary <1-122> | travel <level> | fontaine | die | loading | "
-            "pause | bag   (story, sister, station and buy use the level you travelled to)")
+SIM_HELP = ("story | sister | station | buy <line> | take <pickup, weapon or safe> | diary <1-122> | travel <level> | "
+            "fontaine | die | loading | pause | bag   (story, sister, station, buy and take use the level you "
+            "travelled to)")
 
 
 def stored_python() -> str | None:
@@ -147,6 +148,11 @@ class BioShockCommandProcessor(ClientCommandProcessor):
                     self.output("Which Gatherer's Garden line? For example: /sim buy 3")
                     return False
                 self.output(f"Bought {game.buy_from_garden(int(rest))} in {game.level}.")
+            elif verb == "take":
+                if not rest:
+                    self.output("Which pickup, weapon or safe? For example: /sim take telekinesis, /sim take safe 1")
+                    return False
+                self.output(f"Got {game.take_here(rest)}.")
             elif verb == "travel":
                 game.travel(resolve_level(rest))
                 self.output(f"Now in {game.level}.")

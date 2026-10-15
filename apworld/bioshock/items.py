@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 from BaseClasses import Item, ItemClassification
 
 from .data import (
-    ACCESS_ITEMS, CHAPTER_ACCESS_ITEMS, CHAPTER_OF_LEVEL, CHARACTER_UPGRADES, LEVEL_BY_NAME, FILLER_ITEMS, GAME_NAME, ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS,
-    WEAPON_UPGRADES, ItemKind, Source,
+    ACCESS_ITEMS, CHAPTER_ACCESS_ITEMS, CHAPTER_OF_LEVEL, CHARACTER_UPGRADES, LEVEL_BY_NAME, FILLER_ITEMS, GAME_NAME,
+    ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS, WEAPON_UPGRADES, ItemKind, Source, shuffled_world_pickups,
 )
-from .options import LevelAccess
+from .options import LevelAccess, WorldItemChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -82,19 +82,38 @@ def stations_shuffled(world: BioShockWorld) -> bool:
     return bool(world.options.power_to_the_people_checks)
 
 
+_PLASMID_ITEM: dict[str, str] = {name: plasmid.item_name for plasmid in PLASMIDS for name, _, _ in plasmid.levels}
+
+
+def world_pickups_shuffled(world: BioShockWorld) -> bool:
+    return world.options.world_item_checks == WorldItemChecks.option_shuffled
+
+
+def world_pickup_items(world: BioShockWorld | None = None) -> list[str]:
+    """The items of the pickups that give a bag of chips instead, which only the multiworld hands out then."""
+    if world is None or not world_pickups_shuffled(world):
+        return []
+    return [_PLASMID_ITEM.get(spot.vanilla, spot.vanilla) for spot in shuffled_world_pickups()]
+
+
+def required_useful_items(world: BioShockWorld) -> list[str]:
+    """Useful items the game no longer gives by itself, so the pool must hold every one of them."""
+    return (list(WEAPON_UPGRADES) if stations_shuffled(world) else []) + world_pickup_items(world)
+
+
 def useful_item_groups(world: BioShockWorld | None = None) -> tuple[list[str], ...]:
     """Every useful item this world can add to the pool, most wanted group first.
 
-    Pickups the game hands out at a fixed spot (Source.WORLD) stay vanilla for now: the client cannot stop the game
-    from giving them, so shuffling them would only create duplicates. Everything bought, crafted, researched or
-    gifted is a candidate. The weapon upgrades come first when the stations no longer give them, since nothing else
-    in the game does.
+    Pickups the game hands out at a fixed spot (Source.WORLD) stay vanilla unless World Item Checks shuffles them:
+    otherwise the game still gives them, and shuffling them would only create duplicates. Everything bought,
+    crafted, researched or gifted is a candidate. The items the game no longer gives (weapon upgrades when the
+    stations are checks, shuffled pickups) come first, since nothing else in the game does.
     """
     plasmids = [plasmid.item_name for plasmid in PLASMIDS for _, source, _ in plasmid.levels if source != Source.WORLD]
     upgrades = [name for name, count in CHARACTER_UPGRADES for _ in range(count)]
     tonics = [tonic.name for tonic in TONICS if tonic.source != Source.WORLD]
-    weapon_upgrades = list(WEAPON_UPGRADES) if world is not None and stations_shuffled(world) else []
-    return weapon_upgrades, plasmids, upgrades, tonics
+    required = required_useful_items(world) if world is not None else []
+    return required, plasmids, upgrades, tonics
 
 
 def pick_useful_items(world: BioShockWorld, room: int) -> list[str]:

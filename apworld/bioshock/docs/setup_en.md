@@ -95,6 +95,10 @@ If the game was started as administrator, Archipelago has to be started as admin
     The Archipelago icon shows from the first save or level you load after the client connects to the game. For it,
     the client keeps a copy of the Garden's menu in Archipelago's cache folder and the game is handed that copy when
     it opens the menu. Nothing in the game's folder is changed.
+  - *World items and safes (World Item Checks and Safe Checks, Steam):* built but not tried in the real game yet.
+    The client watches the plasmid and tonic pickups lying in the level you are in, the safes and lockboxes (open
+    ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give a bag of
+    chips instead of their item.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
@@ -124,6 +128,8 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 - `/sim story` does the next story objective in the level you are in
 - `/sim sister` and `/sim station` do the next one of those in the level you are in
 - `/sim buy 3` buys line 3 of the Gatherer's Garden in the level you are in
+- `/sim take telekinesis` or `/sim take safe 1` takes a pickup or weapon, or opens a safe or lockbox, of the level
+  you are in (World Item Checks and Safe Checks)
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
 - `/sim fontaine` beats the final boss
 - `/sim die` dies, to try DeathLink

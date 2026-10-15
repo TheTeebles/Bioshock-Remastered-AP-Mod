@@ -82,9 +82,11 @@ class TestItemDelivery(unittest.TestCase):
 
     def test_progressive_plasmid_copies_climb_levels(self) -> None:
         self.assertEqual(game_data.plasmid_levels("Progressive Electro Bolt"), ("Electro Bolt 2", "Electro Bolt 3"))
+        # Electro Bolt's pickup gives itself even when the pickups are shuffled: the story needs it.
         self.assertEqual(game_data.plasmid_levels("Progressive Electro Bolt", world_items_shuffled=True),
-                         ("Electro Bolt", "Electro Bolt 2", "Electro Bolt 3"))
+                         ("Electro Bolt 2", "Electro Bolt 3"))
         self.assertEqual(game_data.plasmid_levels("Telekinesis"), ("Telekinesis",))
+        self.assertEqual(game_data.plasmid_levels("Telekinesis", world_items_shuffled=True), ("Telekinesis",))
 
         h = Harness().connect().attach()
         h.receive("Progressive Winter Blast", "Health Upgrade", "Progressive Winter Blast", "Progressive Electro Bolt")
