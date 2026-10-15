@@ -44,6 +44,11 @@ HUB = STOPS[0]  # where a crossing into a locked chapter goes instead: Medical P
 # Olympus Heights has no station. Until it has been reached, Apollo Square's line stands in for it and goes where the
 # story arrives from Ryan's office, so chapter 6 opens from the menu as soon as its item does.
 OLYMPUS_STOP = Stop("6-slums", OLYMPUS_HEIGHTS, "PlayerStart_First", to="6-resi", title=OLYMPUS_HEIGHTS)
+# What Ryan's office sets on its way to Olympus Heights (5-Ryan ToResidentialScript), which Olympus Heights' opening
+# scripts test. Set while the Olympus Heights line is offered, so a ride in finds the story where the door leaves it.
+# The ride in client test 2 (2026-10-15) left the player shut in Tenenbaum's safehouse; this flag is the only thing
+# from Ryan's office its scripts read, so it is the first suspect.
+OLYMPUS_FLAGS: dict[str, str] = {"global_transitionedFromRyan": "1"}
 
 # Arcadia's station is at the far end of the level, where the story leaves it. A first visit starts where the
 # submarine from Smuggler's Hideout docks, as in the story.
@@ -134,6 +139,7 @@ def travel_rules(held: Collection[str], visited: Collection[str]) -> dict[str, A
                    else stop.arrival,
                    **({"to": stop.to, "title": stop.title} if stop.to else {})}
                   for stop in stops],
+        "flags": dict(OLYMPUS_FLAGS) if OLYMPUS_STOP in stops else {},
         "redirects": [{"from": crossing.from_map, "to": crossing.to_map, "map": HUB.map, "arrival": HUB.arrival,
                        "fallback": {"map": crossing.bounce_map, "arrival": crossing.bounce_arrival}}
                       for crossing in CROSSINGS if crossing.chapter not in opened],

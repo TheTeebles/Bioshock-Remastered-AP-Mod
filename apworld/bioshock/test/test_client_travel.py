@@ -70,6 +70,12 @@ class TestTravelRules(unittest.TestCase):
         line = next(s for s in travel.travel_rules(held, {"Olympus Heights"})["stops"] if s["map"] == "6-slums")
         self.assertEqual(line, {"map": "6-slums", "arrival": "PlayerStart_FromDeck7Bathy"})
 
+    def test_ryans_flag_is_set_while_olympus_heights_is_offered_by_ride(self) -> None:
+        held = set(EVERY_CHAPTER)
+        self.assertEqual(travel.travel_rules(held, set())["flags"], {"global_transitionedFromRyan": "1"})
+        self.assertEqual(travel.travel_rules(held, {"Olympus Heights"})["flags"], {})
+        self.assertEqual(travel.travel_rules(set(), set())["flags"], {})
+
     def test_every_stop_and_crossing_names_a_map_the_client_knows(self) -> None:
         for stop in travel.STOPS:
             self.assertEqual(game_data.MAP_LEVEL[stop.map], stop.level)

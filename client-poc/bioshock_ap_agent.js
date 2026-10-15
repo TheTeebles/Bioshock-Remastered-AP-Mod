@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.2';
+const AGENT_VERSION = '2026-10-15.3';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2205,6 +2205,7 @@ const travel = {
   noteFields: new Map(), // class -> offset of its string
   unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
   lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
+  flagsSet: new Set(), // `name=value` story flags already set, this attachment
 };
 
 const heapApi = (() => {
@@ -2681,6 +2682,17 @@ function keepTravel(map) {
     rules.namesFor = map;
     resolveNames(rules);
   }
+  for (const flag of rules.flags) {
+    if (!travel.flagsSet.has(`${flag.name}=${flag.value}`)) {
+      const trouble = setStoryFlag(flag.name, flag.value);
+      if (trouble === null) {
+        travel.flagsSet.add(`${flag.name}=${flag.value}`);
+        log(`Open Rapture: story flag ${flag.name} = ${flag.value}`);
+      } else {
+        travelTrouble(`could not set story flag ${flag.name}: ${trouble}`);
+      }
+    }
+  }
   const layout = changeLayout();
   if (layout === null) {
     return;
@@ -2721,6 +2733,7 @@ function setTravelRules(config) {
       ...(s.to ? { to: String(s.to).toLowerCase(), toIndex: named(mapFileName(s.to)), title: s.title || null } : {}) })),
     redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
       ...goal(r), fallback: goal(r.fallback) })),
+    flags: Object.entries(config.flags || {}).map(([name, value]) => ({ name: String(name), value: String(value) })),
   };
   const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
     ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];
@@ -2731,6 +2744,13 @@ function setTravelRules(config) {
   travel.rules = rules;
   travel.trouble = null;
   return null;
+}
+
+// Sets one of the scripts' global_ variables (the story flags their ActionVariableAssign actions keep, such as
+// global_transitionedFromRyan). Null when done, else why not. Where the game keeps them is not known yet: the probe's
+// globals() and scriptApi() look for it (builds/OPEN-RAPTURE-TESTS.md), and this is filled in from what they find.
+function setStoryFlag(name, value) {
+  return 'where the game keeps story flags is not known yet';
 }
 
 // Names the game did not have when the rules came (a level's PlayerStarts exist only once a level that has them has

@@ -1746,6 +1746,16 @@ const tests = {
     r.frames(12);
     assert.strictEqual(model.arrivalOf(manager, 5), 'Hammer_Start');
   },
+  'a story flag the agent cannot set yet is reported, not fatal': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '6-slums', arrival: 'PlayerStart_First', to: '6-resi',
+      title: 'Olympus Heights' }], flags: { global_transitionedFromRyan: '1' }, redirects: [] });
+    r.frames(12);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 5], 'the rest of the rules still apply');
+    assert.match(state(r).travelTrouble, /could not set story flag global_transitionedFromRyan/);
+  },
   'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '2-SubBay');

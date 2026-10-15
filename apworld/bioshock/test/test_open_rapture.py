@@ -2,8 +2,10 @@
 is in test_client_travel.py."""
 import itertools
 
+from BaseClasses import CollectionState
 from Options import OptionError
 
+from ..client import travel
 from ..data import CHAPTER_ACCESS_ITEMS, CHAPTERS, GOAL_LOCATION, LOCATION_TABLE
 from .bases import BioShockTestBase
 from .test_logic import PoolTestBase
@@ -50,6 +52,20 @@ class TestOpenRapture(BioShockTestBase):
         self.assertTrue(self.can_reach_location(self.enabled(locations_in_chapter(6))[0]))
         self.assertBeatable(True)
         self.assertTrue(self.can_reach_location(GOAL_LOCATION))
+
+    def test_the_client_opens_exactly_the_chapters_the_logic_reaches(self) -> None:
+        # The bathysphere offers what travel.open_chapters says; the generator places items by the regions. They
+        # must agree for every set of access items, or a seed could need a chapter the menu does not offer.
+        items = [ACCESS[number] for number in sorted(ACCESS) if ACCESS[number]]
+        for size in range(len(items) + 1):
+            for held in itertools.combinations(items, size):
+                state = CollectionState(self.multiworld)
+                for name in held:
+                    state.collect(self.world.create_item(name), prevent_sweep=True)
+                reached = {chapter.number for chapter in CHAPTERS
+                           if self.multiworld.get_region(chapter.levels[0], self.player).can_reach(state)}
+                with self.subTest(held=held):
+                    self.assertEqual(reached, set(travel.open_chapters(set(held))))
 
     def test_slot_data_names_each_levels_chapter_item(self) -> None:
         access = self.world.fill_slot_data()["level_access_items"]
