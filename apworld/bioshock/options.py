@@ -124,7 +124,7 @@ class WorldItemChecks(Choice):
 
 class SafeChecks(Toggle):
     """
-    Experimental, not tried in game yet. Opening each safe and lockbox sends a check (64). What is inside stays
+    Experimental, not tried in game yet. Opening each safe and lockbox sends a check (73). What is inside stays
     as it is.
     """
     display_name = "Safe Checks"

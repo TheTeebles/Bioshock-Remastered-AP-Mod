@@ -459,7 +459,7 @@ class SpotKind:
     PLASMID = "plasmid"  # an ActivePlasmidPickup: the check is taking it
     TONIC = "tonic"  # a Physical, Engineering or Combat (Weapons) PlasmidPickup: the same
     WEAPON = "weapon"  # the check is holding the weapon for the first time, wherever it came from
-    SAFE = "safe"  # a SecurityCrate_Safe: the check is opening it (its contents stay as they are)
+    SAFE = "safe"  # a SecurityCrate_Safe or _WallSafe: the check is opening it (its contents stay as they are)
     LOCKBOX = "lockbox"  # a Lockbox: the same
 
 
@@ -580,6 +580,18 @@ WORLD_SPOTS: tuple[WorldSpot, ...] = (
     WorldSpot(6162, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox2", None),
     WorldSpot(6163, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox0", None),
     WorldSpot(6164, SpotKind.SAFE, "Proving Grounds", "7-gauntlet", "SecurityCrate_Safe2", None),
+    # Safes set into walls (SecurityCrate_WallSafe), found with the probe on 2026-10-15 by the Telekinesis plasmid and
+    # read from the map files the same day (notes/logs/map_survey_2026-10-15.json). After the others, so their IDs
+    # and names (each level's safes counted on from its first ones) stay as they were.
+    WorldSpot(6165, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe1", None),
+    WorldSpot(6166, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe3", None),
+    WorldSpot(6167, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe0", None),
+    WorldSpot(6168, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe2", None),
+    WorldSpot(6169, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe5", None),
+    WorldSpot(6170, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe4", None),
+    WorldSpot(6171, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe3", None),
+    WorldSpot(6172, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe1", None),
+    WorldSpot(6173, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe0", None),
 )
 
 # Plasmids the story needs (Electro Bolt opens the way out of Welcome to Rapture, Incinerate! melts the ice in the

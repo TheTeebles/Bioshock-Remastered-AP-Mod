@@ -124,7 +124,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'ActivePlasmidPickup', 'ActivePlasmidPickup0', 'LootSlot', 'LootSlot0', 'ItemClass', 'ClassProperty',
     'CollisionDamage', 'CollisionDamageClass', 'Telekinesis', 'chips', 'SecurityCrate_Safe', 'SecurityCrate_Safe0',
     'bIsOpened', 'Container', 'Container0', 'Owner', 'LootSlots', 'LootSpec', 'LootItemSpecification',
-    'LootItemSpecification0', 'Loot', 'Variable', 'VariableInt', 'global_GatherersKilled',
+    'LootItemSpecification0', 'Loot', 'ItemStack', 'ItemStack0', 'Variable', 'VariableInt', 'global_GatherersKilled',
     'Value'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
@@ -259,8 +259,12 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     fields(specClass, [['ItemClass', classProperty, 0x60]]);
     const spec = make('LootItemSpecification0', specClass);
     writeU32(spec + 0x60, telekinesis);
+    const stackClass = extend(cls('ItemStack'), objectClass);
+    fields(stackClass, [['ItemClass', classProperty, 0x50]]);
+    const stack = make('ItemStack0', stackClass); // what was rolled: in game the pickup gives this
+    writeU32(stack + 0x50, telekinesis);
     const lootSlot0 = make('LootSlot0', lootSlot);
-    writeU32(lootSlot0 + 0x40, spec);
+    writeU32(lootSlot0 + 0x40, spec); writeU32(lootSlot0 + 0x44, stack);
     const plasmid = make('ActivePlasmidPickup0', plasmidPickup);
     plasmidAt = plasmid;
     float(plasmid + 0x80, 200); float(plasmid + 0x84, 0); float(plasmid + 0x88, 0);
@@ -530,7 +534,7 @@ test('pickups() names what a pickup gives through its LootSlot, and pickupItem()
   const rt = startedProbe();
   assert.strictEqual(rt.context.pickups(), '1 found');
   let text = rt.logs.join('\n');
-  assert.match(text, /0: ActivePlasmidPickup ActivePlasmidPickup0 at \(200, 0, 0\), 200 away; gives: LootItemSpecification0\.ItemClass \+0x60 = Telekinesis; classes: CollisionDamageClass \+0xb4 = CollisionDamage/);
+  assert.match(text, /0: ActivePlasmidPickup ActivePlasmidPickup0 at \(200, 0, 0\), 200 away; gives: LootItemSpecification0\.ItemClass \+0x60 = Telekinesis, ItemStack0\.ItemClass \+0x50 = Telekinesis; classes: CollisionDamageClass \+0xb4 = CollisionDamage/);
   assert.match(text, /its LootSlot LootSlot0 at 0x[0-9a-f]+, every setting:\n.*LootSpec \(LootSlot\) \+0x40 = LootItemSpecification0/);
   assert.match(text, /its LootSpec LootItemSpecification LootItemSpecification0 at 0x[0-9a-f]+, every setting:\n.*ItemClass \(LootItemSpecification\) \+0x60 = class Telekinesis/);
   const slot = rt.ptr(rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x40));
@@ -539,9 +543,13 @@ test('pickups() names what a pickup gives through its LootSlot, and pickupItem()
   assert.strictEqual(rt.context.pickupItem(0, 'chips'), 'pick it up: what do you get, and does the game say so?');
   assert.notStrictEqual(rt.readU32(slot.toUInt32() + 0x60), before);
   assert.strictEqual(rt.readU32(rt.plasmidAt() + 0xB4), rt.readU32(rt.plasmidAt() + 0xB4), 'CollisionDamageClass untouched');
-  assert.match(rt.logs.join('\n'), /LootItemSpecification0\.ItemClass Telekinesis -> chips/);
+  const stack = rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x44);
+  assert.strictEqual(rt.readU32(stack + 0x50), rt.readU32(slot.toUInt32() + 0x60), 'the rolled stack too');
+  assert.match(rt.logs.join('\n'), /LootItemSpecification LootItemSpecification0\.ItemClass Telekinesis -> chips/);
+  assert.match(rt.logs.join('\n'), /ItemStack ItemStack0\.ItemClass Telekinesis -> chips/);
   assert.strictEqual(rt.context.pickupItem(0), 'put back');
   assert.strictEqual(rt.readU32(slot.toUInt32() + 0x60), before);
+  assert.strictEqual(rt.readU32(stack + 0x50), before);
   assert.strictEqual(rt.context.pickups('Container'), '0 found; 1 more are parts of other actors, see nearby()');
 });
 

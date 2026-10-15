@@ -24,8 +24,8 @@ CAMERA = "Neptune's Bounty - Weapon: Research Camera"
 class TestTable(unittest.TestCase):
     def test_spots(self) -> None:
         self.assertEqual(Counter(spot.kind for spot in WORLD_SPOTS), Counter(
-            {SpotKind.PLASMID: 4, SpotKind.TONIC: 27, SpotKind.WEAPON: 7, SpotKind.SAFE: 32, SpotKind.LOCKBOX: 32}))
-        self.assertEqual(len({(spot.map, spot.actor) for spot in WORLD_SPOTS if spot.actor}), 95, "one actor, one spot")
+            {SpotKind.PLASMID: 4, SpotKind.TONIC: 27, SpotKind.WEAPON: 7, SpotKind.SAFE: 41, SpotKind.LOCKBOX: 32}))
+        self.assertEqual(len({(spot.map, spot.actor) for spot in WORLD_SPOTS if spot.actor}), 104, "one actor, one spot")
         for spot in WORLD_SPOTS:
             self.assertEqual(game_data.level_of(spot.map, None), spot.level, spot)
             self.assertEqual(game_data.normalize_map(spot.map), spot.map, spot)
@@ -121,7 +121,7 @@ class TestUniversalTracker(BioShockTestBase):
         self.world.generate_early()
         counts = Counter(location.category for location in locations.enabled_locations(self.world))
         self.assertEqual(counts[LocationCategory.WORLD_ITEM], 37)  # the camera is started with
-        self.assertEqual(counts[LocationCategory.SAFE], 64)
+        self.assertEqual(counts[LocationCategory.SAFE], 73)
         self.assertEqual(counts[LocationCategory.RESEARCH], 11)
 
 
@@ -207,3 +207,12 @@ class TestClient(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestWallSafes(unittest.TestCase):
+    def test_wall_safes_come_after_the_first_safes_and_keep_their_names(self) -> None:
+        medical = [spot for spot in WORLD_SPOTS if spot.kind == SpotKind.SAFE and spot.map == "1-medical"]
+        self.assertEqual([spot.actor for spot in medical], [
+            "SecurityCrate_Safe0", "SecurityCrate_Safe3", "SecurityCrate_WallSafe1", "SecurityCrate_WallSafe3",
+            "SecurityCrate_WallSafe0", "SecurityCrate_WallSafe2"])
+        self.assertEqual([spot.id for spot in medical], [6101, 6102, 6165, 6166, 6167, 6168])

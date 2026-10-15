@@ -111,7 +111,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.7';
+const PROBE_VERSION = '2026-10-15.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4472,9 +4472,13 @@ function itemFieldsOf(object) {
   const out = [];
   for (const slot of lootSlotsOf(object)) {
     out.push(...classValued(slot).filter((c) => c.item));
-    const spec = heldObject(slot, 'LootSpec');
-    if (spec !== null) {
-      out.push(...classValued(spec).filter((c) => c.item));
+    // LootSpec says what to roll; Loot is what was rolled (an ItemStack, made when the pickup is rolled: EverRolled).
+    // In game 2026-10-15 writing chips into LootSpec alone still gave Telekinesis, so both are looked at.
+    for (const name of ['LootSpec', 'Loot']) {
+      const held = heldObject(slot, name);
+      if (held !== null) {
+        out.push(...classValued(held).filter((c) => c.item));
+      }
     }
   }
   return out;
@@ -4531,16 +4535,45 @@ globalThis.pickups = function (pattern) {
     for (const slot of lootSlotsOf(object)) {
       log(`    its ${classNameOf(slot)} ${nameOfObject(slot)} at ${slot}, every setting:`);
       allValues(slot, '      ');
-      const spec = heldObject(slot, 'LootSpec');
-      if (spec !== null) {
-        log(`    its LootSpec ${classNameOf(spec)} ${nameOfObject(spec)} at ${spec}, every setting:`);
-        allValues(spec, '      ');
+      for (const name of ['LootSpec', 'Loot']) {
+        const held = heldObject(slot, name);
+        if (held !== null) {
+          log(`    its ${name} ${classNameOf(held)} ${nameOfObject(held)} at ${held}, every setting:`);
+          allValues(held, '      ');
+          for (const item of itemObjectsOf(held)) {
+            log(`      it holds ${classNameOf(item)} ${nameOfObject(item)} at ${item}, every setting:`);
+            allValues(item, '        ');
+          }
+        }
       }
     }
   }
   return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}` +
     (parts ? `; ${parts} more are parts of other actors, see nearby()` : '');
 };
+
+// Objects an object holds (directly or in an array) whose class is an Item: the items an ItemStack carries.
+function itemObjectsOf(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const words = [];
+  for (const [, p] of learned.properties) {
+    const at = object.add(p.offset);
+    if (p.kind === 'ObjectProperty') {
+      words.push(u32(at));
+    } else if (p.kind === 'ArrayProperty') {
+      const data = u32(at);
+      const count = u32(at.add(4));
+      for (let i = 0; data && count && count < 50 && i < count; i++) {
+        words.push(u32(ptr(data).add(i * 4)));
+      }
+    }
+  }
+  return words.filter((w) => w && readable(ptr(w), 0x40) && classNameOf(ptr(w)) !== null &&
+    classNameOf(ptr(w)) !== 'Class' && extendsClass(classOf(ptr(w)), 'Item', itemCache)).map((w) => ptr(w)).slice(0, 4);
+}
 
 // Every property of an object below Object, with its value (for small objects such as a LootSlot).
 function allValues(object, indent) {
@@ -4566,17 +4599,8 @@ globalThis.pickupItem = function (n, className) {
     // 2026-10-15: the first class setting was CollisionDamageClass, and writing chips there crashed the game.
     return 'found no setting holding an item class, so nothing was changed; send the pickups() lines';
   }
-  const { name, p, holder } = gives[0];
-  const at = holder.add(p.offset);
-  const key = `${holder} ${p.offset}`;
-  let wanted;
-  if (className === undefined) {
-    if (!pickupSwaps.has(key)) {
-      return 'that pickup was not swapped';
-    }
-    wanted = ptr(pickupSwaps.get(key));
-    pickupSwaps.delete(key);
-  } else {
+  let wanted = null;
+  if (className !== undefined) {
     wanted = findClass(className);
     if (wanted === null) {
       return `no class named ${className} is loaded`;
@@ -4584,15 +4608,32 @@ globalThis.pickupItem = function (n, className) {
     if (!extendsClass(wanted, 'Item', itemCache)) {
       return `${className} is not an item class`;
     }
-    if (!pickupSwaps.has(key)) {
+  }
+  let changed = 0;
+  for (const { name, p, holder } of gives) { // every item-class setting: LootSpec's and the rolled ItemStack's
+    const at = holder.add(p.offset);
+    const key = `${holder} ${p.offset}`;
+    let value = wanted;
+    if (wanted === null) {
+      if (!pickupSwaps.has(key)) {
+        continue;
+      }
+      value = ptr(pickupSwaps.get(key));
+      pickupSwaps.delete(key);
+    } else if (!pickupSwaps.has(key)) {
       pickupSwaps.set(key, u32(at));
     }
+    const before = nameOfObject(pointerAt(at));
+    at.writePointer(value);
+    changed++;
+    log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ` +
+      `${holder.equals(entry.object) ? '' : `${classNameOf(holder)} ${nameOfObject(holder)}.`}${name} ${before} -> ` +
+      `${nameOfObject(value)}`);
   }
-  const before = nameOfObject(pointerAt(at));
-  at.writePointer(wanted);
-  log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ` +
-    `${holder.equals(entry.object) ? '' : `${nameOfObject(holder)}.`}${name} ${before} -> ${nameOfObject(wanted)}`);
-  return className === undefined ? 'put back' : "pick it up: what do you get, and does the game say so?";
+  if (wanted === null) {
+    return changed ? 'put back' : 'that pickup was not swapped';
+  }
+  return "pick it up: what do you get, and does the game say so?";
 };
 
 // What is near the player (2026-10-15): to name the safe by the Telekinesis plasmid in Medical, which no
