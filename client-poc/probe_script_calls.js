@@ -89,22 +89,28 @@
  *   route(0, '2-Fisheries', 'PlayerStart')  level change 0 of levels() goes there instead. Save first
  *   facts()           the story facts (FactDatabase) carried from level to level; dump('Class', 'Array') for others
  *   globals('global_GatherersKilled')  where the game keeps the scripts' global_ variables (2026-10-15): functions
- *                     and properties named like variables, the variable-setting actions and their functions, and
- *                     every place in memory holding that variable's name (as a name, and as text)
+ *                     and properties named like variables, the variable-setting actions and their functions, the
+ *                     objects of Variable classes (the one named so, with its settings) and LevelInfo's
+ *                     GlobalTravelContainer. globals(name, true) also searches all memory for the name (slow: it
+ *                     locked the game up on 2026-10-15)
  *   research()        where research progress is kept: every property named like research or photos, the classes
  *                     that have them and their values now, and the research camera's functions. Then photograph an
  *                     enemy and run researchDiff(): what changed
  *   scriptApi()       the functions of the script system's own classes (Script, the Action base, anything named
  *                     like a script or variable manager), to find a way to set a story flag through the game
  *   pickups()         the item pickups lying in this level (plasmids, tonics, weapons), nearest first, numbered,
- *                     with the class settings each holds; pickups('Safe|Container') for other kinds
+ *                     with what each gives (an item class of its own or of its LootSlot) and the LootSlot's
+ *                     settings; pickups('Safe|Lockbox') for other kinds
  *   pickupItem(0, 'chips')  make pickup 0 of pickups() give chips instead, to see whether a world item can be
- *                     swapped like a Garden line. pickupItem(0) puts it back
+ *                     swapped like a Garden line. Only an item-class setting is written (2026-10-15.6: .5 wrote
+ *                     CollisionDamageClass and crashed). pickupItem(0) puts it back
+ *   nearby(600)       every actor within 600 of the player, nearest first: class and the classes above it,
+ *                     bIsOpened if it has one, and what it gives. nearby(600, 'Safe') only matching classes
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.5';
+const PROBE_VERSION = '2026-10-15.6';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -351,6 +357,8 @@ const DECLARED = {
     'AwardAchievement', 'PlayerPickedUpLog', 'WeaponUpgraded'],
 };
 
+const classByName = new Map(); // class name -> the class object, checked again on each use
+const learnedClasses = new Map(); // class address -> what learnAnyClass found
 const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null, propertyOffset: null,
   superOffset: undefined };
 
@@ -642,6 +650,8 @@ function describeManagers() {
 }
 
 function rescan() {
+  classByName.clear();
+  learnedClasses.clear();
   found = scanObjects(Object.keys(DECLARED));
   for (const className of Object.keys(DECLARED)) {
     const count = (found.instances.get(className) || []).length;
@@ -772,11 +782,18 @@ function findSuperOffset() {
   return null;
 }
 
+
 function findClass(className) {
+  const known = classByName.get(className);
+  if (known !== undefined && readable(known, 0x40) && nameOfObject(known) === className &&
+      classNameOf(known) === 'Class') {
+    return known;
+  }
   const total = u32(objects.table.add(4)) || objects.count;
   for (let index = 0; index < total; index++) {
     const object = objectAt(index);
     if (object !== null && nameOfObject(object) === className && classNameOf(object) === 'Class') {
+      classByName.set(className, object);
       return object;
     }
   }
@@ -797,6 +814,11 @@ function learnAnyClass(className) {
   if (cls === null) {
     return { error: `no class named ${className}` };
   }
+  const cached = learnedClasses.get(cls.toString());
+  if (cached !== undefined && cached.lineage[0] === className) {
+    return cached;
+  }
+  const key = cls.toString();
   const lineage = [];
   const properties = new Map();
   while (cls !== null && !cls.isNull() && lineage.length < 30) {
@@ -832,6 +854,7 @@ function learnAnyClass(className) {
   if (!layouts.has(className)) {
     layouts.set(className, properties);
   }
+  learnedClasses.set(key, { lineage, properties });
   return { lineage, properties };
 }
 
@@ -4109,7 +4132,7 @@ function nearbyStrings(at) {
   return out.join(', ');
 }
 
-globalThis.globals = function (name) {
+globalThis.globals = function (name, deep) {
   if (objects.table === null) {
     return 'no object table';
   }
@@ -4141,7 +4164,56 @@ globalThis.globals = function (name) {
     log(`  ${nameOfObject(action)} in ${outerNameOf(action)} at ${action}`);
     ownValues(action, '    ', 1);
   }
-  // 3. The variable's name as a name (index, number) and as text, wherever it is in memory.
+  // 3. The variables themselves (2026-10-15): Script.findGlobalVariable(VariableName) keeps a local array
+  // AllGlobalVariables, so globals look like objects of a Variable class. Listed from the object table, with no
+  // memory search: globals(name, true) searched all memory and locked the game up on 2026-10-15.
+  learnAnyClass('Variable'); // learns where a class keeps the class it extends, if nothing has yet
+  const variableCache = new Map();
+  const counts = new Map();
+  const matches = [];
+  const samples = [];
+  const lower = wanted.toLowerCase();
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null || cls.isNull() || classNameOf(object) === 'Class' || !extendsClass(cls, 'Variable', variableCache)) {
+      continue;
+    }
+    const className = classNameOf(object);
+    counts.set(className, (counts.get(className) || 0) + 1);
+    const own = nameOfObject(object) || '';
+    if (own.toLowerCase() === lower || own.toLowerCase().includes(lower)) {
+      matches.push(object);
+    } else if (samples.length < 3 && /^global_/i.test(own)) {
+      samples.push(object);
+    }
+  }
+  log(`objects of Variable classes: ${[...counts].map(([c, n]) => `${c} ${n}`).join(', ') || 'none'}`);
+  for (const object of matches.slice(0, 4)) {
+    log(`  ${wanted}: ${classNameOf(object)} ${nameOfObject(object)} at ${object} in ${outerNameOf(object)}:`);
+    allValues(object, '    ');
+  }
+  if (matches.length === 0) {
+    log(`  no Variable object is named ${wanted}; the first variables named global_:`);
+    for (const object of samples) {
+      log(`  ${classNameOf(object)} ${nameOfObject(object)} at ${object} in ${outerNameOf(object)}:`);
+      allValues(object, '    ');
+    }
+  }
+  // 4. Where globals may travel between levels.
+  for (const info of [...matchingObjects('^LevelInfo$').values()].flat().slice(0, 2)) {
+    const learned = learnAnyClass('LevelInfo');
+    const property = learned.error ? undefined : learned.properties.get('GlobalTravelContainer');
+    const target = property === undefined ? null : pointerAt(info.add(property.offset));
+    log(`  LevelInfo ${nameOfObject(info)}: GlobalTravelContainer = ${target === null ? '?' : objectText(target.toUInt32())}`);
+    if (target !== null && !target.isNull() && readable(target, 0x40) && classNameOf(target) !== null) {
+      allValues(target, '    ');
+    }
+  }
+  if (deep !== true) {
+    return 'done';
+  }
+  // 5. Only when asked: the variable's name wherever it is in memory (slow; locked the game up once).
   const index = indexOfName(wanted);
   log(`name index of ${wanted}: ${index}`);
   if (index >= 0) {
@@ -4326,7 +4398,10 @@ globalThis.scriptApi = function () {
 
 let pickupList = [];
 const pickupSwaps = new Map(); // `${object} ${offset}` -> the class it held
+const itemCache = new Map();
+const actorCache = new Map();
 
+// The class-valued settings of an object, an item class first: that is what it gives.
 function classValued(object) {
   const learned = learnAnyClass(classNameOf(object));
   if (learned.error) {
@@ -4339,56 +4414,132 @@ function classValued(object) {
     }
     const value = pointerAt(object.add(p.offset));
     if (value !== null && !value.isNull() && readable(value, 0x40) && classNameOf(value) === 'Class') {
-      out.push({ name, p, value, item: extendsClass(value, 'Item', itemCache) });
+      out.push({ name, p, value, item: extendsClass(value, 'Item', itemCache), holder: object });
     }
   }
-  return out.sort((a, b) => Number(b.item) - Number(a.item)); // an item class first: that is what it gives
+  return out.sort((a, b) => Number(b.item) - Number(a.item));
 }
-const itemCache = new Map();
+
+// The LootSlot object a pickup (Pickup.LootSlot) or a container (Container.LootSlots) holds: in game 2026-10-15
+// no class setting of an ActivePlasmidPickup itself is an item class, so what it gives is kept there.
+function lootSlotsOf(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const out = [];
+  for (const [name, p] of learned.properties) {
+    if (!/^LootSlots?$/.test(name)) {
+      continue;
+    }
+    const at = object.add(p.offset);
+    const words = p.kind === 'ArrayProperty' ? [] : [u32(at)];
+    if (p.kind === 'ArrayProperty') {
+      const data = u32(at);
+      const count = u32(at.add(4));
+      for (let i = 0; data && count && i < Math.min(count, 8); i++) {
+        words.push(u32(ptr(data).add(i * 4)));
+      }
+    }
+    for (const word of words) {
+      if (word && readable(ptr(word), 0x40) && classNameOf(ptr(word)) !== null) {
+        out.push(ptr(word));
+      }
+    }
+  }
+  return out;
+}
+
+// What an object gives: an item class among its own settings, else among its LootSlot's.
+function itemFieldsOf(object) {
+  const own = classValued(object).filter((c) => c.item);
+  return own.length ? own : lootSlotsOf(object).flatMap((slot) => classValued(slot).filter((c) => c.item));
+}
+
+function isActor(object) {
+  const cls = classOf(object);
+  return cls !== null && !cls.isNull() && extendsClass(cls, 'Actor', actorCache);
+}
+
+// Nearest first; things with no place in the level (components such as Container, class defaults) last.
+function byDistance(list, from) {
+  for (const entry of list) {
+    const { place } = entry;
+    entry.away = from === null || from.error || !isFinite(place.x) || !isFinite(place.y) || !isFinite(place.z) ?
+      Infinity : Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
+  }
+  return list.sort((a, b) => a.away - b.away);
+}
 
 globalThis.pickups = function (pattern) {
   if (objects.table === null) {
     return 'no object table';
   }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
   const player = thePlayer();
   const from = player === null ? null : actorPlace(player);
   const list = [];
+  let parts = 0;
   for (const [className, objectsOfClass] of matchingObjects(pattern || 'Pickup$')) {
     for (const object of objectsOfClass) {
-      const place = actorPlace(object);
-      if (place.error) {
-        return place.error;
+      if (!isActor(object)) {
+        parts++; // a Container and the like: part of an actor, with no place of its own
+        continue;
       }
-      const away = from === null || from.error ? 0 : Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
-      list.push({ object, className, away, place });
+      list.push({ object, className, place: actorPlace(object) });
     }
   }
-  list.sort((a, b) => a.away - b.away);
+  byDistance(list, from);
   pickupList = list;
   list.slice(0, 15).forEach(({ object, className, away, place }, n) => {
     const held = classValued(object).map(({ name, p, value }) => `${name} +${hex(p.offset)} = ${nameOfObject(value)}`);
+    const gives = itemFieldsOf(object).map(({ name, p, value, holder }) =>
+      `${holder.equals(object) ? '' : `${nameOfObject(holder)}.`}${name} +${hex(p.offset)} = ${nameOfObject(value)}`);
     log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}, ${away.toFixed(0)} away` +
-      (held.length ? `; classes: ${held.join(', ')}` : ''));
+      `; gives: ${gives.join(', ') || 'no item class found'}` + (held.length ? `; classes: ${held.join(', ')}` : ''));
   });
   for (const { object, className } of list.slice(0, 2)) {
     log(`  the settings of ${className} ${nameOfObject(object)}:`);
-    ownValues(object, '    ', 1);
+    ownValues(object, '    ', 0);
+    for (const slot of lootSlotsOf(object)) {
+      log(`    its ${classNameOf(slot)} ${nameOfObject(slot)} at ${slot}, every setting:`);
+      allValues(slot, '      ');
+    }
   }
-  return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}`;
+  return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}` +
+    (parts ? `; ${parts} more are parts of other actors, see nearby()` : '');
 };
+
+// Every property of an object below Object, with its value (for small objects such as a LootSlot).
+function allValues(object, indent) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    log(`${indent}${learned.error}`);
+    return;
+  }
+  const sorted = [...learned.properties.entries()].filter(([, p]) => p.owner !== 'Object')
+    .sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted.slice(0, 60)) {
+    log(`${indent}${name} (${p.owner}) +${hex(p.offset)} = ${valueText(object.add(p.offset), p)}`);
+  }
+}
 
 globalThis.pickupItem = function (n, className) {
   const entry = pickupList[n];
   if (entry === undefined) {
     return 'pickups() first, then pick one of its numbers';
   }
-  const held = classValued(entry.object);
-  if (held.length === 0) {
-    return 'that pickup holds no class to swap';
+  const gives = itemFieldsOf(entry.object);
+  if (gives.length === 0) {
+    // 2026-10-15: the first class setting was CollisionDamageClass, and writing chips there crashed the game.
+    return 'found no setting holding an item class, so nothing was changed; send the pickups() lines';
   }
-  const { name, p } = held[0];
-  const at = entry.object.add(p.offset);
-  const key = `${entry.object} ${p.offset}`;
+  const { name, p, holder } = gives[0];
+  const at = holder.add(p.offset);
+  const key = `${holder} ${p.offset}`;
   let wanted;
   if (className === undefined) {
     if (!pickupSwaps.has(key)) {
@@ -4401,15 +4552,63 @@ globalThis.pickupItem = function (n, className) {
     if (wanted === null) {
       return `no class named ${className} is loaded`;
     }
+    if (!extendsClass(wanted, 'Item', itemCache)) {
+      return `${className} is not an item class`;
+    }
     if (!pickupSwaps.has(key)) {
       pickupSwaps.set(key, u32(at));
     }
   }
   const before = nameOfObject(pointerAt(at));
   at.writePointer(wanted);
-  log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ${name} ${before} -> ${nameOfObject(wanted)}` +
-    (held.length > 1 ? `; it also holds ${held.slice(1).map((h) => `${h.name} = ${nameOfObject(h.value)}`).join(', ')}` : ''));
+  log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ` +
+    `${holder.equals(entry.object) ? '' : `${nameOfObject(holder)}.`}${name} ${before} -> ${nameOfObject(wanted)}`);
   return className === undefined ? 'put back' : "pick it up: what do you get, and does the game say so?";
+};
+
+// What is near the player (2026-10-15): to name the safe by the Telekinesis plasmid in Medical, which no
+// SecurityCrate_Safe check caught. Every actor within the distance, nearest first, with its class and the classes
+// above it, whether it can be opened (bIsOpened) and what it gives. nearby(300) for a smaller circle.
+globalThis.nearby = function (distance = 600, pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  if (from === null || from.error) {
+    return 'no player: load a save first';
+  }
+  log(`the player is at ${placeText(from)}`);
+  const regex = pattern ? new RegExp(pattern, 'i') : null;
+  const list = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null || object.equals(player) || !isActor(object)) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === null || (regex !== null && !regex.test(className))) {
+      continue;
+    }
+    list.push({ object, className, place: actorPlace(object) });
+  }
+  const near = byDistance(list, from).filter((entry) => entry.away <= distance);
+  near.slice(0, 40).forEach(({ object, className, away, place }, n) => {
+    const learned = learnAnyClass(className);
+    const lineage = learned.error ? [] : learned.lineage.slice(1, 6);
+    const opened = learned.error ? undefined : learned.properties.get('bIsOpened');
+    const gives = itemFieldsOf(object).map(({ value }) => nameOfObject(value));
+    log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}, ${away.toFixed(0)} away` +
+      ` (${lineage.join(' < ')})` +
+      (opened === undefined ? '' : `, bIsOpened ${valueText(object.add(opened.offset), opened)}`) +
+      (gives.length ? `, gives ${gives.join(', ')}` : ''));
+  });
+  return `${near.length} actors within ${distance}${near.length > 40 ? ' (the nearest 40 shown)' : ''}`;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -4453,7 +4652,8 @@ globalThis.stop = function () {
 };
 
 // Each batch step starts with a marker line, so builds/read_batch_logs.py can tell the steps apart in probe_log.txt.
-for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem']) {
+for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem',
+  'nearby']) {
   const step = globalThis[name];
   if (typeof step === 'function') {
     globalThis[name] = function (...args) {
