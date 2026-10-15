@@ -91,11 +91,14 @@
  *   globals('global_GatherersKilled')  where the game keeps the scripts' global_ variables (2026-10-15): functions
  *                     and properties named like variables, the variable-setting actions and their functions, and
  *                     every place in memory holding that variable's name (as a name, and as text)
+ *   research()        where research progress is kept: every property named like research or photos, the classes
+ *                     that have them and their values now, and the research camera's functions. Then photograph an
+ *                     enemy and run researchDiff(): what changed
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.1';
+const PROBE_VERSION = '2026-10-15.2';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4157,6 +4160,82 @@ globalThis.globals = function (name) {
     }
   }
   return 'done';
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Research (2026-10-15): each research level reached on an enemy type could be a check. Where is progress kept?
+// ---------------------------------------------------------------------------------------------------------------
+
+const RESEARCH_NAMES = /research|photo|picture/i;
+let researchSeen = null; // `${object} ${property}` -> value text
+
+function researchValues() {
+  const owners = new Map(); // class name -> property names
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const kind = classNameOf(object);
+    const own = nameOfObject(object);
+    if (kind === null || own === null || !/Property$/.test(kind) || !RESEARCH_NAMES.test(own)) {
+      continue;
+    }
+    const owner = outerNameOf(object);
+    if (!owners.has(owner)) {
+      owners.set(owner, new Set());
+    }
+    owners.get(owner).add(own);
+  }
+  const values = new Map();
+  const lines = [];
+  for (const [owner, names] of owners) {
+    const list = [...matchingObjects(`^${owner}$`).values()].flat();
+    lines.push(`${owner}: ${[...names].join(', ')} (${list.length} objects)`);
+    const learned = list.length ? learnAnyClass(owner) : null;
+    for (const object of list.slice(0, 6)) {
+      for (const name of names) {
+        const property = learned && !learned.error ? learned.properties.get(name) : undefined;
+        if (property === undefined) {
+          continue;
+        }
+        const text = valueText(object.add(property.offset), property);
+        values.set(`${object} ${owner}.${name}`, text);
+        lines.push(`  ${nameOfObject(object)} ${name} +${hex(property.offset)} = ${text}`);
+      }
+    }
+  }
+  return { values, lines };
+}
+
+globalThis.research = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  log(`Research progress (probe ${PROBE_VERSION})`);
+  for (const className of ['ResearchCamera', 'ActionGetResearchLevel', 'ResearchStation']) {
+    functionsOf(className);
+    globalThis.fields(className);
+  }
+  const { values, lines } = researchValues();
+  lines.forEach((line) => log(line));
+  researchSeen = values;
+  return `${values.size} values remembered; photograph an enemy, then researchDiff()`;
+};
+
+globalThis.researchDiff = function () {
+  if (researchSeen === null) {
+    return 'research() first';
+  }
+  const { values } = researchValues();
+  let changed = 0;
+  for (const [key, text] of values) {
+    const before = researchSeen.get(key);
+    if (before !== text) {
+      changed++;
+      log(`  ${key}: ${before === undefined ? '(new)' : before} -> ${text}`);
+    }
+  }
+  researchSeen = values;
+  return `${changed} changed`;
 };
 
 // ---------------------------------------------------------------------------------------------------------------
