@@ -27,7 +27,7 @@ from typing import Any
 
 from .game_data import (
     actors_of, delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, pickups_here_of, quests_of,
-    stations_of,
+    research_of, stations_of,
 )
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
@@ -135,6 +135,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         pickups_taken=actors_of(raw.get("pickupsTaken")),
         pickups_here=pickups_here_of(raw.get("pickupsHere")),
         containers_opened=actors_of(raw.get("containersOpened")),
+        research=research_of(raw.get("researchLevels")),
     )
 
 

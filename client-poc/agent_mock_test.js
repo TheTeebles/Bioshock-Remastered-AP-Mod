@@ -662,6 +662,31 @@ function makeRuntime({
       if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
       return at;
     };
+    // Research, as ShockPlayer declares it: ResearchTracks {ResearchName, CurrentScore} (16 bytes each here) and
+    // ResearchLevels {ResearchName, LevelNumber, ScoreRequired, AwardItemClass} (20 bytes each).
+    const research = (tracks, levels) => {
+      arrayOfStructs(playerClass, 'ResearchTracks', 0xB00, 'ResearchTrack',
+        [['ResearchName', nameProperty, 0], ['CurrentScore', intProperty, 8], ['MaxScore', intProperty, 0xC]]);
+      const tracksField = runtime.memory.get(playerClass + 0x5C);
+      arrayOfStructs(playerClass, 'ResearchLevels', 0xB10, 'ResearchLevel',
+        [['ResearchName', nameProperty, 0], ['LevelNumber', intProperty, 8], ['ScoreRequired', intProperty, 0xC],
+          ['AwardItemClass', classProperty, 0x10]]);
+      poke(runtime.memory.get(playerClass + 0x5C) + 0x44, tracksField); // ResearchLevels, then ResearchTracks
+      const fill = (offset, rows, size, write) => (pawn) => {
+        const data = runtime.object(Math.max(4, size * rows.length));
+        rows.forEach((row, i) => write(data + size * i, row));
+        poke(pawn + offset, data); poke(pawn + offset + 4, rows.length); poke(pawn + offset + 8, rows.length);
+        return data;
+      };
+      return {
+        tracks: fill(0xB00, tracks, 16, (at, [subject, score]) => {
+          poke(at, name(subject)); poke(at + 4, 0); poke(at + 8, score); poke(at + 0xC, 100);
+        }),
+        levels: fill(0xB10, levels, 20, (at, [subject, number, score, award]) => {
+          poke(at, name(subject)); poke(at + 4, 0); poke(at + 8, number); poke(at + 0xC, score); poke(at + 0x10, award);
+        }),
+      };
+    };
     const textOf = (at) => runtime.text.get(runtime.memory.get(at));
     const changeOf = (change) => ({
       map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
@@ -669,7 +694,7 @@ function makeRuntime({
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
     return { nameIndex: name, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, container };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -2167,6 +2192,31 @@ const tests = {
     r.context.rpc.exports.action(8, 'empty_pickups ' + JSON.stringify({ placeholder: 'Bread', maps: {} }));
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
       [[7, true], [8, false]]);
+  },
+  'state() reports the level of each research subject and the table of levels': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    const sportBoost = model.itemClass('SportBoost', 10);
+    const fill = model.research([['ThuggishSplicer', 30], ['Bouncer', 0]],
+      [['ThuggishSplicer', 1, 10, 0], ['ThuggishSplicer', 2, 25, sportBoost], ['ThuggishSplicer', 3, 60, 0],
+        ['Bouncer', 1, 20, 0]]);
+    const tracks = fill.tracks(game.pawn); fill.levels(game.pawn);
+    r.load(); r.frames(15);
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":0}');
+    assert.strictEqual(state(r).researchTable.length, 4);
+    assert.strictEqual(JSON.stringify(state(r).researchTable[1]),
+      '{"name":"ThuggishSplicer","level":2,"score":25,"award":"SportBoost"}');
+    r.poke(tracks + 16 + 8, 20); r.frames(15); // a photo of a Bouncer
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":1}');
+    assert.ok(r.logged('research: Bouncer at level 1'));
+    assert.strictEqual(state(r).researchTrouble, null);
+  },
+  'a player without research tables says so once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(30);
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{}');
+    assert.ok(state(r).researchTrouble.includes('no ResearchTracks'));
   },
   'a trap waits for a body and gives up after a while': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();

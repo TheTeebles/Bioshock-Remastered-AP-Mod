@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.4';
+const AGENT_VERSION = '2026-10-15.5';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -613,6 +613,11 @@ function readState() {
     containersOpened: Object.fromEntries([...world.opened].map(([map, names]) => [map, [...names].sort()])),
     pickupsEmptied: world.emptied.size,
     worldTrouble: world.trouble,
+    // Each research subject's level ({ ThuggishSplicer: 2 }, by the game's names), the game's table of research
+    // levels and what each gives (once read), and what went wrong.
+    researchLevels: research.levels,
+    researchTable: research.table,
+    researchTrouble: research.trouble,
     // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
     apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
@@ -1874,6 +1879,103 @@ function setEmptyPickups(config) {
   world.empty = { placeholder: config.placeholder, maps: config.maps };
   world.emptied = new Set();
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Research: how far the player has researched each subject (groundwork for research checks)
+// ---------------------------------------------------------------------------------------------------------------
+
+// From the exported ShockPlayer.uc: the player keeps ResearchTracks, one row per subject ({ResearchName,
+// CurrentScore, ...}, saved with the game), and the config table ResearchLevels ({ResearchName, LevelNumber,
+// ScoreRequired, AwardItemClass, ...}). A subject's level is the highest LevelNumber of its rows whose
+// ScoreRequired its CurrentScore has reached (GetResearchLevelForScore), and reaching a level gives that row's
+// AwardItemClass. The agent reports every subject's level and, once, the table itself. Not tried in game yet.
+const RESEARCH_INTERVAL_MS = 1000;
+const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null };
+
+function researchTrouble(text) {
+  if (research.trouble === null) {
+    research.trouble = text;
+    log(`research cannot be watched: ${text}`);
+  }
+}
+
+function researchLayout(pawn) {
+  if (research.layout !== undefined) {
+    return research.layout;
+  }
+  const cls = classOfObject(pawn);
+  if (cls === null) {
+    return null; // asked again on the next read
+  }
+  research.layout = null;
+  const tracks = cls === null ? null : findProperty(cls, 'ResearchTracks', 'ArrayProperty');
+  const levels = cls === null ? null : findProperty(cls, 'ResearchLevels', 'ArrayProperty');
+  const track = tracks === null ? null : structOfArray(tracks.field);
+  const level = levels === null ? null : structOfArray(levels.field);
+  const has = (row, names) => row !== null && names.every((name) => name in row.fields);
+  if (!has(track, ['ResearchName', 'CurrentScore']) ||
+    !has(level, ['ResearchName', 'LevelNumber', 'ScoreRequired', 'AwardItemClass'])) {
+    researchTrouble('the player has no ResearchTracks and ResearchLevels as expected');
+    return null;
+  }
+  research.layout = { tracks: tracks.offset, track, levels: levels.offset, level };
+  log(`research: ResearchTracks at +0x${tracks.offset.toString(16)} (${track.size} bytes each), ResearchLevels at ` +
+    `+0x${levels.offset.toString(16)} (${level.size} bytes each)`);
+  return research.layout;
+}
+
+// The rows of an array of structs: [address of each row], or null when it cannot be read.
+function rowsOf(at, size) {
+  const data = carefulPtr(at);
+  const count = carefulS32(at.add(4));
+  if (data === null || count === null || count < 0 || count > 2000) {
+    return null;
+  }
+  return data.isNull() ? [] : Array.from({ length: count }, (_, i) => data.add(i * size));
+}
+
+function readResearch(pawn, now) {
+  if (now - research.readAt < RESEARCH_INTERVAL_MS) {
+    return;
+  }
+  research.readAt = now;
+  const layout = researchLayout(pawn);
+  if (layout === null) {
+    return;
+  }
+  const { level, track } = layout;
+  const levelRows = rowsOf(pawn.add(layout.levels), level.size);
+  const trackRows = rowsOf(pawn.add(layout.tracks), track.size);
+  if (levelRows === null || trackRows === null) {
+    return;
+  }
+  const table = levelRows.map((row) => ({
+    name: nameOf(carefulS32(row.add(level.fields.ResearchName))),
+    level: carefulS32(row.add(level.fields.LevelNumber)),
+    score: carefulS32(row.add(level.fields.ScoreRequired)),
+    award: nameOfObject(carefulPtr(row.add(level.fields.AwardItemClass))),
+  }));
+  if (research.table === null && table.length > 0) {
+    research.table = table;
+    log(`research: ${trackRows.length} subjects, ${table.length} levels`);
+    table.forEach((entry) => log(`research level: ${entry.name} ${entry.level} at ${entry.score} points` +
+      (entry.award === null || entry.award === 'None' ? '' : `, gives ${entry.award}`)));
+  }
+  const levels = {};
+  for (const row of trackRows) {
+    const name = nameOf(carefulS32(row.add(track.fields.ResearchName)));
+    const score = carefulS32(row.add(track.fields.CurrentScore));
+    if (name === null || score === null) {
+      continue;
+    }
+    levels[name] = table.reduce((best, entry) => (entry.name === name && entry.level !== null &&
+      entry.score !== null && score >= entry.score ? Math.max(best, entry.level) : best), 0);
+    if (levels[name] > (research.levels[name] || 0)) {
+      log(`research: ${name} at level ${levels[name]}`);
+    }
+  }
+  research.levels = levels;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -3554,6 +3656,11 @@ function watchPlayer(level, info, map, now) {
   carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
+  try {
+    readResearch(body.pawn, now);
+  } catch (e) {
+    researchTrouble(e.message);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------

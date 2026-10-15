@@ -616,6 +616,14 @@ def actors_of(by_map: object) -> dict[str, frozenset[str]] | None:
     return result
 
 
+def research_of(levels: object) -> dict[str, int] | None:
+    """The agent's research levels by subject. None while it cannot tell."""
+    if not isinstance(levels, dict):
+        return None
+    return {name: level for name, level in levels.items()
+            if isinstance(name, str) and isinstance(level, int) and not isinstance(level, bool)}
+
+
 def pickups_here_of(here: object) -> tuple[str, frozenset[str]] | None:
     """The agent's {map, names}: the plasmid and tonic pickups lying in the map the player is in."""
     if not isinstance(here, dict) or not isinstance(here.get("names"), list):

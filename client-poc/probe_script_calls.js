@@ -4252,6 +4252,44 @@ globalThis.researchDiff = function () {
   return `${changed} changed`;
 };
 
+// The player's research, row by row (2026-10-15): ShockPlayer keeps ResearchTracks (one per subject: ResearchName,
+// CurrentScore, MaxScore; saved with the game) and the config table ResearchLevels (ResearchName, LevelNumber,
+// ScoreRequired, AwardItemClass: what each level gives). Read from the exported ShockPlayer.uc.
+globalThis.researchTable = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return 'no player';
+  }
+  const learned = learnAnyClass(classNameOf(player));
+  if (learned.error) {
+    return learned.error;
+  }
+  for (const name of ['ResearchTracks', 'ResearchLevels', 'ResearchTrackData', 'UnresearchedPhotos']) {
+    const property = learned.properties.get(name);
+    if (property === undefined) {
+      log(`${name}: not a property of ${classNameOf(player)}`);
+      continue;
+    }
+    const at = player.add(property.offset);
+    const data = u32(at);
+    const count = u32(at.add(4));
+    const inner = innerOf(property.field);
+    const element = inner === null ? null : { kind: classNameOf(inner), field: inner, mask: null };
+    const size = element === null ? null : sizeOf(element);
+    log(`${name} +${hex(property.offset)}: ${count} rows${size === null ? '' : ` of ${size} bytes`}`);
+    if (!data || !count || size === null || count > 1000) {
+      continue;
+    }
+    for (let i = 0; i < count; i++) {
+      log(`  ${i}: ${valueText(ptr(data).add(i * size), element)}`);
+    }
+  }
+  return 'done';
+};
+
 // ---------------------------------------------------------------------------------------------------------------
 // The script system's own functions (2026-10-15): a way to set a global_ variable through the game itself.
 // ---------------------------------------------------------------------------------------------------------------

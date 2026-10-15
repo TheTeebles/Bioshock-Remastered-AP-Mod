@@ -39,6 +39,7 @@ class GameState:
     # The map the player is in and the pickups lying in it now, once the agent has looked at all of them
     pickups_here: tuple[str, frozenset[str]] | None = None
     containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes and lockboxes open there
+    research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
 
 
 @dataclass(frozen=True)
