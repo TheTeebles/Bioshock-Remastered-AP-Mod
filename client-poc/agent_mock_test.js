@@ -655,10 +655,11 @@ function makeRuntime({
     };
     const containerClass = cls('AnimatedContainer', actor);
     fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
-    const safeClass = cls('SecurityCrate_Safe', cls('SecurityCrate', containerClass));
-    const lockboxClass = cls('Lockbox', containerClass);
+    const crateClass = cls('SecurityCrate', containerClass);
+    const containerKinds = { SecurityCrate_Safe: cls('SecurityCrate_Safe', crateClass),
+      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass), Lockbox: cls('Lockbox', containerClass) };
     const container = (className, actorName) => {
-      const at = make(actorName, className === 'Lockbox' ? lockboxClass : safeClass, 0x600); poke(at + 0x5DC, 0);
+      const at = make(actorName, containerKinds[className], 0x600); poke(at + 0x5DC, 0);
       if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
       return at;
     };
@@ -2284,13 +2285,15 @@ const tests = {
     const safe = model.container('SecurityCrate_Safe', 'SecurityCrate_Safe2');
     const lockbox = model.container('Lockbox', 'Lockbox0');
     model.container('Lockbox', 'Lockbox1');
+    const wall = model.container('SecurityCrate_WallSafe', 'SecurityCrate_WallSafe0'); // by Medical's Telekinesis
     r.load(); r.frames(10);
     assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
-    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5DC, 1); r.frames(10);
-    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox0","SecurityCrate_Safe2"]}');
-    [safe, lockbox].forEach((at) => r.removeActor(game.level, at));
+    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5DC, 1); r.poke(wall + 0x5DC, 1); r.frames(10);
+    const open = '{"1-medical":["Lockbox0","SecurityCrate_Safe2","SecurityCrate_WallSafe0"]}';
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
+    [safe, lockbox, wall].forEach((at) => r.removeActor(game.level, at));
     r.string(game.level + 0x7C, '2-fisheries'); r.frames(10); // another level: what was open stays reported
-    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox0","SecurityCrate_Safe2"]}');
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
     assert.strictEqual(state(r).worldTrouble, null);
   },
   'shuffled pickups give the placeholder, and the kept ones their own item': () => {

@@ -1479,7 +1479,8 @@ function kindOf(cls) {
         kind = 'note';
       } else if (lineage.some((c) => typeof c === 'string' && c.endsWith('PlasmidPickup'))) {
         kind = 'pickup';
-      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('Lockbox')) {
+      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('SecurityCrate_WallSafe') ||
+        lineage.includes('Lockbox')) {
         kind = 'container';
       }
     }
@@ -1723,7 +1724,8 @@ function readStations(map) {
 // makes every object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
 // the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
 // before the agent was watching. Not tried in game yet.
-// A safe is a SecurityCrate_Safe, a lockbox a Lockbox. Both are AnimatedContainers, whose bIsOpened turns true when
+// A safe is a SecurityCrate_Safe or a SecurityCrate_WallSafe (set into a wall, as by Medical's Telekinesis plasmid;
+// found 2026-10-15), a lockbox a Lockbox. All are AnimatedContainers, whose bIsOpened turns true when
 // they are opened and stays true in a save (safes confirmed 2026-10-14; lockboxes not tried yet).
 // With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
 // of their item: the class the pickup holds is swapped, as the probe's pickupItem() does. Not tried in game yet.

@@ -25,7 +25,8 @@ from worlds.bioshock.data import LEVEL_NAMES
 
 from map_survey import is_weapon_pickup, weapon_of_pickup
 
-SAFES = ("SecurityCrate_Safe", "Lockbox")
+WALL_SAFE = "SecurityCrate_WallSafe"  # found with the probe 2026-10-15, by the Telekinesis plasmid
+SAFES = ("SecurityCrate_Safe", WALL_SAFE, "Lockbox")
 FIRST_ID = {"plasmid": 6001, "tonic": 6011, "weapon": 6051, "safe": 6101}
 LAST_ID = {"plasmid": 6010, "tonic": 6050, "weapon": 6057, "safe": 6199}
 
@@ -61,6 +62,7 @@ def candidates(maps):
     next_id = dict(FIRST_ID)
     weapons_seen = set()
     safes_per_level = {}
+    wall_safes = []  # numbered after every other safe, so the IDs the first survey gave stay as they were
     for entry in sorted(maps, key=story_order):
         level = level_of(entry["map"])
         if level not in LEVEL_NAMES:
@@ -79,6 +81,9 @@ def candidates(maps):
                     unknown.add(cls)
                     vanilla = cls
                 name = f"{level} - {vanilla}"
+            elif kind == "safe" and spot["class"] == WALL_SAFE:
+                wall_safes.append((entry, level, spot))
+                continue
             elif kind == "safe":
                 safes_per_level[level] = safes_per_level.get(level, 0) + 1
                 vanilla = None
@@ -97,6 +102,13 @@ def candidates(maps):
                          "actor": spot["actor"], "label": spot["label"], "at": spot["at"], "vanilla": vanilla,
                          "contents": spot["items"] if kind == "safe" else None})
             next_id[kind] += 1
+    walls_per_level = {}
+    for entry, level, spot in wall_safes:
+        walls_per_level[level] = walls_per_level.get(level, 0) + 1
+        rows.append({"id": next_id["safe"], "name": f"{level} Wall Safe {walls_per_level[level]}", "kind": "safe",
+                     "level": level, "map": entry["map"], "actor": spot["actor"], "label": spot["label"],
+                     "at": spot["at"], "vanilla": None, "contents": spot["items"]})
+        next_id["safe"] += 1
     over = [kind for kind in FIRST_ID if next_id[kind] - 1 > LAST_ID[kind]]
     if over:
         raise ValueError(f"more {', '.join(over)} spots than section 5 keeps IDs for")

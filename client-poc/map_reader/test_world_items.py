@@ -99,3 +99,15 @@ def test_maps_that_are_not_levels_are_left_out():
     autoplay = {"map": "Autoplay.bsm", "world": [spot("SecurityCrate_Safe", "SecurityCrate_Safe0")]}
     rows, _, _ = candidates([autoplay, MEDICAL])
     assert [row["map"] for row in rows if row["kind"] == "safe"] == ["1-Medical.bsm"]
+
+
+def test_wall_safes_are_numbered_after_every_other_safe():
+    medical = {"map": "1-Medical.bsm", "world": [spot("SecurityCrate_WallSafe", "SecurityCrate_WallSafe0", ["Credits"]),
+                                                 *MEDICAL["world"]]}
+    rows, unknown, duplicates = candidates([FISHERIES, medical])
+    names = by_name(rows)
+    assert names["Medical Pavilion Safe 1"]["id"] == 6101  # as before wall safes were known
+    assert names["Neptune's Bounty Safe 2"]["id"] == 6103
+    wall = names["Medical Pavilion Wall Safe 1"]
+    assert (wall["id"], wall["kind"], wall["actor"]) == (6104, "safe", "SecurityCrate_WallSafe0")
+    assert unknown == [] and duplicates == []

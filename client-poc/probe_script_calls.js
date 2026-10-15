@@ -99,8 +99,9 @@
  *   scriptApi()       the functions of the script system's own classes (Script, the Action base, anything named
  *                     like a script or variable manager), to find a way to set a story flag through the game
  *   pickups()         the item pickups lying in this level (plasmids, tonics, weapons), nearest first, numbered,
- *                     with what each gives (an item class of its own or of its LootSlot) and the LootSlot's
- *                     settings; pickups('Safe|Lockbox') for other kinds
+ *                     with what each gives (an item class of its own, its LootSlot's or the LootSlot's LootSpec)
+ *                     and the LootSlot's and LootSpec's settings with their addresses; pickups('Safe|Lockbox') for
+ *                     other kinds
  *   pickupItem(0, 'chips')  make pickup 0 of pickups() give chips instead, to see whether a world item can be
  *                     swapped like a Garden line. Only an item-class setting is written (2026-10-15.6: .5 wrote
  *                     CollisionDamageClass and crashed). pickupItem(0) puts it back
@@ -110,7 +111,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.6';
+const PROBE_VERSION = '2026-10-15.7';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4207,7 +4208,7 @@ globalThis.globals = function (name, deep) {
     const target = property === undefined ? null : pointerAt(info.add(property.offset));
     log(`  LevelInfo ${nameOfObject(info)}: GlobalTravelContainer = ${target === null ? '?' : objectText(target.toUInt32())}`);
     if (target !== null && !target.isNull() && readable(target, 0x40) && classNameOf(target) !== null) {
-      allValues(target, '    ');
+      ownValues(target, '    ', 0); // its own settings, below Actor
     }
   }
   if (deep !== true) {
@@ -4450,10 +4451,33 @@ function lootSlotsOf(object) {
   return out;
 }
 
-// What an object gives: an item class among its own settings, else among its LootSlot's.
+// The objects an object holds in one of its ObjectProperty settings, by setting name.
+function heldObject(object, name) {
+  const learned = learnAnyClass(classNameOf(object));
+  const property = learned.error ? undefined : learned.properties.get(name);
+  if (property === undefined || property.kind !== 'ObjectProperty') {
+    return null;
+  }
+  const value = pointerAt(object.add(property.offset));
+  return value !== null && !value.isNull() && readable(value, 0x40) && classNameOf(value) !== null ? value : null;
+}
+
+// What an object gives: an item class among its own settings, else its LootSlot's, else the LootSlot's LootSpec
+// (a LootItemSpecification; in game 2026-10-15 a LootSlot held only LootSpec and Loot = None).
 function itemFieldsOf(object) {
   const own = classValued(object).filter((c) => c.item);
-  return own.length ? own : lootSlotsOf(object).flatMap((slot) => classValued(slot).filter((c) => c.item));
+  if (own.length) {
+    return own;
+  }
+  const out = [];
+  for (const slot of lootSlotsOf(object)) {
+    out.push(...classValued(slot).filter((c) => c.item));
+    const spec = heldObject(slot, 'LootSpec');
+    if (spec !== null) {
+      out.push(...classValued(spec).filter((c) => c.item));
+    }
+  }
+  return out;
 }
 
 function isActor(object) {
@@ -4507,6 +4531,11 @@ globalThis.pickups = function (pattern) {
     for (const slot of lootSlotsOf(object)) {
       log(`    its ${classNameOf(slot)} ${nameOfObject(slot)} at ${slot}, every setting:`);
       allValues(slot, '      ');
+      const spec = heldObject(slot, 'LootSpec');
+      if (spec !== null) {
+        log(`    its LootSpec ${classNameOf(spec)} ${nameOfObject(spec)} at ${spec}, every setting:`);
+        allValues(spec, '      ');
+      }
     }
   }
   return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}` +
