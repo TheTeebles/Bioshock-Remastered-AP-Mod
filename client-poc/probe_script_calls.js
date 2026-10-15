@@ -4180,6 +4180,9 @@ function researchValues() {
       continue;
     }
     const owner = outerNameOf(object);
+    if (!/^\w+$/.test(owner)) {
+      continue; // its class could not be told
+    }
     if (!owners.has(owner)) {
       owners.set(owner, new Set());
     }
