@@ -12,7 +12,7 @@ from .web_world import BioShockWebWorld
 WORLD_VERSION = "0.1.32"
 RESEARCH_CAMERA = "Research Camera"
 SLOT_DATA_VERSION = 5  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
-# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2) and safe_checks
+# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2), safe_checks, research_checks (0/1/2)
 
 
 class BioShockWorld(World):
@@ -37,7 +37,8 @@ class BioShockWorld(World):
     ut_can_gen_without_yaml = True
     TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
                        "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
-                       "start_with_research_camera", "world_item_checks", "safe_checks")
+                       "start_with_research_camera", "world_item_checks", "safe_checks",
+                       "research_checks")
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -85,8 +86,9 @@ class BioShockWorld(World):
             # The game gives these no more, so one left out of the pool could never be had.
             raise OptionError(
                 f"{self.player_name}: {required} items come only from the multiworld (the 12 weapon upgrades with "
-                "Power to the People checks on, the shuffled pickups with World Item Checks set to 'shuffled') and "
-                f"need as many checks that may hold useful items, but these options leave room for {max(room, 0)}. "
+                "Power to the People checks on, the shuffled pickups with World Item Checks set to 'shuffled', the "
+                "9 research tonics with Research Checks on) and need as many checks that may hold useful items, but "
+                f"these options leave room for {max(room, 0)}. "
                 "Filler-only collectibles and locations under exclude_locations do not count. Turn on more kinds of "
                 "checks, set audio diaries to 'all' or exclude fewer locations.")
 

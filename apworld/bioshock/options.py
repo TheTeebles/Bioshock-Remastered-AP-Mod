@@ -130,6 +130,27 @@ class SafeChecks(Toggle):
     display_name = "Safe Checks"
 
 
+class ResearchChecks(Choice):
+    """
+    Experimental, not tried in game yet. Researching enemies with the Research Camera sends checks: each of the 11
+    subjects (the five kinds of splicer, Bouncers, Rosies, Little Sisters, Security Bots, Turrets and Security
+    Cameras) has 5 research levels.
+
+    Off: research works as in the game.
+    First Level: the first research level of each subject is a check (11). One photo is enough.
+    All: every research level is a check (55). Levels 2 to 5 take many photos, so they never hold anything needed
+    to progress.
+
+    With research checks on, the 9 gene tonics that research gives (SportBoost, Scrounger, Natural Camouflage and
+    others) come from the multiworld instead, and research gives a bag of chips in their place.
+    """
+    display_name = "Research Checks"
+    option_off = 0
+    option_first_level = 1
+    option_all = 2
+    default = option_off
+
+
 class LevelCompletionChecks(DefaultOnToggle):
     """Finishing each level for the first time sends a check (12 checks)."""
     display_name = "Level Completion Checks"
@@ -168,6 +189,7 @@ class BioShockOptions(PerGameCommonOptions):
     shop_checks: ShopChecks
     world_item_checks: WorldItemChecks
     safe_checks: SafeChecks
+    research_checks: ResearchChecks
     start_with_research_camera: StartWithResearchCamera
     trap_chance: TrapChance
     death_link: DeathLink
@@ -177,7 +199,8 @@ class BioShockOptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
-                           AudioDiaryChecks, ShopChecks, WorldItemChecks, SafeChecks]),
+                           AudioDiaryChecks, ShopChecks, WorldItemChecks, SafeChecks,
+                           ResearchChecks]),
     OptionGroup("Item Pool", [StartWithResearchCamera, TrapChance]),
 ]
 

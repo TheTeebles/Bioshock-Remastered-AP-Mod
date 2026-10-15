@@ -9,7 +9,7 @@ from .data import (
     WORLD_SPOTS, LocationCategory, LocationData,
 )
 from .items import BioShockItem
-from .options import CollectibleChecks, ShopChecks, WorldItemChecks
+from .options import CollectibleChecks, ResearchChecks, ShopChecks, WorldItemChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -50,12 +50,17 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
         LocationCategory.WORLD_ITEM: options.world_item_checks != WorldItemChecks.option_off and not (
             options.start_with_research_camera and location.id == RESEARCH_CAMERA_LOCATION),
         LocationCategory.SAFE: bool(options.safe_checks),
+        LocationCategory.RESEARCH: options.research_checks == ResearchChecks.option_all or (
+            options.research_checks == ResearchChecks.option_first_level and location.id % 10 == 1),
     }[location.category]
 
 
 def may_hold_progression(location: LocationData) -> bool:
     """False for checks that can hold useful items but nothing needed to progress. Shop purchases cost ADAM, and
-    how much a player has depends on how they play, so a shop check might never be bought."""
+    how much a player has depends on how they play, so a shop check might never be bought. Research past the first
+    level takes many photos, which is a grind nobody should need."""
+    if location.category == LocationCategory.RESEARCH:
+        return location.id % 10 == 1
     return location.category != LocationCategory.GATHERERS_GARDEN
 
 

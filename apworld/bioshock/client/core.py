@@ -72,6 +72,7 @@ class BridgeCore:
         self.identity: tuple[Any, ...] | None = None  # (seed, team, slot) the saved state belongs to
         self.access_items: dict[str, str | None] = {}
         self.world_items_shuffled = False
+        self.research_awards_shuffled = False
         self.station_touch = False  # stations open no menu: the agent is asked to skip it
         self.shop_checks = False  # Gatherer's Garden lines are checks: they sell stand-ins for multiworld items
         self.open_rapture = False  # access items open travel itself: the agent is told where the bathysphere goes
@@ -115,6 +116,7 @@ class BridgeCore:
         self._ignore_death_until = 0.0
         self._touch_command_id: int | None = None  # the agent has been asked to skip station menus, under this id
         self._pickups_command_id: int | None = None  # ... and to empty the shuffled pickups, under this id
+        self._research_command_id: int | None = None  # ... and to empty the research awards, under this id
         self._garden_command_id: int | None = None  # the last Garden lines sent to the agent went under this id
         self._garden_sent: str | None = None  # ... and were these, so the same lines are not sent again
         self._travel_command_id: int | None = None  # the last travel rules sent to the agent went under this id
@@ -185,6 +187,7 @@ class BridgeCore:
                          "Update the apworld so the client matches.", warning=True)
         self.access_items = dict(slot_data.get("level_access_items") or {})
         self.world_items_shuffled = slot_data.get("world_item_checks", 0) == 2  # shuffled: pickups give chips
+        self.research_awards_shuffled = bool(slot_data.get("research_checks", 0))  # research gives chips
         self.station_touch = bool(slot_data.get("station_touch", False))
         self.shop_checks = bool(slot_data.get("shop_checks", 0))
         self.open_rapture = slot_data.get("level_access") == OPEN_RAPTURE
@@ -258,6 +261,7 @@ class BridgeCore:
         self._pending_kill = False
         self._touch_command_id = None  # a new agent is asked again
         self._pickups_command_id = None
+        self._research_command_id = None
         self._garden_command_id = None
         self._garden_sent = None
         self._travel_command_id = None
@@ -301,6 +305,9 @@ class BridgeCore:
             if not event.ok:
                 self._notice(f"The plasmids and tonics lying in the levels still give themselves as well: "
                              f"{event.reason}.", warning=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._research_command_id:
+            if not event.ok:
+                self._notice(f"Research still gives its own tonics as well: {event.reason}.", warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._garden_command_id:
             if not event.ok:
                 self._notice(f"The Gatherer's Gardens here still sell their own genes: {event.reason}.",
@@ -338,6 +345,7 @@ class BridgeCore:
         self._send_goal_if_ready()
         self._ask_for_touch()
         self._ask_for_empty_pickups()
+        self._ask_for_empty_research()
         self._scout_gardens()
         self._send_garden_lines()
         self._send_travel_rules()
@@ -571,6 +579,9 @@ class BridgeCore:
                          if (map_name, actor) in game_data.CONTAINER_LOCATION)
         found.update(game_data.WEAPON_LOCATION[weapon] for weapon in state.weapons or ()
                      if weapon in game_data.WEAPON_LOCATION)
+        for subject, level in (state.research or {}).items():
+            found.update(game_data.RESEARCH_LOCATION[subject, n] for n in range(1, level + 1)
+                         if (subject, n) in game_data.RESEARCH_LOCATION)
         return found
 
     def _send_ready_checks(self) -> None:
@@ -738,6 +749,15 @@ class BridgeCore:
         offer = {"placeholder": game_data.PICKUP_PLACEHOLDER, "maps": game_data.SHUFFLED_PICKUPS}
         self._out.append(RunAction(self._pickups_command_id,
                                    "empty_pickups " + json.dumps(offer, separators=(",", ":"))))
+
+    def _ask_for_empty_research(self) -> None:
+        """With research checks, ask each agent once to make research give the placeholder instead of tonics."""
+        if not (self.research_awards_shuffled and self.connected and self.agent_attached) \
+                or self._research_command_id is not None:
+            return
+        self._research_command_id = self._next_command_id
+        self._next_command_id += 1
+        self._out.append(RunAction(self._research_command_id, "empty_research_awards"))
 
     def _garden_locations(self) -> list[int]:
         return [location for location in game_data.GARDEN_LOCATION.values() if location in self.valid_locations]

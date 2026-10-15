@@ -6,9 +6,10 @@ from BaseClasses import Item, ItemClassification
 
 from .data import (
     ACCESS_ITEMS, CHAPTER_ACCESS_ITEMS, CHAPTER_OF_LEVEL, CHARACTER_UPGRADES, LEVEL_BY_NAME, FILLER_ITEMS, GAME_NAME,
-    ITEM_TABLE, PLASMIDS, TONICS, TRAP_ITEMS, WEAPON_UPGRADES, ItemKind, Source, shuffled_world_pickups,
+    ITEM_TABLE, PLASMIDS, RESEARCH_AWARDS, TONICS, TRAP_ITEMS, WEAPON_UPGRADES, ItemKind, Source,
+    shuffled_world_pickups,
 )
-from .options import LevelAccess, WorldItemChecks
+from .options import LevelAccess, ResearchChecks, WorldItemChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -96,9 +97,15 @@ def world_pickup_items(world: BioShockWorld | None = None) -> list[str]:
     return [_PLASMID_ITEM.get(spot.vanilla, spot.vanilla) for spot in shuffled_world_pickups()]
 
 
+def research_awards_shuffled(world: BioShockWorld) -> bool:
+    """With research checks, research gives chips and its tonics come from the multiworld."""
+    return world.options.research_checks != ResearchChecks.option_off
+
+
 def required_useful_items(world: BioShockWorld) -> list[str]:
     """Useful items the game no longer gives by itself, so the pool must hold every one of them."""
-    return (list(WEAPON_UPGRADES) if stations_shuffled(world) else []) + world_pickup_items(world)
+    return ((list(WEAPON_UPGRADES) if stations_shuffled(world) else []) + world_pickup_items(world)
+            + (list(RESEARCH_AWARDS) if research_awards_shuffled(world) else []))
 
 
 def useful_item_groups(world: BioShockWorld | None = None) -> tuple[list[str], ...]:
@@ -111,8 +118,8 @@ def useful_item_groups(world: BioShockWorld | None = None) -> tuple[list[str], .
     """
     plasmids = [plasmid.item_name for plasmid in PLASMIDS for _, source, _ in plasmid.levels if source != Source.WORLD]
     upgrades = [name for name, count in CHARACTER_UPGRADES for _ in range(count)]
-    tonics = [tonic.name for tonic in TONICS if tonic.source != Source.WORLD]
     required = required_useful_items(world) if world is not None else []
+    tonics = [tonic.name for tonic in TONICS if tonic.source != Source.WORLD and tonic.name not in required]
     return required, plasmids, upgrades, tonics
 
 

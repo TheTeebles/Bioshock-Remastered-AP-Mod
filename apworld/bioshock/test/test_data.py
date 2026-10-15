@@ -39,6 +39,7 @@ class TestGameData(unittest.TestCase):
             LocationCategory.GATHERERS_GARDEN: 273,
             LocationCategory.WORLD_ITEM: 38,
             LocationCategory.SAFE: 64,
+            LocationCategory.RESEARCH: 55,
         }))
         names = [location.name for location in LOCATION_TABLE]
         ids = [location.id for location in LOCATION_TABLE]

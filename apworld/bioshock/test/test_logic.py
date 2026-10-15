@@ -60,7 +60,7 @@ class PoolTestBase(BioShockTestBase):
 class TestAccessItems(BioShockTestBase):
     # Every kind of check, so all are tested
     options = {"level_access": "access_items", "shop_checks": True, "world_item_checks": "keep_items",
-               "safe_checks": True, "start_with_research_camera": False}
+               "safe_checks": True, "start_with_research_camera": False, "research_checks": "all"}
 
     def test_default_pool(self) -> None:
         self.assertEqual(len(self.multiworld.get_unfilled_locations(self.player)) + 1,  # +1 for the goal event

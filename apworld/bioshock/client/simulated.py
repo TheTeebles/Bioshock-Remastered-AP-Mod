@@ -14,7 +14,7 @@ from typing import Any
 
 from ..data import (
     AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE, POWER_TO_THE_PEOPLE_PER_LEVEL,
-    STORY_MILESTONES, WELCOME_TO_RAPTURE, WORLD_SPOTS, SpotKind,
+    RESEARCH_LEVELS, RESEARCH_SUBJECTS, STORY_MILESTONES, WELCOME_TO_RAPTURE, WORLD_SPOTS, SpotKind,
 )
 from .game_data import MAP_LEVEL, WEAPON_CLASS
 from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied, TravelRedirected
@@ -66,6 +66,8 @@ class SimulatedGame:
         self.pickups_taken: dict[str, set[str]] = {}  # map -> plasmid and tonic pickups taken there (actor names)
         self.containers_opened: dict[str, set[str]] = {}  # map -> safes and lockboxes opened there
         self.empty_pickups: dict[str, Any] | None = None  # the pickups the client said should give the placeholder
+        self.research: dict[str, int] = {}  # research subject (the game's name) -> level reached
+        self.research_awards_emptied = False  # research gives the placeholder, as the client asks with research checks
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -107,6 +109,7 @@ class SimulatedGame:
             quests=frozenset(self.quests),
             pickups_taken={name: frozenset(actors) for name, actors in self.pickups_taken.items()},
             containers_opened={name: frozenset(actors) for name, actors in self.containers_opened.items()},
+            research=dict(self.research),
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -138,6 +141,10 @@ class SimulatedGame:
             return
         if action.startswith("empty_pickups "):
             self._events.append(ActionResult(command_id, False, "the simulated game does not support it"))
+            return
+        if action == "empty_research_awards" and action not in self.unsupported_actions:  # a setting as well
+            self.research_awards_emptied = True
+            self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is
             self.movies = json.loads(action.partition(" ")[2])
@@ -277,6 +284,23 @@ class SimulatedGame:
         self.pickups_taken.setdefault(spot.map, set()).add(spot.actor)
         emptied = (self.empty_pickups or {}).get("maps", {}).get(spot.map, ())
         return self.empty_pickups["placeholder"] if spot.actor in emptied else spot.vanilla
+
+    def photograph(self, text: str) -> str:
+        """Research the subject whose name contains `text` one level further. Returns what happened."""
+        wanted = text.strip().lower()
+        matches = [subject for subject in RESEARCH_SUBJECTS if wanted in subject.name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"'{text.strip()}' is not one research subject. Subjects: "
+                             + ", ".join(subject.name for subject in RESEARCH_SUBJECTS))
+        subject = matches[0]
+        level = self.research.get(subject.key, 0) + 1
+        if level > RESEARCH_LEVELS:
+            raise ValueError(f"{subject.name} is researched to the end.")
+        self.research[subject.key] = level
+        award = dict(subject.awards).get(level)
+        if award is not None:
+            award = "a bag of chips" if self.research_awards_emptied else award
+        return f"{subject.name} research level {level}" + (f", which gives {award}" if award else "")
 
     def reach_milestone(self, level: str | None = None) -> str:
         """Do the next story milestone of a level. Returns what it was."""

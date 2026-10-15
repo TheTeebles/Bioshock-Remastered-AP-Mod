@@ -27,8 +27,9 @@ from dataclasses import dataclass
 
 from ..data import (
     ARCADIA, FARMERS_MARKET, FORT_FROLIC, GATHERERS_GARDEN_LINES_PER_LEVEL, ITEM_TABLE, LEVEL_COMPLETION_LEVELS,
-    KEPT_WORLD_PICKUPS, LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, STORY_MILESTONES, TONICS,
-    WORLD_SPOTS, ItemKind, LocationCategory, Source, SpotKind, level_completion_location_name, story_location_name,
+    KEPT_WORLD_PICKUPS, LEVEL_NAMES, LOCATION_TABLE, PLASMIDS, PROVING_GROUNDS, RESEARCH_LEVELS, RESEARCH_SUBJECTS,
+    STORY_MILESTONES, TONICS, WORLD_SPOTS, ItemKind, LocationCategory, Source, SpotKind,
+    level_completion_location_name, research_location_id, story_location_name,
 )
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -373,6 +374,11 @@ def _shuffled_pickups() -> dict[str, tuple[str, ...]]:
 # With World Item Checks shuffled, these pickups give the placeholder instead: map -> actor names.
 PICKUP_PLACEHOLDER = "chips"  # the class they give, as the Gatherer's Garden lines that sell other items do
 SHUFFLED_PICKUPS: dict[str, tuple[str, ...]] = _shuffled_pickups()
+# (the game's ResearchName, research level) -> location
+RESEARCH_LOCATION: dict[tuple[str, int], int] = {
+    (subject.key, level): research_location_id(index, level)
+    for index, subject in enumerate(RESEARCH_SUBJECTS) for level in range(1, RESEARCH_LEVELS + 1)
+}
 # The weapon classes the player holds -> location: holding one for the first time is the check.
 WEAPON_LOCATION: dict[str, int] = {
     WEAPON_CLASS[spot.vanilla].rsplit(".", 1)[-1]: spot.id for spot in WORLD_SPOTS if spot.kind == SpotKind.WEAPON

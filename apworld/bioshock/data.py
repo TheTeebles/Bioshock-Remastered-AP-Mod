@@ -602,6 +602,46 @@ def shuffled_world_pickups() -> list[WorldSpot]:
             if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC) and spot.vanilla not in KEPT_WORLD_PICKUPS]
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Research: photographing enemies with the Research Camera
+# --------------------------------------------------------------------------------------------------------------------
+
+class ResearchSubject(NamedTuple):
+    key: str  # the game's ResearchName
+    name: str  # as the game shows it
+    level: str  # a level where it is always found, to photograph it there
+    awards: tuple[tuple[int, str], ...]  # (research level, the tonic it gives) in vanilla
+
+
+RESEARCH_LEVELS = 5  # NUM_RESEARCH_LEVELS
+# ShockPlayer's ResearchTrackData and ResearchLevels, from the exported ShockPlayer.uc (uploaded 2026-10-15). The
+# levels are where each subject is surely found: Neptune's Bounty, where the camera lies and Atlas has you photograph
+# Spider Splicers; Nitro and Houdini Splicers only from Hephaestus, to be safe.
+RESEARCH_SUBJECTS: tuple[ResearchSubject, ...] = (
+    ResearchSubject("MeleeThug", "Thuggish Splicer", NEPTUNES_BOUNTY, ((2, "SportBoost"), (4, "SportBoost 2"))),
+    ResearchSubject("RangedAggressor", "Leadhead Splicer", NEPTUNES_BOUNTY,
+                    ((2, "Scrounger"), (4, "Static Discharge 2"))),
+    ResearchSubject("Grenadier", "Nitro Splicer", HEPHAESTUS, ()),
+    ResearchSubject("CeilingCrawler", "Spider Splicer", NEPTUNES_BOUNTY, ((4, "Extra Nutrition 3"),)),
+    ResearchSubject("Assassin", "Houdini Splicer", HEPHAESTUS, ((2, "Natural Camouflage"),)),
+    ResearchSubject("Bouncer", "Bouncer", NEPTUNES_BOUNTY, ((2, "Wrench Jockey 2"),)),
+    ResearchSubject("Rosie", "Rosie", NEPTUNES_BOUNTY, ((2, "Photographer's Eye 2"),)),
+    ResearchSubject("SecurityBot", "Security Bot", NEPTUNES_BOUNTY, ((2, "Security Expert 2"),)),
+    ResearchSubject("Gatherer", "Little Sister", NEPTUNES_BOUNTY, ()),
+    ResearchSubject("Turret", "Turret", NEPTUNES_BOUNTY, ()),
+    ResearchSubject("SecurityCamera", "Security Camera", NEPTUNES_BOUNTY, ()),
+)
+RESEARCH_AWARDS: tuple[str, ...] = tuple(tonic for subject in RESEARCH_SUBJECTS for _, tonic in subject.awards)
+
+
+def research_location_id(subject_index: int, level: int) -> int:
+    return 9000 + 10 * subject_index + level
+
+
+def research_location_name(subject: ResearchSubject, level: int) -> str:
+    return f"Research: {subject.name} {level}"
+
+
 class LocationData(NamedTuple):
     name: str
     id: int
@@ -619,9 +659,10 @@ class LocationCategory:
     GATHERERS_GARDEN = "Gatherer's Garden"
     WORLD_ITEM = "World Items"
     SAFE = "Safes"
+    RESEARCH = "Research"
 
     ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN, WORLD_ITEM,
-           SAFE)
+           SAFE, RESEARCH)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -668,6 +709,11 @@ def _build_location_table() -> tuple[LocationData, ...]:
             table.append(LocationData(gatherers_garden_location_name(level, vanilla_item),
                                       8000 + GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(level) + line,
                                       level, LocationCategory.GATHERERS_GARDEN, False))
+
+    for index, subject in enumerate(RESEARCH_SUBJECTS):
+        for level in range(1, RESEARCH_LEVELS + 1):
+            table.append(LocationData(research_location_name(subject, level), research_location_id(index, level),
+                                      subject.level, LocationCategory.RESEARCH, False))
 
     return tuple(table)
 
