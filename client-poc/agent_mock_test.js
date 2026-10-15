@@ -1776,28 +1776,6 @@ const tests = {
     assert.deepStrictEqual(model.unlockedOf(manager), [1]);
     assert.match(state(r).travelTrouble, /did not unlock bathysphere destination 0/);
   },
-  'with no bathysphere list yet, the game is asked to make one before the lever is pulled': () => {
-    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
-    r.poke(game.pawn + 0x30, model.playerClass); model.playerUnlocks(); model.nameIndex('1-Medical');
-    let made = null;
-    r.onScriptCall = (self, fn) => {
-      if (fn === model.unlockBathysphereDestination && made === null) {
-        assert.strictEqual(self, game.pawn);
-        assert.strictEqual(r.memory.get(r.scriptCalls.at(-1).parms), model.nameIndex('1-Medical'));
-        made = model.bathysphere([1], 8); // the game makes it, with its own first destination
-      }
-    };
-    r.load(); r.frames(2);
-    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '4-recreation' }], redirects: [] });
-    r.frames(10);
-    assert.strictEqual(r.scriptCalls.length, 0, 'no call of the game\'s to copy yet');
-    r.gameEvent(game.hud, model.tick); r.frames(40);
-    assert.notStrictEqual(made, null);
-    assert.ok(r.logged('had the game make the bathysphere list in 1-medical'));
-    assert.deepStrictEqual(model.unlockedOf(made), [0, 3], 'kept to the stops before the lever is pulled');
-    assert.strictEqual(r.scriptCalls.filter((c) => c.fn === model.unlockBathysphereDestination).length, 1, 'once');
-    assert.strictEqual(state(r).travelTrouble, null);
-  },
   "a stop that stands in for another level points Apollo Square's line there, and back": () => {
     for (const withNote of [true, false]) {
       const r = makeRuntime(); r.game(); const model = r.objectModel();

@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.13';
+const AGENT_VERSION = '2026-10-15.14';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1629,9 +1629,6 @@ function watchObjects(map, now, level) {
     scan.gardens = [];
     // A pass a save load cut into lists objects of two levels: wait for the next one.
     travel.managers = scan.unsure ? [] : scan.bathyspheres;
-    if (!scan.unsure) {
-      travel.scannedLevel = scan.level;
-    }
     scan.bathyspheres = [];
     travel.changes = scan.unsure ? [] : scan.changes;
     scan.changes = [];
@@ -2711,8 +2708,6 @@ const travel = {
   borrowed: new Set(), // their strings already swapped into a level change
   noteFields: new Map(), // class -> offset of its string
   unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
-  scannedLevel: null, // the level object a whole pass over the objects (not cut by a save load) has been made in
-  managerAsked: false, // whether the game was asked to make this level's bathysphere manager
   lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
   flagsSet: new Set(), // `name=value` story flags already set, this attachment
   level: null, // the level object the lists above are about
@@ -2721,8 +2716,6 @@ const travel = {
 // The level object changed (another map, or a save loaded in the same one): its travel objects are gone.
 function forgetTravelObjects() {
   travel.managers = [];
-  travel.scannedLevel = null;
-  travel.managerAsked = false;
   travel.changes = [];
   travel.notes = [];
   travel.borrowed = new Set();
@@ -2975,50 +2968,6 @@ function unlockByGame(manager, destination, entry) {
   }
   callScript(manager, fn, parms);
   return true;
-}
-
-// The game makes a level's BathysphereManager only when the player first pulls the lever (probe 2026-10-15: none
-// before; the lever's script calls ShockPlayer.UnlockBathysphereDestination, which makes it, then ShowBathysphereUI
-// at once), so the first menu showed the level's own list before the agent could change it. In Open Rapture the agent
-// has the game make it early: once a whole pass finds no manager in a map with a stop, it calls
-// UnlockBathysphereDestination itself with a stop the client wants anyway. Game thread.
-const UNLOCK_BATHYSPHERE_PARMS = 0x100; // room for the function's parameters and locals, zeroed
-function makeBathysphereManager(pawn, map) {
-  const rules = travel.rules;
-  if (rules === null || rules.off || travel.managerAsked || travel.managers.length > 0 || pawn === null ||
-      travel.level === null || travel.scannedLevel !== travel.level) {
-    return;
-  }
-  const here = normalizeMap(map);
-  if (!rules.stops.some((s) => s.map === here)) {
-    return; // no bathysphere in this map
-  }
-  const trouble = scriptCallsTrouble();
-  if (trouble !== null) {
-    travel.managerAsked = true;
-    travelTrouble(`could not have the game make the bathysphere list early: ${trouble}`);
-    return;
-  }
-  const stop = rules.stops.map((s) => ({ s, index: indexOfName(mapFileName(s.map)) })).find((x) => x.index >= 0);
-  if (stop === undefined || !readyToCallScript()) {
-    return; // no stop's name is in the game's name table yet, or no call to copy yet: a later tick
-  }
-  travel.managerAsked = true;
-  const fn = findFunction(pawn, 'UnlockBathysphereDestination');
-  const param = fn === null ? null : findProperty(fn, 'MapName', 'NameProperty');
-  if (fn === null || param === null || param.offset + 8 > UNLOCK_BATHYSPHERE_PARMS) {
-    travelTrouble('could not have the game make the bathysphere list early: ' +
-      (fn === null ? 'the player has no UnlockBathysphereDestination' : 'it takes no MapName'));
-    return;
-  }
-  const parms = Memory.alloc(UNLOCK_BATHYSPHERE_PARMS);
-  for (let at = 0; at < UNLOCK_BATHYSPHERE_PARMS; at += 4) {
-    parms.add(at).writeS32(0);
-  }
-  parms.add(param.offset).writeS32(stop.index);
-  callScript(pawn, fn, parms);
-  parms.isNull();
-  log(`Open Rapture: had the game make the bathysphere list in ${here} (unlocking ${stop.s.map}), before the lever`);
 }
 
 // A bathysphere line as the level made it: { map, name (its MapName's two words), title, to, undoTitle }. Stops are
@@ -3931,11 +3880,6 @@ function watchPlayer(level, info, map, now) {
     return;
   }
   carryOutKills(body.pawn, now);
-  try {
-    makeBathysphereManager(body.pawn, map);
-  } catch (e) {
-    travelTrouble(e.message);
-  }
   carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
