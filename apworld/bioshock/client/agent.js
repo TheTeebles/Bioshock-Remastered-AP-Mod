@@ -1714,8 +1714,8 @@ function readStations(map) {
 // Physical, Engineering and Weapons kinds). Taking one deletes it, the way taking a diary deletes its LogPickup
 // (bDeleteMe, seen 2026-10-08). Only actors the player's level lists count, so nothing left over from the last level
 // does. After each pass over the objects the agent compares the names of the pickups lying in the level with the
-// last passes: a name that two passes in a row miss is a pickup taken. Names, not addresses, because loading a save makes every
-// object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
+// last passes: a name that two passes in a row miss is a pickup taken. Names, not addresses, because loading a save
+// makes every object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
 // the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
 // before the agent was watching. Not tried in game yet.
 // A safe is a SecurityCrate_Safe, a lockbox a Lockbox. Both are AnimatedContainers, whose bIsOpened turns true when
