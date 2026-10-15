@@ -958,6 +958,8 @@ class TestTranslation(unittest.TestCase):
         self.assertFalse(state_from_agent(dict(base, map="museum")).ready, "not in a Challenge Room or the museum")
         self.assertFalse(state_from_agent(dict(base, map="0-Lighthouse")).ready, "not before Rapture")
         self.assertFalse(state_from_agent(dict(base, map="Entry.bsm")).ready)
+        self.assertFalse(state_from_agent(dict(base, holdItems=True)).ready, "the research screen is opening")
+        self.assertTrue(state_from_agent(dict(base, holdItems=False)).ready)
         self.assertTrue(state_from_agent(dict(base, map="7-BossFight")).ready)
         self.assertTrue(state_from_agent(dict(base, map="9-newlevel")).ready, "an unknown name is not held against it")
         self.assertIsNone(state_from_agent(dict(base, map=None)).map)

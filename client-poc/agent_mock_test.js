@@ -419,8 +419,14 @@ function makeRuntime({
     const all = runtime.object(0x10000); // the table of all objects
     let objectCount = 0;
     poke(BASE + 0x139042C, all);
+    // An object's name is a name and a number, as in the engine: "SecurityCrate_WallSafe2" is the name
+    // "SecurityCrate_WallSafe" with number 3 (0 is no number).
+    const rename = (at, text) => {
+      const split = /^(.*?[^\d])(0|[1-9]\d*)$/.exec(text);
+      poke(at + 0x28, name(split ? split[1] : text)); poke(at + 0x2C, split ? Number(split[2]) + 1 : 0);
+    };
     const make = (text, cls, size = 0x200) => {
-      const at = runtime.object(size); poke(at + 0x28, name(text)); poke(at + 0x30, cls);
+      const at = runtime.object(size); rename(at, text); poke(at + 0x30, cls);
       poke(all + 4 * objectCount, at); objectCount++; poke(BASE + 0x1390430, objectCount);
       return at;
     };
@@ -678,7 +684,11 @@ function makeRuntime({
     fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
     const crateClass = cls('SecurityCrate', containerClass);
     const containerKinds = { SecurityCrate_Safe: cls('SecurityCrate_Safe', crateClass),
-      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass), Lockbox: cls('Lockbox', containerClass) };
+      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass), Lockbox: cls('Lockbox', containerClass),
+      // Lockboxes that are not AnimatedContainers: one with another of the open flags, one with none of them.
+      SearchedLockbox: cls('SearchedLockbox', cls('Lockbox', actor)), BareLockbox: cls('BareLockbox', cls('Lockbox', actor)) };
+    fields(containerKinds.SearchedLockbox, [['bCanBeCarried', boolProperty, 0x5E0], ['bHasBeenSearched', boolProperty, 0x5E0]]);
+    fields(containerKinds.BareLockbox, [['bJiggles', boolProperty, 0x5E0]]);
     const container = (className, actorName) => {
       const at = make(actorName, containerKinds[className], 0x600); poke(at + 0x5DC, 0);
       if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
@@ -715,7 +725,7 @@ function makeRuntime({
       rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
-    return { nameIndex: name, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { nameIndex: name, rename, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -2283,7 +2293,7 @@ const tests = {
     for (let i = 0; i < count; i++) { r.poke(big + 4 * i, r.memory.get(all + 4 * i)); }
     r.poke(BASE + 0x139042C, big); r.poke(BASE + 0x1390430, 40000);
     r.load(); r.frames(25);
-    r.poke(reused + 0x28, model.nameIndex('ActivePlasmidPickup2'));
+    model.rename(reused, 'ActivePlasmidPickup2');
     const slot = r.memory.get(reused + 0x520);
     r.poke(r.memory.get(slot + 0x40) + 0x4C, incinerate); r.poke(r.memory.get(slot + 0x44) + 0x50, incinerate);
     r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
@@ -2318,6 +2328,18 @@ const tests = {
     r.string(game.level + 0x7C, '2-fisheries'); r.frames(10); // another level: what was open stays reported
     assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
     assert.strictEqual(state(r).worldTrouble, null);
+  },
+  'a lockbox without bIsOpened is followed by another open flag, and one with none lists its flags': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const searched = model.container('SearchedLockbox', 'Lockbox3');
+    model.container('BareLockbox', 'Lockbox4');
+    r.load(); r.frames(10);
+    r.poke(searched + 0x5E0, 1); r.frames(10); // bCanBeCarried: not open
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
+    r.poke(searched + 0x5E0, 3); r.frames(10); // bHasBeenSearched, the second flag in the word
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox3"]}');
+    assert.ok(r.logged('objects of class BareLockbox have no bIsOpened or'));
+    assert.ok(r.logged('their flags: bJiggles (BareLockbox)'));
   },
   'shuffled pickups give the placeholder, and the kept ones their own item': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
@@ -2365,11 +2387,13 @@ const tests = {
     r.load(); r.frames(15);
     assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":0}');
     assert.strictEqual(state(r).researchTable.length, 4);
+    assert.strictEqual(state(r).holdItems, false, 'levels found on attaching open no research screen');
     assert.strictEqual(JSON.stringify(state(r).researchTable[1]),
       '{"name":"ThuggishSplicer","level":2,"score":25,"award":"SportBoost"}');
     r.poke(tracks + 16 + 8, 20); r.frames(15); // a photo of a Bouncer
     assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":1}');
     assert.ok(r.logged('research: Bouncer at level 1'));
+    assert.strictEqual(state(r).holdItems, true, 'items wait while the research screen opens');
     assert.strictEqual(state(r).researchTrouble, null);
   },
   'research awards can be emptied': () => {

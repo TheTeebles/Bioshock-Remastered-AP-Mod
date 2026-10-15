@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.10';
+const AGENT_VERSION = '2026-10-15.11';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -577,6 +577,8 @@ function readState() {
     playerPath,
     // True while the level the player is in is ticking and the player has a controller and a body there.
     playerReady: playerLevel !== undefined,
+    // True for a moment after a research level, while the research screen opens: items wait.
+    holdItems: Date.now() < research.holdUntil,
     map: playerLevel === undefined ? null : playerLevel.map,
     levels: levels.map(
       (seen) => `${seen.map === null ? '?' : seen.map}: ${seen.actors} actors, room for ${seen.capacity}`),
@@ -1274,6 +1276,19 @@ function nameOfObject(object) {
   return object === null || object.isNull() ? null : nameOf(carefulS32(object.add(objectModel.objectName)));
 }
 
+// An actor's own name as the map files spell it: the name and its number ("SecurityCrate_WallSafe" with number 3
+// is "SecurityCrate_WallSafe2"). The engine keeps the number right after the name's index, 0 for none and the suffix
+// plus one otherwise, as the .bsm files do. In game 2026-10-15: without the number, every wall safe in Medical was
+// "SecurityCrate_WallSafe" and none matched the map's names.
+function actorNameOf(object) {
+  const name = nameOfObject(object);
+  const number = name === null ? null : carefulS32(object.add(objectModel.objectName + 4));
+  if (number === null || number < 0 || number > 0x100000) {
+    return null;
+  }
+  return number === 0 ? name : `${name}${number - 1}`;
+}
+
 function classOf(object) {
   return carefulPtr(object.add(objectModel.objectClass));
 }
@@ -1755,17 +1770,53 @@ function worldTrouble(text) {
   }
 }
 
+// The first of the wanted flags the class has (a name, or names in order of preference).
 function flagOf(cache, cls, wanted) {
   const key = cls.toString();
   if (!cache.has(key)) {
-    const flag = findBoolProperty(cls, wanted);
+    const names = Array.isArray(wanted) ? wanted : [wanted];
+    let flag = null;
+    for (const name of names) {
+      flag = findBoolProperty(cls, name);
+      if (flag !== null) {
+        break;
+      }
+    }
     if (flag === null) {
-      worldTrouble(`objects of class ${nameOfObject(cls)} have no ${wanted}`);
+      const text = `objects of class ${nameOfObject(cls)} have no ${names.join(' or ')}`;
+      log(`world items: ${text}; their flags: ${boolNamesOf(cls).join(', ') || 'none'}`); // once per class
+      if (world.trouble === null) {
+        world.trouble = text;
+      }
     }
     cache.set(key, flag);
   }
   return cache.get(key);
 }
+
+// Every flag a class has, with the class that declares it, for the log when the wanted one is missing.
+function boolNamesOf(cls) {
+  const out = [];
+  for (const owner of lineageOf(cls)) {
+    const ownerName = nameOfObject(owner);
+    if (ownerName === 'Object' || ownerName === 'Actor') {
+      continue; // the engine's own flags, the same on every actor
+    }
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000 && out.length < 60; n++) {
+      if (nameOfObject(classOf(field)) === 'BoolProperty') {
+        out.push(`${nameOfObject(field)} (${ownerName})`);
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return out;
+}
+
+// What says a safe or lockbox has been opened. Safes (AnimatedContainer) have bIsOpened, seen in game 2026-10-14.
+// Lockboxes do not (in game 2026-10-15): the others are guesses, and the log lists a class's flags when none fits.
+const OPEN_FLAGS = ['bIsOpened', 'bOpened', 'bIsOpen', 'bHasBeenOpened', 'bEverOpened', 'bWasOpened',
+  'bHasBeenSearched', 'bSearched', 'bLooted'];
 
 function flagSet(object, flag) {
   const word = flag === null ? null : carefulS32(object.add(flag.offset));
@@ -1803,7 +1854,7 @@ function noteWorldThings(map, level, pickups, containers, unsure) {
   let unnamed = false;
   for (const object of pickups) {
     const cls = classOfObject(object);
-    const name = nameOfObject(object);
+    const name = actorNameOf(object);
     if (!inLevel(object) || cls === null || flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
       continue;
     }
@@ -1853,8 +1904,8 @@ function readWorldThings(map, level) {
     if (cls === null || kindOf(cls) !== 'container') {
       continue; // gone since the scan
     }
-    const name = nameOfObject(container);
-    if (name !== null && flagSet(container, flagOf(world.openFlags, cls, 'bIsOpened')) &&
+    const name = actorNameOf(container);
+    if (name !== null && flagSet(container, flagOf(world.openFlags, cls, OPEN_FLAGS)) &&
       addTo(world.opened, map, name)) {
       log(`${name} open in ${map}`);
     }
@@ -1930,7 +1981,7 @@ function emptyPickups(map, level) {
     }
     const cls = classOfObject(object);
     // Still the pickup the pass found? A save loaded since frees it, and its memory may hold something else now.
-    if (cls === null || kindOf(cls) !== 'pickup' || nameOfObject(object) !== name ||
+    if (cls === null || kindOf(cls) !== 'pickup' || actorNameOf(object) !== name ||
       flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
       continue;
     }
@@ -1980,7 +2031,13 @@ function setEmptyPickups(config) {
 const RESEARCH_INTERVAL_MS = 1000;
 // With research checks the client asks for the awards to be emptied: each level's AwardItemClass becomes the
 // placeholder (a bag of chips), as the Garden lines and shuffled pickups do, and the multiworld hands them out.
-const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null, empty: false, emptied: 0 };
+const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null, empty: false, emptied: 0,
+  watched: false, holdUntil: 0 };
+
+// After a research level, items wait this long. In game 2026-10-15, a tonic given just as the research screen for
+// Security Camera 1 opened left both on screen and the game took no more input. Commands wait while the game is
+// paused, so if the screen pauses the game (not checked yet), only the moment before it opens needs covering.
+const RESEARCH_HOLD_MS = 6000;
 
 function researchTrouble(text) {
   if (research.trouble === null) {
@@ -2062,9 +2119,13 @@ function readResearch(pawn, now) {
       entry.score !== null && score >= entry.score ? Math.max(best, entry.level) : best), 0);
     if (levels[name] > (research.levels[name] || 0)) {
       log(`research: ${name} at level ${levels[name]}`);
+      if (research.watched) {
+        research.holdUntil = Date.now() + RESEARCH_HOLD_MS; // the research screen is about to open
+      }
     }
   }
   research.levels = levels;
+  research.watched = true;
   if (research.empty && gardens.placeholder !== null) {
     for (const row of levelRows) {
       const at = row.add(level.fields.AwardItemClass);

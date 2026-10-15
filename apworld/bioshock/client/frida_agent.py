@@ -114,7 +114,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
     map_name = normalize_map(raw.get("map"))
     ready = bool(raw.get("execAvailable")) and bool(raw.get("hookInstalled")) \
         and raw.get("engineReady") is not False and loading is not True and in_game is not False \
-        and raw.get("playerReady") is not False and delivers_in(map_name)
+        and raw.get("playerReady") is not False and raw.get("holdItems") is not True and delivers_in(map_name)
     # The level number is only passed on from an agent that cannot name the map. An agent that can names it
     # whenever the player is in a level, and when it does not (a menu, a pause, a loading screen) the number
     # is not to be trusted either: after loading a save it can be anything, another level's value included.
