@@ -104,7 +104,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.4';
+const PROBE_VERSION = '2026-10-15.5';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4451,6 +4451,17 @@ globalThis.stop = function () {
   stopSampling();
   return 'hook removed';
 };
+
+// Each batch step starts with a marker line, so builds/read_batch_logs.py can tell the steps apart in probe_log.txt.
+for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem']) {
+  const step = globalThis[name];
+  if (typeof step === 'function') {
+    globalThis[name] = function (...args) {
+      log(`=== step ${name}(${args.map((a) => JSON.stringify(a)).join(', ')}) ===`);
+      return step.apply(this, args);
+    };
+  }
+}
 
 if (candidates.length > 0) {
   startSampling();
