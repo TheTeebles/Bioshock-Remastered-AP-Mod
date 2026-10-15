@@ -94,11 +94,17 @@
  *   research()        where research progress is kept: every property named like research or photos, the classes
  *                     that have them and their values now, and the research camera's functions. Then photograph an
  *                     enemy and run researchDiff(): what changed
+ *   scriptApi()       the functions of the script system's own classes (Script, the Action base, anything named
+ *                     like a script or variable manager), to find a way to set a story flag through the game
+ *   pickups()         the item pickups lying in this level (plasmids, tonics, weapons), nearest first, numbered,
+ *                     with the class settings each holds; pickups('Safe|Container') for other kinds
+ *   pickupItem(0, 'chips')  make pickup 0 of pickups() give chips instead, to see whether a world item can be
+ *                     swapped like a Garden line. pickupItem(0) puts it back
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.2';
+const PROBE_VERSION = '2026-10-15.3';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4239,6 +4245,128 @@ globalThis.researchDiff = function () {
   }
   researchSeen = values;
   return `${changed} changed`;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// The script system's own functions (2026-10-15): a way to set a global_ variable through the game itself.
+// ---------------------------------------------------------------------------------------------------------------
+
+globalThis.scriptApi = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const wanted = /^(Script|Action|ActionVariableAssign|ActionVariableAssignIfNotExist|ActionNonBlockingExecuteScript|ActionBlockingExecuteScript)$|Script.*(Manager|Data|Info)|Variable(Manager|Table|Store|s)$|Blackboard/i;
+  const seen = new Set();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (classNameOf(object) !== 'Class') {
+      continue;
+    }
+    const name = nameOfObject(object);
+    if (name !== null && wanted.test(name) && !seen.has(name)) {
+      seen.add(name);
+    }
+  }
+  log(`script system classes: ${[...seen].join(', ') || 'none'}`);
+  for (const name of [...seen].slice(0, 12)) {
+    functionsOf(name);
+    globalThis.fields(name);
+  }
+  return `${seen.size} classes`;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// World items (2026-10-15): plasmid, tonic and weapon pickups lying in levels as checks. Can one be made to give
+// something else, the way a Garden line can?
+// ---------------------------------------------------------------------------------------------------------------
+
+let pickupList = [];
+const pickupSwaps = new Map(); // `${object} ${offset}` -> the class it held
+
+function classValued(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const out = [];
+  for (const [name, p] of learned.properties) {
+    if (p.kind !== 'ClassProperty' && p.kind !== 'ObjectProperty') {
+      continue;
+    }
+    const value = pointerAt(object.add(p.offset));
+    if (value !== null && !value.isNull() && readable(value, 0x40) && classNameOf(value) === 'Class') {
+      out.push({ name, p, value, item: extendsClass(value, 'Item', itemCache) });
+    }
+  }
+  return out.sort((a, b) => Number(b.item) - Number(a.item)); // an item class first: that is what it gives
+}
+const itemCache = new Map();
+
+globalThis.pickups = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const list = [];
+  for (const [className, objectsOfClass] of matchingObjects(pattern || 'Pickup$')) {
+    for (const object of objectsOfClass) {
+      const place = actorPlace(object);
+      if (place.error) {
+        return place.error;
+      }
+      const away = from === null || from.error ? 0 : Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
+      list.push({ object, className, away, place });
+    }
+  }
+  list.sort((a, b) => a.away - b.away);
+  pickupList = list;
+  list.slice(0, 15).forEach(({ object, className, away, place }, n) => {
+    const held = classValued(object).map(({ name, p, value }) => `${name} +${hex(p.offset)} = ${nameOfObject(value)}`);
+    log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}, ${away.toFixed(0)} away` +
+      (held.length ? `; classes: ${held.join(', ')}` : ''));
+  });
+  for (const { object, className } of list.slice(0, 2)) {
+    log(`  the settings of ${className} ${nameOfObject(object)}:`);
+    ownValues(object, '    ', 1);
+  }
+  return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}`;
+};
+
+globalThis.pickupItem = function (n, className) {
+  const entry = pickupList[n];
+  if (entry === undefined) {
+    return 'pickups() first, then pick one of its numbers';
+  }
+  const held = classValued(entry.object);
+  if (held.length === 0) {
+    return 'that pickup holds no class to swap';
+  }
+  const { name, p } = held[0];
+  const at = entry.object.add(p.offset);
+  const key = `${entry.object} ${p.offset}`;
+  let wanted;
+  if (className === undefined) {
+    if (!pickupSwaps.has(key)) {
+      return 'that pickup was not swapped';
+    }
+    wanted = ptr(pickupSwaps.get(key));
+    pickupSwaps.delete(key);
+  } else {
+    wanted = findClass(className);
+    if (wanted === null) {
+      return `no class named ${className} is loaded`;
+    }
+    if (!pickupSwaps.has(key)) {
+      pickupSwaps.set(key, u32(at));
+    }
+  }
+  const before = nameOfObject(pointerAt(at));
+  at.writePointer(wanted);
+  log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ${name} ${before} -> ${nameOfObject(wanted)}` +
+    (held.length > 1 ? `; it also holds ${held.slice(1).map((h) => `${h.name} = ${nameOfObject(h.value)}`).join(', ')}` : ''));
+  return className === undefined ? 'put back' : "pick it up: what do you get, and does the game say so?";
 };
 
 // ---------------------------------------------------------------------------------------------------------------
