@@ -1732,6 +1732,20 @@ const tests = {
     assert.deepStrictEqual(model.lineOf(manager, 5), { title: 'Apollo Square', map: '6-Slums',
       arrival: 'PlayerStart_FromDeck7Bathy' });
   },
+  'an arrival point the game does not know yet is looked up again on the next level': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '4-Recreation');
+    const manager = model.bathysphere([0, 5], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '6-slums', arrival: 'Hammer_Start' }], redirects: [] });
+    r.frames(12);
+    assert.strictEqual(model.arrivalOf(manager, 5), 'PlayerStart_FromDeck7Bathy', 'left as it was');
+    model.nameIndex('Hammer_Start'); // a level that has it was loaded
+    r.string(g.level + 0x7C, '1-Medical');
+    r.frames(12);
+    assert.strictEqual(model.arrivalOf(manager, 5), 'Hammer_Start');
+  },
   'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '2-SubBay');

@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.1';
+const AGENT_VERSION = '2026-10-15.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2677,6 +2677,10 @@ function keepTravel(map) {
   if (rules === null || objectModel === null) {
     return;
   }
+  if (rules.namesFor !== map) {
+    rules.namesFor = map;
+    resolveNames(rules);
+  }
   const layout = changeLayout();
   if (layout === null) {
     return;
@@ -2721,11 +2725,39 @@ function setTravelRules(config) {
   const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
     ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];
   if (unknown.length > 0) {
-    log(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are`);
+    log(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are ` +
+      'until a level that has them is loaded');
   }
   travel.rules = rules;
   travel.trouble = null;
   return null;
+}
+
+// Names the game did not have when the rules came (a level's PlayerStarts exist only once a level that has them has
+// been loaded, as Olympus Heights' PlayerStart_First in the client test of 2026-10-15) are looked up again on each
+// new level.
+function resolveNames(rules) {
+  for (const stop of rules.stops) {
+    if (stop.arrival && stop.arrivalIndex < 0) {
+      stop.arrivalIndex = indexOfName(stop.arrival);
+      if (stop.arrivalIndex >= 0) {
+        log(`Open Rapture: the game knows ${stop.arrival} now; the bathysphere to ${stop.to || stop.map} arrives there`);
+      }
+    }
+    if (stop.to && stop.toIndex < 0) {
+      stop.toIndex = indexOfName(mapFileName(stop.to));
+    }
+  }
+  for (const r of rules.redirects) {
+    for (const goal of [r, r.fallback]) {
+      if (goal && goal.arrivalIndex < 0 && goal.arrival) {
+        goal.arrivalIndex = indexOfName(goal.arrival);
+      }
+      if (goal && goal.mapIndex < 0) {
+        goal.mapIndex = indexOfName(goal.mapName);
+      }
+    }
+  }
 }
 
 // The map file's own spelling, which the game keeps in its strings ("2-Fisheries"); the client sends lower case.

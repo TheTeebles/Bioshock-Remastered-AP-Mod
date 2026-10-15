@@ -88,11 +88,14 @@
  *   A crash is logged with where it happened (CRASH ... called from ...), from 2026-10-14.18
  *   route(0, '2-Fisheries', 'PlayerStart')  level change 0 of levels() goes there instead. Save first
  *   facts()           the story facts (FactDatabase) carried from level to level; dump('Class', 'Array') for others
+ *   globals('global_GatherersKilled')  where the game keeps the scripts' global_ variables (2026-10-15): functions
+ *                     and properties named like variables, the variable-setting actions and their functions, and
+ *                     every place in memory holding that variable's name (as a name, and as text)
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.19';
+const PROBE_VERSION = '2026-10-15.1';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4010,6 +4013,150 @@ globalThis.dump = function (className, propertyName) {
 
 globalThis.facts = function () {
   return globalThis.dump('FactDatabase');
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Story variables (2026-10-15): the scripts' global_ variables (ActionVariableAssign lhs='global_transitionedFromRyan')
+// live somewhere the probe has not looked yet. Olympus Heights' opening checks one that Ryan's office sets.
+// ---------------------------------------------------------------------------------------------------------------
+
+function scanMemory(pattern, limit) {
+  const hits = [];
+  for (const range of Process.enumerateRanges('rw-')) {
+    if (hits.length >= limit) {
+      break;
+    }
+    try {
+      for (const hit of Memory.scanSync(range.base, range.size, pattern)) {
+        hits.push(hit.address);
+        if (hits.length >= limit) {
+          break;
+        }
+      }
+    } catch (e) {
+      // a range that went away while scanning
+    }
+  }
+  return hits;
+}
+
+function bytePattern(bytes) {
+  return bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function wordPattern(value) {
+  return bytePattern([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
+}
+
+function textPattern(text) {
+  const bytes = [];
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    bytes.push(code & 0xff, code >>> 8);
+  }
+  return bytePattern(bytes);
+}
+
+// The object a pointer falls inside, as far as the table can tell: the nearest object at or below it.
+let objectStarts = null;
+function ownerOf(at) {
+  if (objectStarts === null) {
+    objectStarts = [];
+    const total = u32(objects.table.add(4)) || objects.count;
+    for (let index = 0; index < total; index++) {
+      const object = objectAt(index);
+      if (object !== null) {
+        objectStarts.push(object);
+      }
+    }
+    objectStarts.sort((a, b) => a.compare(b));
+  }
+  let lo = 0;
+  let hi = objectStarts.length - 1;
+  let best = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (objectStarts[mid].compare(at) <= 0) {
+      best = objectStarts[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (best === null || at.sub(best).compare(ptr(0x4000)) >= 0) {
+    return 'no object';
+  }
+  return `${nameOfObject(best)} (${classNameOf(best)}) +${hex(at.sub(best).toUInt32())}`;
+}
+
+function nearbyStrings(at) {
+  const out = [];
+  for (let off = -0x18; off <= 0x18; off += 4) {
+    const text = stringAt(at.add(off));
+    if (text) {
+      out.push(`${off < 0 ? '-' : '+'}${hex(Math.abs(off))} ${JSON.stringify(text.slice(0, 40))}`);
+    }
+  }
+  return out.join(', ');
+}
+
+globalThis.globals = function (name) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const wanted = name || 'global_GatherersKilled';
+  log(`Story variables, looking for ${wanted} (probe ${PROBE_VERSION})`);
+  // 1. Functions and properties named like variables, with what they belong to.
+  const named = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total && named.length < 150; index++) {
+    const object = objectAt(index);
+    const kind = classNameOf(object);
+    const own = nameOfObject(object);
+    if (kind === null || own === null || !(kind === 'Function' || /Property$/.test(kind))) {
+      continue;
+    }
+    if (/variable|global|blackboard/i.test(own)) {
+      named.push(`  ${outerNameOf(object)}.${own} (${kind})`);
+    }
+  }
+  log(`${named.length} functions and properties named like variables:`);
+  named.forEach((line) => log(line));
+  // 2. The actions that set variables, their functions, and what one of them holds.
+  for (const className of ['Action', 'ActionVariableAssign', 'ActionVariableAssignIfNotExist', 'BooleanStatement']) {
+    functionsOf(className);
+  }
+  const assigns = matchingObjects('^ActionVariableAssign$').get('ActionVariableAssign') || [];
+  log(`${assigns.length} ActionVariableAssign in this level; the first three:`);
+  for (const action of assigns.slice(0, 3)) {
+    log(`  ${nameOfObject(action)} in ${outerNameOf(action)} at ${action}`);
+    ownValues(action, '    ', 1);
+  }
+  // 3. The variable's name as a name (index, number) and as text, wherever it is in memory.
+  const index = indexOfName(wanted);
+  log(`name index of ${wanted}: ${index}`);
+  if (index >= 0) {
+    const hits = scanMemory(`${wordPattern(index)} 00 00 00 00`, 40);
+    log(`${hits.length} places hold it as a name:`);
+    for (const at of hits) {
+      log(`  ${at} in ${ownerOf(at)}: ${hexWords(at, -0x10, 0x20)}` +
+        (nearbyStrings(at) ? `; strings ${nearbyStrings(at)}` : ''));
+    }
+  }
+  for (const text of [...new Set([wanted, wanted.toLowerCase()])]) {
+    const hits = scanMemory(textPattern(text), 20);
+    log(`${hits.length} places hold "${text}" as text:`);
+    for (const at of hits) {
+      const referrers = scanMemory(wordPattern(at.toUInt32()), 5);
+      log(`  ${at} (${JSON.stringify(at.readUtf16String(Math.min(64, text.length + 24)))})` +
+        `, pointed at from ${referrers.length ? '' : 'nowhere'}`);
+      for (const from of referrers) {
+        log(`    ${from} in ${ownerOf(from)}: ${hexWords(from, -0x10, 0x20)}` +
+          (nearbyStrings(from) ? `; strings ${nearbyStrings(from)}` : ''));
+      }
+    }
+  }
+  return 'done';
 };
 
 // ---------------------------------------------------------------------------------------------------------------
