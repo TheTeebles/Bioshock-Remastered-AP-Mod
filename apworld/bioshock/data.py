@@ -583,8 +583,9 @@ WORLD_SPOTS: tuple[WorldSpot, ...] = (
 )
 
 # Plasmids the story needs (Electro Bolt opens the way out of Welcome to Rapture, Incinerate! melts the ice in the
-# Medical Pavilion). Their pickups stay checks, but always give their own plasmid as well.
-KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!"})
+# Medical Pavilion, Telekinesis throws the bomb that clears the way to Surgery). Their pickups stay checks, but always
+# give their own plasmid as well.
+KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!", "Telekinesis"})
 
 
 def world_spot_location_name(spot: WorldSpot, number: int = 0) -> str:

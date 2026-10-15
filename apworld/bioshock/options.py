@@ -112,8 +112,8 @@ class WorldItemChecks(Choice):
     Off: nothing lying in the levels is a check.
     Keep Items: each pickup still gives its own plasmid, tonic or weapon, and sends a check as well.
     Shuffled: the plasmid and tonic pickups give a bag of chips instead, and what they held goes into the
-    multiworld. Electro Bolt and Incinerate! still give themselves, because the story needs them, and weapons stay
-    where they are.
+    multiworld. Electro Bolt, Incinerate! and Telekinesis still give themselves, because the story needs them,
+    and weapons stay where they are.
     """
     display_name = "World Item Checks"
     option_off = 0

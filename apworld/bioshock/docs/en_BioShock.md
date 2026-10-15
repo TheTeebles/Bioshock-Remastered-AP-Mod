@@ -55,7 +55,7 @@ World Item Checks and Safe Checks (both off by default, and not tried in the gam
 checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
 of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
 as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead and their items go into the
-multiworld, except Electro Bolt and Incinerate!, which the story needs. Safe Checks makes opening each of the 64
+multiworld, except Electro Bolt, Incinerate! and Telekinesis, which the story needs. Safe Checks makes opening each of the 64
 safes and lockboxes a check; their contents stay as they are.
 
 Research Checks (off by default, not tried in the game yet) make researching enemies with the Research Camera
@@ -91,7 +91,7 @@ Traps take the place of filler, so they turn up where filler does. With audio di
 has little or no filler, and then little or nothing becomes a trap.
 
 Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are unless World Item
-Checks is set to Shuffled. Then the plasmids and tonics lying in the levels (all but Electro Bolt and Incinerate!)
+Checks is set to Shuffled. Then the plasmids and tonics lying in the levels (all but Electro Bolt, Incinerate! and Telekinesis)
 are items in the multiworld, and all of them are always in the pool. Weapons always stay where they are.
 
 You start with the Research Camera (the `start_with_research_camera` option, on by default), so you can research

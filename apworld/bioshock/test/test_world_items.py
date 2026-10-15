@@ -40,9 +40,9 @@ class TestTable(unittest.TestCase):
 
     def test_kept_pickups_are_the_story_plasmids(self) -> None:
         shuffled = {spot.vanilla for spot in shuffled_world_pickups()}
-        self.assertEqual(len(shuffled), 29)
+        self.assertEqual(len(shuffled), 28)
         self.assertFalse(shuffled & KEPT_WORLD_PICKUPS)
-        self.assertEqual(sum(len(actors) for actors in game_data.SHUFFLED_PICKUPS.values()), 29)
+        self.assertEqual(sum(len(actors) for actors in game_data.SHUFFLED_PICKUPS.values()), 28)
 
 
 class TestOff(BioShockTestBase):
@@ -88,7 +88,7 @@ class TestShuffled(BioShockTestBase):
 
     def test_shuffled_pickups_are_in_the_pool(self) -> None:
         pool = Counter(item.name for item in self.multiworld.itempool)
-        self.assertEqual(pool["Telekinesis"], 1)
+        self.assertEqual(pool["Telekinesis"], 0, "the story needs it: its pickup still gives it")
         self.assertEqual(pool["Security Bullseye"], 1)
         self.assertEqual(pool["Wrench Jockey"], 1)
         self.assertEqual(pool["Hacker's Delight 3"], 1)
@@ -106,12 +106,12 @@ class TestRoom(BioShockTestBase):
         only_pickups = dict(level_access="vanilla", world_item_checks="shuffled", story_checks=False,
                             little_sister_checks=False, power_to_the_people_checks=False,
                             level_completion_checks=False, audio_diary_checks="off")
-        self.generate(**only_pickups)  # 36 open checks for 29 items
+        self.generate(**only_pickups)  # 36 open checks for 28 items
         pickups = sorted(name for name in WORLD_ITEM_LOCATIONS if "Pickup:" in name and "Welcome" not in name)
         with self.assertRaises(OptionError) as raised:
-            self.generate(**only_pickups, exclude_locations=pickups[:8])
-        self.assertIn("29 items come only from the multiworld", str(raised.exception))
-        self.assertIn("leave room for 28", str(raised.exception))
+            self.generate(**only_pickups, exclude_locations=pickups[:9])
+        self.assertIn("28 items come only from the multiworld", str(raised.exception))
+        self.assertIn("leave room for 27", str(raised.exception))
 
 
 class TestUniversalTracker(BioShockTestBase):
@@ -149,10 +149,11 @@ class TestClient(unittest.TestCase):
         self.assertEqual(h.game.empty_pickups, {"placeholder": "chips",
                                                 "maps": {name: list(actors)
                                                          for name, actors in game_data.SHUFFLED_PICKUPS.items()}})
-        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "chips")
+        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Wrench Jockey"), "chips")
         self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Incinerate!"), "Incinerate!")
+        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "Telekinesis")
         h.step(4)
-        self.assertIn(loc("Medical Pavilion - Pickup: Telekinesis"), h.sent_checks)
+        self.assertIn(loc("Medical Pavilion - Pickup: Wrench Jockey"), h.sent_checks)
 
     def test_kept_pickups_are_not_emptied(self) -> None:
         h = self.harness(world_item_checks=1)
