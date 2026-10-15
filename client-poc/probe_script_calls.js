@@ -104,7 +104,7 @@
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.3';
+const PROBE_VERSION = '2026-10-15.4';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4223,6 +4223,11 @@ globalThis.research = function () {
   for (const className of ['ResearchCamera', 'ActionGetResearchLevel', 'ResearchStation']) {
     functionsOf(className);
     globalThis.fields(className);
+  }
+  // The camera itself may keep the table of research subjects and their levels.
+  for (const camera of [...matchingObjects('^ResearchCamera$').values()].flat().slice(0, 2)) {
+    log(`  the settings of ResearchCamera ${nameOfObject(camera)}:`);
+    ownValues(camera, '    ', 1);
   }
   const { values, lines } = researchValues();
   lines.forEach((line) => log(line));
