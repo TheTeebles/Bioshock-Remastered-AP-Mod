@@ -573,6 +573,13 @@ function makeRuntime({
     poke(runtime.memory.get(managerClass + 0x5C) + 0x44, unlockedField); // Destinations, then UnlockedDestinations
     const unlockDestination = make('UnlockDestination', functionClass); // the script function the levels call
     poke(unlockedField + 0x44, unlockDestination);
+    // ShockPlayer.UnlockBathysphereDestination(name MapName), which makes the level's manager when there is none.
+    const unlockBathysphereDestination = make('UnlockBathysphereDestination', functionClass);
+    fields(unlockBathysphereDestination, [['MapName', nameProperty, 0]]);
+    const playerUnlocks = () => {
+      poke(unlockBathysphereDestination + 0x44, runtime.memory.get(playerClass + 0x5C));
+      poke(playerClass + 0x5C, unlockBathysphereDestination);
+    };
     const STOPS = [['Medical Pavilion', '1-Medical', 'Backtrack_MedicalStart'], ["Neptune's Bounty", '2-Fisheries', 'PlayerStart'],
       ['Arcadia', '3-Arcadia', 'ArcBathyEndPS'], ['Fort Frolic', '4-Recreation', 'PlayerStart'],
       ['Hephaestus', '5-Hephaestus', 'EngBathyStartPS'], ['Apollo Square', '6-Slums', 'PlayerStart_FromDeck7Bathy'],
@@ -723,7 +730,7 @@ function makeRuntime({
       rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
-    return { nameIndex: name, rename, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { nameIndex: name, rename, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1469,6 +1476,13 @@ const tests = {
       assert.strictEqual(seen.execAvailable, false);
     }
     assert.strictEqual(r.messages.filter((m) => m.type === 'exec_disabled').length, 1);
+    assert.match(r.messages.find((m) => m.type === 'exec_disabled').reason || JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /different build/);
+  },
+  'an engine that matched and then changes is the game quitting, not another build': () => {
+    const r = makeRuntime(); r.game(); r.load(); r.frame();
+    assert.strictEqual(state(r).engineReady, true);
+    r.engine(ENGINE, 0x424242); state(r);
+    assert.match(JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /shutting down/);
   },
   'unknown build tries the Steam addresses behind the vtable check': () => {
     const good = makeRuntime({ moduleSize: 12345 }); good.engine(); good.load();
@@ -1761,6 +1775,28 @@ const tests = {
     assert.strictEqual(r.scriptCalls.length, 1);
     assert.deepStrictEqual(model.unlockedOf(manager), [1]);
     assert.match(state(r).travelTrouble, /did not unlock bathysphere destination 0/);
+  },
+  'with no bathysphere list yet, the game is asked to make one before the lever is pulled': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.playerUnlocks(); model.nameIndex('1-Medical');
+    let made = null;
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockBathysphereDestination && made === null) {
+        assert.strictEqual(self, game.pawn);
+        assert.strictEqual(r.memory.get(r.scriptCalls.at(-1).parms), model.nameIndex('1-Medical'));
+        made = model.bathysphere([1], 8); // the game makes it, with its own first destination
+      }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '4-recreation' }], redirects: [] });
+    r.frames(10);
+    assert.strictEqual(r.scriptCalls.length, 0, 'no call of the game\'s to copy yet');
+    r.gameEvent(game.hud, model.tick); r.frames(40);
+    assert.notStrictEqual(made, null);
+    assert.ok(r.logged('had the game make the bathysphere list in 1-medical'));
+    assert.deepStrictEqual(model.unlockedOf(made), [0, 3], 'kept to the stops before the lever is pulled');
+    assert.strictEqual(r.scriptCalls.filter((c) => c.fn === model.unlockBathysphereDestination).length, 1, 'once');
+    assert.strictEqual(state(r).travelTrouble, null);
   },
   "a stop that stands in for another level points Apollo Square's line there, and back": () => {
     for (const withNote of [true, false]) {
