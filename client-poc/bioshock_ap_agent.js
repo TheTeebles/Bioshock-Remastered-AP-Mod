@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.9';
+const AGENT_VERSION = '2026-10-15.10';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1728,7 +1728,8 @@ function readStations(map) {
 // found 2026-10-15), a lockbox a Lockbox. All are AnimatedContainers, whose bIsOpened turns true when
 // they are opened and stays true in a save (safes confirmed 2026-10-14; lockboxes not tried yet).
 // With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
-// of their item: the class the pickup holds is swapped, as the probe's pickupItem() does. Not tried in game yet.
+// of their item: the item class in the pickup's LootSlot is swapped, as the probe's pickupItem() did in game
+// (2026-10-15: Telekinesis gave chips).
 const world = {
   level: null, // the level object the lists below are about
   pickups: [], // { object, name } lying in the level at the last pass
@@ -1741,7 +1742,7 @@ const world = {
   opened: new Map(), // map -> names of the safes and lockboxes seen open there
   deleteFlags: new Map(), // class address -> where bDeleteMe is
   openFlags: new Map(), // class address -> where bIsOpened is
-  itemFields: new Map(), // class address -> offset of the class a pickup gives, or null
+  lootOffsets: new Map(), // `${class} ${property}` -> its offset, or null: where a pickup's item is
   empty: null, // { placeholder, maps }: what the client asked for
   emptied: new Set(), // names of the pickups made to give the placeholder in this level
   trouble: null,
@@ -1862,34 +1863,53 @@ function readWorldThings(map, level) {
 }
 
 // Where a pickup keeps the class of what it gives: the class property whose value is a class that extends Item.
-function itemFieldOf(object, cls) {
-  const key = cls.toString();
-  if (!world.itemFields.has(key)) {
-    let found = null;
-    for (const owner of lineageOf(cls)) {
-      let field = carefulPtr(owner.add(objectModel.structChildren));
-      for (let n = 0; found === null && field !== null && !field.isNull() && n < 1000; n++) {
-        const kind = nameOfObject(classOf(field));
-        const offset = kind === 'ClassProperty' ? carefulS32(field.add(objectModel.propertyOffset)) : null;
-        const value = offset === null || offset < 0x30 || offset > 0x8000 ? null : carefulPtr(object.add(offset));
-        if (value !== null && !value.isNull() && nameOfObject(classOf(value)) === 'Class' &&
-          lineageOf(value).some((c) => nameOfObject(c) === 'Item')) {
-          found = offset;
-        }
-        field = carefulPtr(field.add(objectModel.fieldNext));
-      }
-      if (found !== null) {
-        break;
-      }
-    }
-    if (found === null) {
-      worldTrouble(`could not find what a ${nameOfObject(cls)} gives`);
-    } else {
-      log(`a ${nameOfObject(cls)} gives the class at +0x${found.toString(16)}`);
-    }
-    world.itemFields.set(key, found);
+// Where a pickup's item is (in game 2026-10-15, probe .8): Pickup.LootSlot is a LootSlot object, whose LootSpec (a
+// LootItemSpecification) says what to roll (ItemClass +0x4c) and whose Loot is the ItemStack already rolled from it
+// (ItemClass +0x50; None until the pickup has rolled). Taking the pickup gives the ItemStack's class: writing only
+// LootSpec still gave Telekinesis, writing both gave chips. The offsets are looked up by name, once per class.
+function offsetIn(cls, wanted, kind) {
+  const key = `${cls} ${wanted}`;
+  if (!world.lootOffsets.has(key)) {
+    const found = findProperty(cls, wanted, kind);
+    world.lootOffsets.set(key, found === null || found.offset < 0x30 ? null : found.offset);
   }
-  return world.itemFields.get(key);
+  return world.lootOffsets.get(key);
+}
+
+// The object held at an ObjectProperty, if it is one of the wanted class (or extends it).
+function heldOfClass(object, cls, property, wantedClass) {
+  const offset = offsetIn(cls, property, 'ObjectProperty');
+  const held = offset === null ? null : carefulPtr(object.add(offset));
+  if (held === null || held.isNull()) {
+    return null;
+  }
+  const heldClass = classOfObject(held);
+  return heldClass !== null && lineageOf(heldClass).some((c) => nameOfObject(c) === wantedClass) ?
+    { object: held, cls: heldClass } : null;
+}
+
+// The addresses holding the item class a pickup gives: its LootSpec's and, once rolled, its ItemStack's. Only
+// addresses whose value is an item class now (or the placeholder already) are returned.
+function itemSlotsOf(object, cls) {
+  const slot = heldOfClass(object, cls, 'LootSlot', 'LootSlot');
+  if (slot === null) {
+    worldTrouble(`could not find the LootSlot of a ${nameOfObject(cls)}`);
+    return [];
+  }
+  const out = [];
+  for (const [property, wantedClass] of [['LootSpec', 'LootItemSpecification'], ['Loot', 'ItemStack']]) {
+    const held = heldOfClass(slot.object, slot.cls, property, wantedClass);
+    const offset = held === null ? null : offsetIn(held.cls, 'ItemClass', 'ClassProperty');
+    const value = offset === null ? null : carefulPtr(held.object.add(offset));
+    if (value !== null && !value.isNull() && nameOfObject(classOf(value)) === 'Class' &&
+      lineageOf(value).some((c) => nameOfObject(c) === 'Item')) {
+      out.push({ at: held.object.add(offset), value, from: property });
+    }
+  }
+  if (out.length === 0) {
+    worldTrouble(`could not find what a ${nameOfObject(cls)} gives`);
+  }
+  return out;
 }
 
 function emptyPickups(map, level) {
@@ -1914,17 +1934,22 @@ function emptyPickups(map, level) {
       flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
       continue;
     }
-    const offset = itemFieldOf(object, cls);
-    const before = offset === null ? null : carefulPtr(object.add(offset));
-    if (before === null || same(before, placeholder)) {
+    // LootSpec and, once the pickup has rolled, its ItemStack. Each pass looks again, so a stack rolled after the
+    // first swap is swapped too.
+    const slots = itemSlotsOf(object, cls).filter(({ value }) => !same(value, placeholder));
+    if (slots.length === 0) {
       continue; // nothing to swap, or done already (a save keeps the swap too)
     }
     if (!actorsOf(level).addresses.has(object.toUInt32())) {
       continue;
     }
-    object.add(offset).writePointer(placeholder);
-    world.emptied.add(name);
-    log(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(before)}`);
+    for (const { at } of slots) {
+      at.writePointer(placeholder);
+    }
+    if (!world.emptied.has(name)) {
+      world.emptied.add(name);
+      log(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(slots[0].value)}`);
+    }
   }
 }
 

@@ -642,16 +642,37 @@ function makeRuntime({
       poke(at + 0x88, room);
       return at;
     };
-    // Plasmids and tonics lying in a level (the class they give at +0x520), and safes and lockboxes (bIsOpened).
+    // Plasmids and tonics lying in a level and safes and lockboxes (bIsOpened). As in game (probe .8): the pickup's
+    // LootSlot (+0x520) holds LootSpec (a LootItemSpecification, ItemClass +0x4C) and Loot (the ItemStack rolled
+    // from it, ItemClass +0x50, None until rolled); taking the pickup gives the ItemStack's class.
     const classProperty = cls('ClassProperty', objectClass);
     const pickupClass = cls('PlasmidPickup', actor);
-    fields(pickupClass, [['PickupMesh', objectProperty, 0x518], ['InventoryType', classProperty, 0x520]]);
+    fields(pickupClass, [['PickupMesh', objectProperty, 0x518], ['LootSlot', objectProperty, 0x520]]);
+    const lootSlotClass = cls('LootSlot', objectClass);
+    fields(lootSlotClass, [['LootSpec', objectProperty, 0x40], ['Loot', objectProperty, 0x44]]);
+    const specClass = cls('LootItemSpecification', cls('DeletableObject', objectClass));
+    fields(specClass, [['ItemClass', classProperty, 0x4C]]);
+    const stackClass = cls('ItemStack', cls('ReferenceCountedObject', objectClass));
+    fields(stackClass, [['ItemClass', classProperty, 0x50]]);
     const pickupKinds = new Map();
-    const pickup = (className, actorName, gives) => {
+    const pickup = (className, actorName, gives, rolled = true) => {
       if (!pickupKinds.has(className)) { pickupKinds.set(className, cls(className, pickupClass)); }
-      const at = make(actorName, pickupKinds.get(className), 0x600); poke(at + 0x520, gives); poke(at + 0xCC, 0);
+      const at = make(actorName, pickupKinds.get(className), 0x600); poke(at + 0xCC, 0);
+      const slot = make('LootSlot', lootSlotClass, 0x80); poke(at + 0x520, slot);
+      const spec = make('LootItemSpecification', specClass, 0x80); poke(spec + 0x4C, gives); poke(slot + 0x40, spec);
+      if (rolled) { const stack = make('ItemStack', stackClass, 0x80); poke(stack + 0x50, gives); poke(slot + 0x44, stack); }
       if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); } // the player's level
       return at;
+    };
+    // What a pickup gives: its LootSpec's class and its ItemStack's (0 when not rolled).
+    const gives = (at) => {
+      const slot = runtime.memory.get(at + 0x520); const stack = runtime.memory.get(slot + 0x44);
+      return [runtime.memory.get(runtime.memory.get(slot + 0x40) + 0x4C), stack ? runtime.memory.get(stack + 0x50) : 0];
+    };
+    const roll = (at) => { // the game rolls the pickup: an ItemStack of what LootSpec says
+      const slot = runtime.memory.get(at + 0x520);
+      const stack = make('ItemStack', stackClass, 0x80);
+      poke(stack + 0x50, runtime.memory.get(runtime.memory.get(slot + 0x40) + 0x4C)); poke(slot + 0x44, stack);
     };
     const containerClass = cls('AnimatedContainer', actor);
     fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
@@ -695,7 +716,7 @@ function makeRuntime({
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
     return { nameIndex: name, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, container, research };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -2262,11 +2283,13 @@ const tests = {
     for (let i = 0; i < count; i++) { r.poke(big + 4 * i, r.memory.get(all + 4 * i)); }
     r.poke(BASE + 0x139042C, big); r.poke(BASE + 0x1390430, 40000);
     r.load(); r.frames(25);
-    r.poke(reused + 0x28, model.nameIndex('ActivePlasmidPickup2')); r.poke(reused + 0x520, incinerate);
+    r.poke(reused + 0x28, model.nameIndex('ActivePlasmidPickup2'));
+    const slot = r.memory.get(reused + 0x520);
+    r.poke(r.memory.get(slot + 0x40) + 0x4C, incinerate); r.poke(r.memory.get(slot + 0x44) + 0x50, incinerate);
     r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
     r.frames(7);
-    assert.strictEqual(r.memory.get(reused + 0x520), incinerate, 'the pass has not seen the new name yet');
+    assert.deepStrictEqual(model.gives(reused), [incinerate, incinerate], 'the pass has not seen the new name yet');
     assert.strictEqual(state(r).pickupsEmptied, 0);
   },
   'pickups are emptied whatever spelling of the map the game uses': () => {
@@ -2278,7 +2301,7 @@ const tests = {
     r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
     r.frames(10);
-    assert.strictEqual(r.memory.get(shuffled + 0x520), model.chips);
+    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
   },
   'state() reports the safes and lockboxes open, by map': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
@@ -2306,13 +2329,30 @@ const tests = {
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'], '2-fisheries': ['x'] } }));
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[7, true]]);
     r.frames(10);
-    assert.strictEqual(r.memory.get(shuffled + 0x520), model.chips);
-    assert.strictEqual(r.memory.get(kept + 0x520), incinerate);
+    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips], 'its LootSpec and its rolled ItemStack');
+    assert.deepStrictEqual(model.gives(kept), [incinerate, incinerate]);
     assert.strictEqual(state(r).pickupsEmptied, 1);
     assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
+    assert.strictEqual(state(r).worldTrouble, null);
     r.context.rpc.exports.action(8, 'empty_pickups ' + JSON.stringify({ placeholder: 'Bread', maps: {} }));
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
       [[7, true], [8, false]]);
+  },
+  'a pickup not rolled yet gives the placeholder once it rolls': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const later = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey, false);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(later), [model.chips, 0], 'what it will roll');
+    model.roll(later); r.frames(10); // rolled from the swapped LootSpec: chips already
+    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    const stack = r.memory.get(r.memory.get(later + 0x520) + 0x44);
+    r.poke(stack + 0x50, jockey); r.frames(10); // a stack rolled from before the swap is swapped on a later pass
+    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    assert.strictEqual(state(r).pickupsEmptied, 1);
   },
   'state() reports the level of each research subject and the table of levels': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
