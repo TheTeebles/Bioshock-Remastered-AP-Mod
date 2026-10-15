@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.15';
+const AGENT_VERSION = '2026-10-15.1';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1492,6 +1492,8 @@ function watchObjects(map, now) {
     travel.changes = [];
     travel.notes = [];
     travel.borrowed = new Set();
+    travel.unlockAsked = new Set();
+    travel.lines = new Map();
     scan.next = 0;
     scan.quests = [];
     scan.stations = [];
@@ -2201,6 +2203,8 @@ const travel = {
   notes: [], // the level's script notes and log lines: strings the game made that nothing reads while playing
   borrowed: new Set(), // their strings already swapped into a level change
   noteFields: new Map(), // class -> offset of its string
+  unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
+  lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
 };
 
 const heapApi = (() => {
@@ -2405,25 +2409,118 @@ function writeString(at, text) {
   return true;
 }
 
-// Sets an int array {data, count, max} to these values. Grows it only on the process heap.
+// Sets an int array {data, count, max} to these values, in its own buffer. False when they do not fit: an array
+// given memory of our own crashed the game on the next bathysphere ride (in-game test 2026-10-15), so growing is
+// left to the game (see unlockByGame).
 function writeIntArray(at, values) {
-  let data = carefulPtr(at);
-  let max = carefulS32(at.add(8)) || 0;
-  if (values.length > max) {
-    if (data === null || data.isNull() || !onProcessHeap(data)) {
-      return false;
-    }
-    const grown = heapApi.realloc(heapApi.heap, 0, data, values.length * 4);
-    if (grown.isNull()) {
-      return false;
-    }
-    data = grown;
-    max = values.length;
-    at.writePointer(data);
-    at.add(8).writeU32(max);
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8)) || 0;
+  if (data === null || data.isNull() || values.length > max) {
+    return false;
   }
   values.forEach((value, i) => data.add(i * 4).writeS32(value));
   at.add(4).writeU32(values.length);
+  return true;
+}
+
+const UNLOCK_DESTINATION_PARMS = 0x10; // MapName (name, 8 bytes), then the locals i and InsertIndex
+
+// Has the game itself unlock a destination (BathysphereManager.UnlockDestination, the script function the levels'
+// ActionUnlockBathysphereDestination runs), so the game grows UnlockedDestinations in its own memory. Game thread.
+// Returns false while no call of the game's has been seen to copy, or when it cannot be done.
+function unlockByGame(manager, destination, entry) {
+  const trouble = scriptCallsTrouble();
+  if (trouble !== null) {
+    travelTrouble(`could not unlock a bathysphere destination: ${trouble}`);
+    return false;
+  }
+  if (!readyToCallScript()) {
+    return false;
+  }
+  const fn = findFunction(manager, 'UnlockDestination');
+  if (fn === null) {
+    travelTrouble('could not unlock a bathysphere destination: BathysphereManager has no UnlockDestination');
+    return false;
+  }
+  const parms = Memory.alloc(UNLOCK_DESTINATION_PARMS);
+  const name = destination.add(entry.fields.MapName);
+  parms.writeS32(carefulS32(name) || 0);
+  parms.add(4).writeS32(carefulS32(name.add(4)) || 0);
+  for (let at = 8; at < UNLOCK_DESTINATION_PARMS; at += 4) {
+    parms.add(at).writeS32(0);
+  }
+  callScript(manager, fn, parms);
+  return true;
+}
+
+// A bathysphere line as the level made it: { map, name (its MapName's two words), title, to, undoTitle }. Stops are
+// matched by this, so a line pointed elsewhere (see pointLine) is still found by the station it was.
+function lineOf(manager, i, destination, entry) {
+  const key = `${manager}:${i}`;
+  const nameAddress = destination.add(entry.fields.MapName);
+  const now = nameAt(nameAddress);
+  let line = travel.lines.get(key);
+  if (line !== undefined && now !== line.map && now !== line.to) {
+    line = undefined; // not what was written there: a new object at the same address
+  }
+  if (line === undefined) {
+    const was = STANDS_IN[now];
+    line = was !== undefined && indexOfName(was.file) >= 0
+      ? { map: was.file.toLowerCase(), name: [indexOfName(was.file), 0], title: was.title, to: now, undoTitle: null }
+      : { map: now, name: [carefulS32(nameAddress) || 0, carefulS32(nameAddress.add(4)) || 0],
+        title: 'Title' in entry.fields ? stringAt(destination.add(entry.fields.Title)) : null, to: null, undoTitle: null };
+    travel.lines.set(key, line);
+  }
+  return line;
+}
+
+// Levels a line can be pointed at that no station of their own leads to, and the line that stands in for them. A save
+// made while a line was pointed elsewhere keeps it that way, so a line found going there is known for what it was.
+const STANDS_IN = { '6-resi': { file: '6-Slums', title: 'Apollo Square' } };
+
+// Points a line at the level a stop stands in for (stop.to, with its menu text stop.title), or with stop null puts
+// it back as the level made it. The map's name is 8 bytes, so it is rewritten in place; the title in place when it
+// fits, else in a script note's string (see makeRoom). False when the line cannot go where it should.
+function pointLine(destination, entry, line, stop) {
+  const want = stop === null ? null : stop.to;
+  if (line.to === want) {
+    return true;
+  }
+  const nameAddress = destination.add(entry.fields.MapName);
+  const titleAt = 'Title' in entry.fields ? destination.add(entry.fields.Title) : null;
+  if (want === null) {
+    nameAddress.writeS32(line.name[0]);
+    nameAddress.add(4).writeS32(line.name[1]);
+    if (line.undoTitle !== null) {
+      line.undoTitle();
+      line.undoTitle = null;
+    }
+    if (titleAt !== null && line.title !== null) {
+      writeString(titleAt, line.title);
+    }
+    log(`Open Rapture: the bathysphere line to ${line.map} goes there again`);
+    line.to = null;
+    return true;
+  }
+  if (stop.toIndex < 0) {
+    travelTrouble(`could not point the bathysphere line to ${line.map} at ${want}: the game has no such name yet`);
+    return false;
+  }
+  if (line.to !== null) {
+    pointLine(destination, entry, line, null);
+  }
+  nameAddress.writeS32(stop.toIndex);
+  nameAddress.add(4).writeS32(0);
+  line.to = want;
+  if (titleAt !== null && stop.title) {
+    const undo = makeRoom(titleAt, stop.title);
+    if (undo !== null && writeString(titleAt, stop.title)) {
+      line.undoTitle = undo;
+    } else {
+      log(`Open Rapture: the bathysphere line to ${want} keeps its title (no room for "${stop.title}")`);
+    }
+  }
+  log(`Open Rapture: the bathysphere line to ${line.map} now goes to ${want}` + (stop.title ? ` as "${stop.title}"` : ''));
   return true;
 }
 
@@ -2439,10 +2536,11 @@ function keepBathysphere(manager, layout, rules) {
   const wanted = [];
   for (let i = 0; i < count; i++) {
     const destination = data.add(i * entry.size);
-    const map = nameAt(destination.add(entry.fields.MapName));
+    const line = lineOf(manager, i, destination, entry);
+    const map = line.map;
     const stop = rules.stops.find((s) => s.map === map);
-    if (stop === undefined) {
-      continue;
+    if (!pointLine(destination, entry, line, stop !== undefined && stop.to ? stop : null) || stop === undefined) {
+      continue; // not offered, or a stand-in line that could not be pointed where it stands in for
     }
     wanted.push(i);
     const labelAt = destination.add(entry.fields.StartLocationLabel);
@@ -2466,9 +2564,22 @@ function keepBathysphere(manager, layout, rules) {
   if (writeIntArray(unlockedAt, wanted)) {
     travel.offered = wanted;
     log(`Open Rapture: the bathysphere offers destinations [${wanted.join(', ')}] (was [${current.join(', ')}])`);
-  } else {
-    travelTrouble(`could not make room for ${wanted.length} bathysphere destinations (room for ` +
-      `${carefulS32(unlockedAt.add(8))})`);
+    return;
+  }
+  // No room: drop what must go (in place), then have the game add the rest one at a time, in its own memory.
+  const kept = current.filter((i) => wanted.includes(i));
+  if (kept.length < current.length) {
+    writeIntArray(unlockedAt, kept);
+  }
+  const missing = wanted.find((i) => !kept.includes(i));
+  const key = `${manager}:${missing}`;
+  if (travel.unlockAsked.has(key)) {
+    travelTrouble(`the game did not unlock bathysphere destination ${missing} when asked`);
+    return;
+  }
+  if (unlockByGame(manager, data.add(missing * entry.size), entry)) {
+    travel.unlockAsked.add(key);
+    log(`Open Rapture: asked the game to unlock bathysphere destination ${missing}`);
   }
 }
 
@@ -2602,7 +2713,8 @@ function setTravelRules(config) {
     mapIndex: named(mapFileName(g.map)), arrivalIndex: named(g.arrival) } : null);
   const rules = {
     stops: (config.stops || []).map((s) => ({ map: String(s.map).toLowerCase(), arrival: s.arrival,
-      arrivalIndex: named(s.arrival) })),
+      arrivalIndex: named(s.arrival),
+      ...(s.to ? { to: String(s.to).toLowerCase(), toIndex: named(mapFileName(s.to)), title: s.title || null } : {}) })),
     redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
       ...goal(r), fallback: goal(r.fallback) })),
   };

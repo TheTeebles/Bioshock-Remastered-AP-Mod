@@ -565,11 +565,13 @@ function makeRuntime({
     arrayOfStructs(managerClass, 'Destinations', 0x80, 'BathysphereDestination',
       [['Title', strProperty, 0], ['MapName', nameProperty, 0xC], ['StartLocationLabel', nameProperty, 0x14]]);
     poke(runtime.memory.get(managerClass + 0x5C) + 0x44, unlockedField); // Destinations, then UnlockedDestinations
+    const unlockDestination = make('UnlockDestination', functionClass); // the script function the levels call
+    poke(unlockedField + 0x44, unlockDestination);
     const STOPS = [['Medical Pavilion', '1-Medical', 'Backtrack_MedicalStart'], ["Neptune's Bounty", '2-Fisheries', 'PlayerStart'],
       ['Arcadia', '3-Arcadia', 'ArcBathyEndPS'], ['Fort Frolic', '4-Recreation', 'PlayerStart'],
       ['Hephaestus', '5-Hephaestus', 'EngBathyStartPS'], ['Apollo Square', '6-Slums', 'PlayerStart_FromDeck7Bathy'],
       ['Point Prometheus', '7-Science', 'FromResidential'], ['', 'None', 'None']];
-    ['FromFisheriesPS', 'FromSubBayPS', '3-Arcadia', '2-SubBay', 'FromArcadiaPS', 'MapName', 'StartLocationLabel'].forEach(name);
+    ['FromFisheriesPS', 'FromSubBayPS', '6-Resi', 'PlayerStart_First', '3-Arcadia', '2-SubBay', 'FromArcadiaPS', 'MapName', 'StartLocationLabel'].forEach(name);
     // The manager: every destination, `unlocked` offered, with room for `room`; `onHeap` if its buffer is the
     // process heap's.
     const bathysphere = (unlocked, room = unlocked.length, onHeap = false) => {
@@ -593,6 +595,24 @@ function makeRuntime({
       return Array.from({ length: runtime.memory.get(manager + 0x90) }, (_, i) => runtime.memory.get(data + 4 * i));
     };
     const arrivalOf = (manager, i) => names[runtime.memory.get(runtime.memory.get(manager + 0x80) + 28 * i + 0x14)];
+    const lineOf = (manager, i) => {
+      const at = runtime.memory.get(manager + 0x80) + 28 * i;
+      return { title: runtime.text.get(runtime.memory.get(at)), map: names[runtime.memory.get(at + 0xC)],
+        arrival: names[runtime.memory.get(at + 0x14)] };
+    };
+    // The game's UnlockDestination: adds the destination whose MapName is the one handed to it, in order, in a
+    // buffer of its own.
+    const gameUnlocks = (parms, manager) => {
+      const wanted = runtime.memory.get(parms);
+      const destinations = runtime.memory.get(manager + 0x80);
+      const index = STOPS.findIndex((_, i) => runtime.memory.get(destinations + 28 * i + 0xC) === wanted);
+      const now = unlockedOf(manager);
+      if (index < 0 || now.includes(index)) { return; }
+      const next = [...now, index].sort((a, b) => a - b);
+      const data = runtime.object(4 * next.length);
+      next.forEach((value, i) => poke(data + 4 * i, value));
+      poke(manager + 0x8C, data); poke(manager + 0x90, next.length); poke(manager + 0x94, next.length);
+    };
     const changeClass = cls('ActionChangeLevel', cls('Action', objectClass));
     fields(changeClass, [['MapName', strProperty, 0x80], ['StartLocationLabel', strProperty, 0x8C]]);
     const mapField = runtime.memory.get(changeClass + 0x5C);
@@ -628,7 +648,7 @@ function makeRuntime({
       rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
-    return { bathysphere, unlockedOf, arrivalOf, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { nameIndex: name, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1637,22 +1657,80 @@ const tests = {
     r.frames(6);
     assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'taken back out');
   },
-  'more stops than the array has room for grow it only on the process heap': () => {
-    for (const onHeap of [true, false]) {
+  'more stops than the array has room for are added by the game itself, one at a time': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([1, 2], 2);
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '7-science' }], redirects: [] });
+    r.frames(4);
+    assert.deepStrictEqual(model.unlockedOf(manager), [1], 'what must go is dropped in place');
+    assert.strictEqual(r.scriptCalls.length, 0, 'no call of the game\'s to copy yet');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(30); // one destination each time the bathysphere is looked at
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 6]);
+    assert.deepStrictEqual(r.scriptCalls.map((c) => [c.self, c.fn]),
+      [[manager, model.unlockDestination], [manager, model.unlockDestination]]);
+    assert.deepStrictEqual(r.reallocs, [], 'no memory of ours');
+    assert.deepStrictEqual(r.heapAllocs, []);
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a destination the game does not unlock when asked is asked for once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([1], 1);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }], redirects: [] });
+    r.frames(10); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.strictEqual(r.scriptCalls.length, 1);
+    assert.deepStrictEqual(model.unlockedOf(manager), [1]);
+    assert.match(state(r).travelTrouble, /did not unlock bathysphere destination 0/);
+  },
+  "a stop that stands in for another level points Apollo Square's line there, and back": () => {
+    for (const withNote of [true, false]) {
       const r = makeRuntime(); r.game(); const model = r.objectModel();
-      const manager = model.bathysphere([1], 1, onHeap);
+      const manager = model.bathysphere([0, 1], 8);
+      const spare = withNote ? model.note('a note', 40) : null;
+      const spareBuffer = withNote ? r.memory.get(spare + 0x80) : null;
       r.load(); r.frames(2);
-      travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '7-science' }], redirects: [] });
+      travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+        { map: '6-slums', arrival: 'PlayerStart_First', to: '6-resi', title: 'Olympus Heights' }], redirects: [] });
       r.frames(8);
-      if (onHeap) {
-        assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 6]);
-        assert.deepStrictEqual(r.reallocs, [12]);
-        assert.strictEqual(r.memory.get(manager + 0x94), 3);
-      } else {
-        assert.deepStrictEqual(model.unlockedOf(manager), [1], 'left alone: the game could not free a buffer of ours');
-        assert.match(state(r).travelTrouble, /could not make room for 3 bathysphere destinations/);
+      assert.deepStrictEqual(model.unlockedOf(manager), [0, 5]);
+      assert.deepStrictEqual(model.lineOf(manager, 5), { title: withNote ? 'Olympus Heights' : 'Apollo Square',
+        map: '6-Resi', arrival: 'PlayerStart_First' });
+      if (withNote) {
+        assert.strictEqual(model.textOf(spare + 0x80), 'Apollo Square', 'the note holds the old title meanwhile');
+      }
+      assert.strictEqual(state(r).travelTrouble, null);
+      r.frames(6);
+      assert.strictEqual(model.lineOf(manager, 5).map, '6-Resi', 'still found by the station it was');
+      travelRules(r, 2, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+        { map: '6-slums', arrival: 'PlayerStart_FromDeck7Bathy' }, { map: '7-science', arrival: 'FromResidential' }],
+      redirects: [] });
+      r.frames(8);
+      assert.deepStrictEqual(model.unlockedOf(manager), [0, 5, 6]);
+      assert.deepStrictEqual(model.lineOf(manager, 5), { title: 'Apollo Square', map: '6-Slums',
+        arrival: 'PlayerStart_FromDeck7Bathy' });
+      if (withNote) {
+        assert.strictEqual(r.memory.get(spare + 0x80), spareBuffer, 'its string given back');
       }
     }
+  },
+  "a save made with Apollo Square's line pointed at Olympus Heights still has it put back": () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 5], 8);
+    const line = r.memory.get(manager + 0x80) + 28 * 5;
+    r.string(line, 'Olympus Heights');
+    r.poke(line + 0xC, model.nameIndex('6-Resi'));
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '6-slums', arrival: 'PlayerStart_FromDeck7Bathy' }], redirects: [] });
+    r.frames(12);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 5]);
+    assert.deepStrictEqual(model.lineOf(manager, 5), { title: 'Apollo Square', map: '6-Slums',
+      arrival: 'PlayerStart_FromDeck7Bathy' });
   },
   'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();

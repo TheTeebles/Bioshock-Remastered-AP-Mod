@@ -25,6 +25,8 @@ class Stop(NamedTuple):
     map: str  # the map, as BathysphereManager.Destinations names it (lower case here)
     level: str
     arrival: str  # the PlayerStart a ride there ends at
+    to: str | None = None  # where the line goes instead of `map`, when it stands in for a level with no station
+    title: str | None = None  # the menu's text for it then
 
 
 # The bathysphere stations, one per chapter. Olympus Heights has none: Apollo Square's is chapter 6's.
@@ -38,6 +40,10 @@ STOPS: tuple[Stop, ...] = (
     Stop("7-science", POINT_PROMETHEUS, "FromResidential"),
 )
 HUB = STOPS[0]  # where a crossing into a locked chapter goes instead: Medical Pavilion's station, made for coming back
+
+# Olympus Heights has no station. Until it has been reached, Apollo Square's line stands in for it and goes where the
+# story arrives from Ryan's office, so chapter 6 opens from the menu as soon as its item does.
+OLYMPUS_STOP = Stop("6-slums", OLYMPUS_HEIGHTS, "PlayerStart_First", to="6-resi", title=OLYMPUS_HEIGHTS)
 
 # Arcadia's station is at the far end of the level, where the story leaves it. A first visit starts where the
 # submarine from Smuggler's Hideout docks, as in the story.
@@ -91,18 +97,20 @@ NEXT_IN_CHAPTER = _next_in_chapter()
 
 
 def open_chapters(held: Collection[str]) -> frozenset[int]:
-    """The chapters whose access the player holds, as the world's logic counts it (rules.py)."""
+    """The chapters the player can reach, as the world's logic counts it (rules.py, regions.py)."""
     access = {chapter.number: chapter.access_item for chapter in CHAPTERS}
     opened = {number for number, item in access.items() if item is None or item in held}
     if not {5, *FREE_CHAPTERS} <= opened:
         opened.discard(5)  # Ryan's chapter needs the three before it as well
+    for number in (6, 7):  # and the story goes on from there in order
+        if number - 1 not in opened:
+            opened.discard(number)
     return frozenset(opened)
 
 
 def offered_stops(held: Collection[str], visited: Collection[str]) -> list[Stop]:
-    """The stations the bathysphere offers. Chapters 6 and 7 are entered the story's way first (Ryan's office leads to
-    Olympus Heights, Apollo Square's bathysphere to Point Prometheus); after that their stations are open for
-    coming back."""
+    """The stations the bathysphere offers: every chapter the player can reach, as soon as its item arrives. Chapter
+    6 is offered as Olympus Heights (its first level) until that has been reached, then as Apollo Square's station."""
     opened = open_chapters(held)
     stops = []
     for stop in STOPS:
@@ -110,9 +118,7 @@ def offered_stops(held: Collection[str], visited: Collection[str]) -> list[Stop]
         if chapter not in opened:
             continue
         if chapter == 6 and OLYMPUS_HEIGHTS not in visited:
-            continue
-        if chapter == 7 and APOLLO_SQUARE not in visited:
-            continue
+            stop = OLYMPUS_STOP
         stops.append(stop)
     return stops
 
@@ -125,7 +131,8 @@ def travel_rules(held: Collection[str], visited: Collection[str]) -> dict[str, A
     return {
         "stops": [{"map": stop.map,
                    "arrival": FIRST_ARRIVALS.get(stop.level, stop.arrival) if stop.level not in visited
-                   else stop.arrival}
+                   else stop.arrival,
+                   **({"to": stop.to, "title": stop.title} if stop.to else {})}
                   for stop in stops],
         "redirects": [{"from": crossing.from_map, "to": crossing.to_map, "map": HUB.map, "arrival": HUB.arrival,
                        "fallback": {"map": crossing.bounce_map, "arrival": crossing.bounce_arrival}}

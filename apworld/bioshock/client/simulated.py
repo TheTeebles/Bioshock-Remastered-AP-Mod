@@ -181,10 +181,11 @@ class SimulatedGame:
         self.level = level
 
     def bathysphere_stops(self) -> list[str]:
-        """The levels the bathysphere offers: all of them, unless the client has said otherwise."""
+        """The levels the bathysphere offers: all of them, unless the client has said otherwise (a line pointed
+        elsewhere offers where it goes)."""
         if self.travel_rules is None:
             return list(LEVEL_NAMES)
-        return [MAP_LEVEL[stop["map"]] for stop in self.travel_rules["stops"]]
+        return [MAP_LEVEL[stop.get("to", stop["map"])] for stop in self.travel_rules["stops"]]
 
     def ride(self, level: str) -> None:
         """Take the bathysphere to a level, as its menu allows."""

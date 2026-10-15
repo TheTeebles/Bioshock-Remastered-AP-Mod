@@ -22,7 +22,7 @@ def open_rapture() -> Harness:
 
 
 def stops(rules: dict) -> list[str]:
-    return [game_data.MAP_LEVEL[stop["map"]] for stop in rules["stops"]]
+    return [game_data.MAP_LEVEL[stop.get("to", stop["map"])] for stop in rules["stops"]]
 
 
 class TestTravelRules(unittest.TestCase):
@@ -55,12 +55,20 @@ class TestTravelRules(unittest.TestCase):
         rules = travel.travel_rules({ARCADIA_ACCESS}, set())
         self.assertEqual([r["to"] for r in rules["redirects"]], ["6-resi"])
 
-    def test_chapters_six_and_seven_are_entered_the_storys_way_first(self) -> None:
+    def test_chapters_six_and_seven_open_with_their_items_once_the_chapters_before_are_open(self) -> None:
         held = set(EVERY_CHAPTER)
-        self.assertNotIn("Apollo Square", stops(travel.travel_rules(held, set())))
-        self.assertIn("Apollo Square", stops(travel.travel_rules(held, {"Olympus Heights"})))
-        self.assertNotIn("Point Prometheus", stops(travel.travel_rules(held, {"Olympus Heights"})))
-        self.assertIn("Point Prometheus", stops(travel.travel_rules(held, {"Olympus Heights", "Apollo Square"})))
+        self.assertEqual(stops(travel.travel_rules(held - {HEPHAESTUS_ACCESS}, set()))[-2:], ["Arcadia", "Fort Frolic"],
+                         "Ryan's chapter, and so the two after it, need Hephaestus Access")
+        self.assertEqual(stops(travel.travel_rules(held - {OLYMPUS_HEIGHTS_ACCESS}, set()))[-1], "Hephaestus")
+        self.assertEqual(stops(travel.travel_rules(held, set()))[-2:], ["Olympus Heights", "Point Prometheus"])
+
+    def test_olympus_heights_is_offered_on_apollo_squares_line_until_reached(self) -> None:
+        held = set(EVERY_CHAPTER)
+        line = next(s for s in travel.travel_rules(held, set())["stops"] if s["map"] == "6-slums")
+        self.assertEqual(line, {"map": "6-slums", "arrival": "PlayerStart_First", "to": "6-resi",
+                                "title": "Olympus Heights"})
+        line = next(s for s in travel.travel_rules(held, {"Olympus Heights"})["stops"] if s["map"] == "6-slums")
+        self.assertEqual(line, {"map": "6-slums", "arrival": "PlayerStart_FromDeck7Bathy"})
 
     def test_every_stop_and_crossing_names_a_map_the_client_knows(self) -> None:
         for stop in travel.STOPS:
