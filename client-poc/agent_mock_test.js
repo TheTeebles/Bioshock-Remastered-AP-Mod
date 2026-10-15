@@ -724,13 +724,28 @@ function makeRuntime({
         }),
       };
     };
+    // Story flags: global_ variables are VariableBool objects with Value at +0x40, made by
+    // Script.newGlobalVariable(VariableName, variableType) -> ReturnValue.
+    const storyFlags = () => {
+      const variableClass = cls('Variable', objectClass);
+      const variableBool = cls('VariableBool', variableClass);
+      fields(variableBool, [['bSomethingElse', boolProperty, 0x40], ['Value', boolProperty, 0x40]]);
+      const scriptClass = cls('Script', objectClass);
+      const newGlobal = make('newGlobalVariable', functionClass);
+      fields(newGlobal, [['VariableName', nameProperty, 0], ['variableType', classProperty, 8],
+        ['ReturnValue', objectProperty, 0xC]]);
+      poke(scriptClass + 0x5C, newGlobal);
+      const script = make('Script', scriptClass);
+      const variable = (text) => { const at = make(text, variableBool, 0x80); poke(at + 0x40, 0); return at; };
+      return { variableBool, script, newGlobal, variable };
+    };
     const textOf = (at) => runtime.text.get(runtime.memory.get(at));
     const changeOf = (change) => ({
       map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
       rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
-    return { nameIndex: name, rename, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+    return { nameIndex: name, rename, storyFlags, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1835,15 +1850,46 @@ const tests = {
     r.frames(12);
     assert.strictEqual(model.arrivalOf(manager, 5), 'Hammer_Start');
   },
-  'a story flag the agent cannot set yet is reported, not fatal': () => {
+  'a story flag that exists is set in place, and Olympus Heights is still offered': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const manager = model.bathysphere([0], 8);
+    const flags = model.storyFlags(); const flag = flags.variable('global_transitionedFromRyan');
     r.load(); r.frames(2);
     travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '6-slums', arrival: 'PlayerStart_First', to: '6-resi',
       title: 'Olympus Heights' }], flags: { global_transitionedFromRyan: '1' }, redirects: [] });
     r.frames(12);
     assert.deepStrictEqual(model.unlockedOf(manager), [0, 5], 'the rest of the rules still apply');
-    assert.match(state(r).travelTrouble, /could not set story flag global_transitionedFromRyan/);
+    assert.strictEqual(r.memory.get(flag + 0x40), 2, 'Value is the second flag in its word');
+    assert.ok(r.logged('story flag global_transitionedFromRyan = 1'));
+    assert.strictEqual(r.scriptCalls.length, 0, 'no call needed');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a story flag from a skipped chapter is made by the game, then set': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.bathysphere([0], 8);
+    const flags = model.storyFlags(); model.nameIndex('global_transitionedFromRyan');
+    let made = null;
+    r.onScriptCall = (self, fn) => {
+      if (fn === flags.newGlobal) {
+        const parms = r.scriptCalls.at(-1).parms;
+        assert.strictEqual(self, flags.script);
+        assert.strictEqual(r.memory.get(parms), model.nameIndex('global_transitionedFromRyan'));
+        assert.strictEqual(r.memory.get(parms + 8), flags.variableBool);
+        made = flags.variable('global_transitionedFromRyan');
+        r.poke(parms + 0xC, made);
+      }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '6-slums', to: '6-resi', title: 'Olympus Heights' }],
+      flags: { global_transitionedFromRyan: '1' }, redirects: [] });
+    r.frames(12);
+    assert.strictEqual(made, null, 'no call of the game\'s to copy yet');
+    r.gameEvent(game.hud, model.tick); r.frames(40);
+    assert.notStrictEqual(made, null);
+    assert.strictEqual(r.memory.get(made + 0x40), 2);
+    assert.ok(r.logged('the game made story flag global_transitionedFromRyan'));
+    assert.strictEqual(r.scriptCalls.filter((c) => c.fn === flags.newGlobal).length, 1, 'once');
+    assert.strictEqual(state(r).travelTrouble, null);
   },
   'a destination the game unlocked and then lost (a save loaded in the same map) is asked for again': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();

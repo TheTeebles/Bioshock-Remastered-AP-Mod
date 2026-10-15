@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.14';
+const AGENT_VERSION = '2026-10-15.15';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2709,13 +2709,16 @@ const travel = {
   noteFields: new Map(), // class -> offset of its string
   unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
   lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
-  flagsSet: new Set(), // `name=value` story flags already set, this attachment
+  flagsSet: new Set(), // `name=value` story flags already set in this level
+  flagTriedAt: 0, // when a story flag was last looked for
   level: null, // the level object the lists above are about
 };
 
 // The level object changed (another map, or a save loaded in the same one): its travel objects are gone.
 function forgetTravelObjects() {
   travel.managers = [];
+  travel.flagsSet = new Set(); // a save loaded may not have them: looked at again in each level
+  travel.flagTriedAt = 0;
   travel.changes = [];
   travel.notes = [];
   travel.borrowed = new Set();
@@ -3235,6 +3238,9 @@ function keepTravel(map) {
   for (const flag of rules.off ? [] : rules.flags) {
     if (!travel.flagsSet.has(`${flag.name}=${flag.value}`)) {
       const trouble = setStoryFlag(flag.name, flag.value);
+      if (trouble === undefined) {
+        continue; // not yet: the next pass tries again
+      }
       if (trouble === null) {
         travel.flagsSet.add(`${flag.name}=${flag.value}`);
         log(`Open Rapture: story flag ${flag.name} = ${flag.value}`);
@@ -3304,8 +3310,100 @@ function setTravelRules(config) {
 // Sets one of the scripts' global_ variables (the story flags their ActionVariableAssign actions keep, such as
 // global_transitionedFromRyan). Null when done, else why not. Where the game keeps them is not known yet: the probe's
 // globals() and scriptApi() look for it (builds/OPEN-RAPTURE-TESTS.md), and this is filled in from what they find.
+// Story flags are the scripts' global_ variables: objects of class VariableBool (or VariableFloat, VariableName...)
+// named global_X, with Value at +0x40 (probe, 2026-10-15). The ones made in a level are carried to the next in
+// LevelInfo.GlobalTravelContainer.TravelObjects. A flag set in an earlier chapter (Ryan's global_transitionedFromRyan,
+// set on the way to Olympus Heights) does not exist when that chapter was skipped, so the agent has the game make it
+// the way the levels' ActionVariableAssignIfNotExist does (traced 2026-10-15): Script.newGlobalVariable(VariableName,
+// variableType), which also adds it to the travel container; then it writes the value. Game thread.
+// Returns null when the flag holds the value, undefined to try again later, or what went wrong.
+const NEW_GLOBAL_PARMS = 0x40; // VariableName, variableType, ReturnValue and locals, zeroed
+const STORY_FLAG_RETRY_MS = 2000; // a walk over every object: not on every pass
 function setStoryFlag(name, value) {
-  return 'where the game keeps story flags is not known yet';
+  const now = Date.now();
+  if (now - travel.flagTriedAt < STORY_FLAG_RETRY_MS) {
+    return undefined;
+  }
+  travel.flagTriedAt = now;
+  const table = carefulPtr(base.add(objectModel.objects));
+  const count = carefulS32(base.add(objectModel.objects + 4));
+  if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
+    return undefined;
+  }
+  let variable = null;
+  let script = null;
+  let boolClass = null;
+  for (let i = 0; i < count; i++) {
+    const object = carefulPtr(table.add(i * 4));
+    const cls = object === null || object.isNull() ? null : classOfObject(object);
+    if (cls === null) {
+      continue;
+    }
+    const own = nameOfObject(object);
+    const kind = nameOfObject(cls);
+    if (own === name && kind !== null && kind.startsWith('Variable')) {
+      variable = object;
+    } else if (kind === 'Script' && script === null) {
+      script = object;
+    } else if (kind === 'Class' && own === 'VariableBool') {
+      boolClass = object;
+    }
+  }
+  if (variable === null) {
+    if (script === null || boolClass === null) {
+      return undefined; // a level without scripts loaded yet
+    }
+    const trouble = scriptCallsTrouble();
+    if (trouble !== null) {
+      return trouble;
+    }
+    if (!readyToCallScript()) {
+      return undefined;
+    }
+    const nameIndex = indexOfName(name);
+    const fn = findFunction(script, 'newGlobalVariable');
+    const nameParam = fn === null ? null : findProperty(fn, 'VariableName', 'NameProperty');
+    const typeParam = fn === null ? null : findProperty(fn, 'variableType', 'ClassProperty');
+    const result = fn === null ? null : findProperty(fn, 'ReturnValue', 'ObjectProperty');
+    if (fn === null || nameParam === null || typeParam === null || result === null ||
+        Math.max(nameParam.offset + 8, typeParam.offset + 4, result.offset + 4) > NEW_GLOBAL_PARMS) {
+      return 'Script.newGlobalVariable is not what the agent expects';
+    }
+    if (nameIndex < 0) {
+      // The name only exists once a level that uses it is loaded (Hephaestus, or Olympus Heights itself): the
+      // agent sets the flag there, in the first moments of the level.
+      return undefined;
+    }
+    const parms = Memory.alloc(NEW_GLOBAL_PARMS);
+    for (let at = 0; at < NEW_GLOBAL_PARMS; at += 4) {
+      parms.add(at).writeS32(0);
+    }
+    parms.add(nameParam.offset).writeS32(nameIndex);
+    parms.add(typeParam.offset).writePointer(boolClass);
+    callScript(script, fn, parms);
+    variable = carefulPtr(parms.add(result.offset));
+    if (variable === null || variable.isNull()) {
+      return 'the game made no variable';
+    }
+    log(`Open Rapture: the game made story flag ${name}`);
+  }
+  const cls = classOfObject(variable);
+  const flag = cls === null ? null : findBoolProperty(cls, 'Value');
+  const number = cls === null || flag !== null ? null : findProperty(cls, 'Value', 'FloatProperty');
+  const truthy = value !== '0' && value !== 0 && value !== 'false' && value !== false;
+  if (flag !== null) {
+    const word = carefulU32(variable.add(flag.offset));
+    if (word === null) {
+      return 'its value cannot be read';
+    }
+    variable.add(flag.offset).writeU32(truthy ? (word | flag.mask) >>> 0 : (word & ~flag.mask) >>> 0);
+    return null;
+  }
+  if (number !== null) {
+    variable.add(number.offset).writeFloat(Number(value) || 0);
+    return null;
+  }
+  return `${name} is a ${cls === null ? 'variable' : nameOfObject(cls)} the agent cannot write`;
 }
 
 // Names the game did not have when the rules came (a level's PlayerStarts exist only once a level that has them has
