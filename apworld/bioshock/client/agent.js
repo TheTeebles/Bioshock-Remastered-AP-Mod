@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.7';
+const AGENT_VERSION = '2026-10-15.8';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -2042,7 +2042,9 @@ function readResearch(pawn, now) {
     for (const row of levelRows) {
       const at = row.add(level.fields.AwardItemClass);
       const award = carefulPtr(at);
-      if (award !== null && !award.isNull() && !same(award, gardens.placeholder)) {
+      // Only an item class is swapped: a field read wrong would hold something else, and that is left alone.
+      if (award !== null && !award.isNull() && !same(award, gardens.placeholder) &&
+        nameOfObject(classOf(award)) === 'Class' && lineageOf(award).some((c) => nameOfObject(c) === 'Item')) {
         at.writePointer(gardens.placeholder);
         research.emptied++;
         const subject = nameOf(carefulS32(row.add(level.fields.ResearchName)));
