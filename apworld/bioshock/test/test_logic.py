@@ -275,7 +275,7 @@ class TestOptionChecks(PoolTestBase):
         with self.assertRaises(OptionError) as raised:
             self.generate(story_checks=False, little_sister_checks=False, power_to_the_people_checks=False,
                           level_completion_checks=False)  # only filler-only collectibles are left
-        self.assertIn("needs 8 checks", str(raised.exception))
+        self.assertIn("need 8 checks", str(raised.exception))
         self.assertIn("leave only 0", str(raised.exception))
 
     # Twelve level completion checks and nothing else, minus what the player excludes.

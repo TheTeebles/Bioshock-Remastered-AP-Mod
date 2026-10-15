@@ -562,9 +562,26 @@ WORLD_SPOTS: tuple[WorldSpot, ...] = (
 )
 
 # Plasmids the story needs (Electro Bolt opens the way out of Welcome to Rapture, Incinerate! melts the ice in the
-# Medical Pavilion, Telekinesis throws the bomb that clears the way to Surgery). Their pickups stay checks, but always
-# give their own plasmid as well.
-KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!", "Telekinesis"})
+# Medical Pavilion). Their pickups stay checks, but always give their own plasmid as well.
+KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!"})
+
+# Telekinesis throws the grenades that clear the debris in front of Surgery, where Steinman has the key to the
+# bathysphere. With the pickups shuffled (Teebs, 2026-10-15) it is a progression item: everything past the debris,
+# and every level after Medical Pavilion, needs it.
+TELEKINESIS = "Telekinesis"
+SURGERY = "Medical Pavilion: Surgery"  # the region past the debris
+
+# The Medical Pavilion checks that logic puts past the debris. The map files give the world items' positions (the
+# Machine Gun and wall safes 5 and 6 lie east of the Telekinesis pickup, toward Surgery); diaries, Little Sisters
+# and the level's end have none, so they are all put past it to be safe. A check put here that is really before the
+# debris only makes logic ask for Telekinesis a little early; the other way round could lock a seed.
+PAST_THE_DEBRIS: frozenset[str] = frozenset({
+    *(f"{MEDICAL_PAVILION} - Audio Diary: {diary.title}" for diary in AUDIO_DIARIES if diary.level == MEDICAL_PAVILION),
+    f"{MEDICAL_PAVILION} - Little Sister 1", f"{MEDICAL_PAVILION} - Little Sister 2",
+    f"{MEDICAL_PAVILION} - Level Complete",
+    f"{MEDICAL_PAVILION} - Story: Clear the Way to Surgery", f"{MEDICAL_PAVILION} - Story: Defeat Dr. Steinman",
+    f"{MEDICAL_PAVILION} - Weapon: Machine Gun", f"{MEDICAL_PAVILION} - Safe 5", f"{MEDICAL_PAVILION} - Safe 6",
+})
 
 
 def world_spot_location_name(spot: WorldSpot, number: int = 0) -> str:

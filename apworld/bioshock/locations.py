@@ -5,8 +5,8 @@ from typing import TYPE_CHECKING
 from BaseClasses import Location, LocationProgressType
 
 from .data import (
-    GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, VICTORY_ITEM,
-    WORLD_SPOTS, LocationCategory, LocationData,
+    GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, PAST_THE_DEBRIS, SURGERY,
+    VICTORY_ITEM, WORLD_SPOTS, LocationCategory, LocationData,
 )
 from .items import BioShockItem
 from .options import CollectibleChecks, ResearchChecks, ShopChecks, WorldItemChecks
@@ -96,7 +96,7 @@ def progression_locations(world: BioShockWorld) -> list[LocationData]:
 
 def create_all_locations(world: BioShockWorld) -> None:
     for data in enabled_locations(world):
-        region = world.get_region(data.level)
+        region = world.get_region(SURGERY if data.name in PAST_THE_DEBRIS else data.level)
         location = BioShockLocation(world.player, data.name, data.id, region)
         if is_filler_only(world, data):
             location.progress_type = LocationProgressType.EXCLUDED

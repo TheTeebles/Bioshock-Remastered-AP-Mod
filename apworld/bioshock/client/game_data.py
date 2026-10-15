@@ -241,8 +241,8 @@ def plasmid_levels(item_name: str, world_items_shuffled: bool = False) -> tuple[
     """The in-game plasmid each successive copy of a plasmid item stands for.
 
     While world pickups give their own plasmid, the levels you find lying around are not in the pool, so the first
-    copy of "Progressive Electro Bolt" is Electro Bolt 2. Electro Bolt, Incinerate! and Telekinesis always give
-    themselves, even with the pickups shuffled. Plasmids that only exist as a world pickup keep their one level, so a copy sent with a
+    copy of "Progressive Electro Bolt" is Electro Bolt 2. Electro Bolt and Incinerate! always give themselves,
+    even with the pickups shuffled. Plasmids that only exist as a world pickup keep their one level, so a copy sent with a
     server command still does something.
     """
     levels = _PLASMID_LEVELS[item_name]

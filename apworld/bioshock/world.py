@@ -6,10 +6,10 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVELS, LocationData
+from .data import GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.41"
+WORLD_VERSION = "0.1.42"
 RESEARCH_CAMERA = "Research Camera"
 SLOT_DATA_VERSION = 5  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
 # 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2), safe_checks, research_checks (0/1/2)
@@ -67,16 +67,17 @@ class BioShockWorld(World):
                           "count.")
         if needed > len(open_checks):
             raise OptionError(
-                f"{self.player_name}: Level Access needs {needed} checks that may hold an access item, but these "
+                f"{self.player_name}: Level Access and Telekinesis need {needed} checks that may hold progression, "
+                "but these "
                 f"options leave only {len(open_checks)}. {does_not_count} Turn on story, Little Sister, Power to "
                 "the People or level completion checks, exclude fewer locations, set audio diaries "
                 "to 'all', or set Level Access to 'vanilla'.")
         if needed and not self._open_from_the_start(open_checks):
             # Without this the fill fails whenever no other player has room for the first access item either.
             raise OptionError(
-                f"{self.player_name}: with Level Access on, at least one check that may hold an access item has to "
-                "be open from the start, and here every one of them is in a level that needs an access item "
-                f"first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
+                f"{self.player_name}: with Level Access on or the pickups shuffled, at least one check that may hold "
+                "progression has to be open from the start, and here every one of them needs an access item or "
+                f"Telekinesis first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
                 "locations in Welcome to Rapture and Medical Pavilion, set Level Access to 'vanilla', or add an "
                 "access item to start_inventory.")
         # As create_all_items counts it: access items taken back out of the pool still took their place in it.
@@ -95,6 +96,9 @@ class BioShockWorld(World):
     def _open_from_the_start(self, open_checks: list[LocationData]) -> list[LocationData]:
         """The checks among these that need no access item the player does not start with."""
         start_items = set(self.options.start_inventory.value) | set(self.options.start_inventory_from_pool.value)
+        if items.world_pickups_shuffled(self) and TELEKINESIS not in start_items:  # the debris before Surgery
+            open_checks = [location for location in open_checks if location.name not in PAST_THE_DEBRIS
+                           and location.level in (WELCOME_TO_RAPTURE, MEDICAL_PAVILION)]
         return [location for location in open_checks
                 if items.access_item_of(self, location.level) in (None, *start_items)]
 

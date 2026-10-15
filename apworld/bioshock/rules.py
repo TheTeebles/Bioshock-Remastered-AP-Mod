@@ -5,16 +5,20 @@ from typing import TYPE_CHECKING
 from rule_builder.rules import Has, HasAll
 
 from .data import (
-    CHAPTERS, FREE_CHAPTERS, LEVELS, NEPTUNES_BOUNTY_ACCESS, VICTORY_ITEM,
+    CHAPTERS, FREE_CHAPTERS, LEVELS, NEPTUNES_BOUNTY_ACCESS, TELEKINESIS, VICTORY_ITEM,
 )
+from .items import world_pickups_shuffled
 from .options import LevelAccess
-from .regions import chapter_entrance_name, travel_entrance_name
+from .regions import DEBRIS_ENTRANCE, chapter_entrance_name, travel_entrance_name
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
 
 
 def set_all_rules(world: BioShockWorld) -> None:
+    if world_pickups_shuffled(world):  # Telekinesis comes from the multiworld, and the debris needs it
+        world.set_rule(world.get_entrance(DEBRIS_ENTRANCE), Has(TELEKINESIS))
+
     if world.options.level_access == LevelAccess.option_access_items:
         for level in LEVELS:
             if level.access_item:

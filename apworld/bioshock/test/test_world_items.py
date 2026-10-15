@@ -10,6 +10,7 @@ from Options import OptionError
 from ..client import game_data
 from ..client.frida_agent import state_from_agent
 from ..data import (
+    PAST_THE_DEBRIS,
     KEPT_WORLD_PICKUPS, LOCATION_TABLE, WORLD_SPOTS, LocationCategory, SpotKind, shuffled_world_pickups,
 )
 from .. import locations
@@ -40,9 +41,10 @@ class TestTable(unittest.TestCase):
 
     def test_kept_pickups_are_the_story_plasmids(self) -> None:
         shuffled = {spot.vanilla for spot in shuffled_world_pickups()}
-        self.assertEqual(len(shuffled), 28)
+        self.assertEqual(len(shuffled), 29)
+        self.assertIn("Telekinesis", shuffled)
         self.assertFalse(shuffled & KEPT_WORLD_PICKUPS)
-        self.assertEqual(sum(len(actors) for actors in game_data.SHUFFLED_PICKUPS.values()), 28)
+        self.assertEqual(sum(len(actors) for actors in game_data.SHUFFLED_PICKUPS.values()), 29)
 
 
 class TestOff(BioShockTestBase):
@@ -88,13 +90,47 @@ class TestShuffled(BioShockTestBase):
 
     def test_shuffled_pickups_are_in_the_pool(self) -> None:
         pool = Counter(item.name for item in self.multiworld.itempool)
-        self.assertEqual(pool["Telekinesis"], 0, "the story needs it: its pickup still gives it")
+        self.assertEqual(pool["Telekinesis"], 1)
+        self.assertTrue(self.get_item_by_name("Telekinesis").advancement, "the debris before Surgery needs it")
         self.assertEqual(pool["Security Bullseye"], 1)
         self.assertEqual(pool["Wrench Jockey"], 1)
         self.assertEqual(pool["Hacker's Delight 3"], 1)
         self.assertEqual(pool["Progressive Electro Bolt"], 2, "its pickup still gives the first level")
         self.assertEqual(pool["Progressive Incinerate!"], 2)
         self.assertEqual(self.world.fill_slot_data()["world_item_checks"], 2)
+
+    def test_telekinesis_opens_surgery_and_the_way_out(self) -> None:
+        self.collect_by_name("Neptune's Bounty Access")
+        self.assertTrue(self.can_reach_location("Medical Pavilion - Pickup: Telekinesis"))
+        self.assertTrue(self.can_reach_location("Medical Pavilion - Pickup: Wrench Jockey"))
+        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Medical Pavilion - Weapon: Machine Gun",
+                     "Neptune's Bounty - Pickup: Security Bullseye"):
+            self.assertFalse(self.can_reach_location(name), name)
+        self.collect_by_name("Telekinesis")
+        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Medical Pavilion - Weapon: Machine Gun",
+                     "Neptune's Bounty - Pickup: Security Bullseye"):
+            self.assertTrue(self.can_reach_location(name), name)
+
+    def test_past_the_debris_names_real_checks(self) -> None:
+        self.assertLessEqual(PAST_THE_DEBRIS, {location.name for location in LOCATION_TABLE})
+        self.assertEqual(len(PAST_THE_DEBRIS), 25)
+
+
+class TestShuffledOpenRapture(BioShockTestBase):
+    options = {"world_item_checks": "shuffled", "level_access": "open_rapture"}
+
+    def test_the_hub_needs_telekinesis(self) -> None:
+        self.collect_by_name(["Neptune's Bounty Access"])
+        self.assertFalse(self.can_reach_location("Neptune's Bounty - Pickup: Security Bullseye"))
+        self.collect_by_name("Telekinesis")
+        self.assertTrue(self.can_reach_location("Neptune's Bounty - Pickup: Security Bullseye"))
+
+
+class TestKeptTelekinesisNeedsNothing(BioShockTestBase):
+    options = {"world_item_checks": "keep_items"}
+
+    def test_surgery_is_open(self) -> None:
+        self.assertTrue(self.can_reach_location("Medical Pavilion - Story: Defeat Dr. Steinman"))
 
 
 class TestRoom(BioShockTestBase):
@@ -106,12 +142,12 @@ class TestRoom(BioShockTestBase):
         only_pickups = dict(level_access="vanilla", world_item_checks="shuffled", story_checks=False,
                             little_sister_checks=False, power_to_the_people_checks=False,
                             level_completion_checks=False, audio_diary_checks="off")
-        self.generate(**only_pickups)  # 36 open checks for 28 items
+        self.generate(**only_pickups)  # 36 open checks for 28 items and Telekinesis
         pickups = sorted(name for name in WORLD_ITEM_LOCATIONS if "Pickup:" in name and "Welcome" not in name)
         with self.assertRaises(OptionError) as raised:
             self.generate(**only_pickups, exclude_locations=pickups[:9])
         self.assertIn("28 items come only from the multiworld", str(raised.exception))
-        self.assertIn("leave room for 27", str(raised.exception))
+        self.assertIn("leave room for 26", str(raised.exception))
 
 
 class TestUniversalTracker(BioShockTestBase):
@@ -151,7 +187,7 @@ class TestClient(unittest.TestCase):
                                                          for name, actors in game_data.SHUFFLED_PICKUPS.items()}})
         self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Wrench Jockey"), "chips")
         self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Incinerate!"), "Incinerate!")
-        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "Telekinesis")
+        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "chips")
         h.step(4)
         self.assertIn(loc("Medical Pavilion - Pickup: Wrench Jockey"), h.sent_checks)
 

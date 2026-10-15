@@ -6,7 +6,7 @@ from BaseClasses import Item, ItemClassification
 
 from .data import (
     ACCESS_ITEMS, CHAPTER_ACCESS_ITEMS, CHAPTER_OF_LEVEL, CHARACTER_UPGRADES, LEVEL_BY_NAME, FILLER_ITEMS, GAME_NAME,
-    ITEM_TABLE, PLASMIDS, RESEARCH_AWARDS, TONICS, TRAP_ITEMS, WEAPON_UPGRADES, ItemKind, Source,
+    ITEM_TABLE, PLASMIDS, RESEARCH_AWARDS, TELEKINESIS, TONICS, TRAP_ITEMS, WEAPON_UPGRADES, ItemKind, Source,
     shuffled_world_pickups,
 )
 from .options import LevelAccess, ResearchChecks, WorldItemChecks
@@ -51,6 +51,8 @@ ITEM_NAME_GROUPS: dict[str, set[str]] = _build_item_groups()
 
 def create_item(world: BioShockWorld, name: str) -> BioShockItem:
     classification = _DEFAULT_CLASSIFICATION[ITEM_KIND[name]]
+    if name == TELEKINESIS and world_pickups_shuffled(world):
+        classification = ItemClassification.progression  # the debris in front of Surgery needs it
     return BioShockItem(name, classification, ITEM_NAME_TO_ID[name], world.player)
 
 
@@ -64,9 +66,12 @@ def get_random_filler_item_name(world: BioShockWorld) -> str:
 
 def progression_item_names(world: BioShockWorld) -> list[str]:
     """The items the logic depends on."""
+    telekinesis = [TELEKINESIS] if world_pickups_shuffled(world) else []
     if world.options.level_access == LevelAccess.option_open_rapture:
-        return list(CHAPTER_ACCESS_ITEMS)
-    return list(ACCESS_ITEMS) if world.options.level_access == LevelAccess.option_access_items else []
+        return list(CHAPTER_ACCESS_ITEMS) + telekinesis
+    if world.options.level_access == LevelAccess.option_access_items:
+        return list(ACCESS_ITEMS) + telekinesis
+    return telekinesis
 
 
 def access_item_of(world: BioShockWorld, level: str) -> str | None:
@@ -91,10 +96,12 @@ def world_pickups_shuffled(world: BioShockWorld) -> bool:
 
 
 def world_pickup_items(world: BioShockWorld | None = None) -> list[str]:
-    """The items of the pickups that give a bag of chips instead, which only the multiworld hands out then."""
+    """The items of the pickups that give a bag of chips instead, which only the multiworld hands out then.
+    Telekinesis is one of them, but a progression item (progression_item_names)."""
     if world is None or not world_pickups_shuffled(world):
         return []
-    return [_PLASMID_ITEM.get(spot.vanilla, spot.vanilla) for spot in shuffled_world_pickups()]
+    return [_PLASMID_ITEM.get(spot.vanilla, spot.vanilla) for spot in shuffled_world_pickups()
+            if spot.vanilla != TELEKINESIS]
 
 
 def research_awards_shuffled(world: BioShockWorld) -> bool:
