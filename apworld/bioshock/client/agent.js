@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.11';
+const AGENT_VERSION = '2026-10-15.12';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -609,7 +609,7 @@ function readState() {
     travelRedirects: travel.originals.size,
     travelTrouble: travel.trouble,
     // Plasmid and tonic pickups seen taken, by map; the ones lying in the player's map ({ map, names }, null until a
-    // pass has listed them); safes and lockboxes seen open, by map; and how many pickups give the placeholder.
+    // pass has listed them); safes seen open, by map; and how many pickups give the placeholder.
     pickupsTaken: Object.fromEntries([...world.taken].map(([map, names]) => [map, [...names].sort()])),
     pickupsHere: world.here,
     containersOpened: Object.fromEntries([...world.opened].map(([map, names]) => [map, [...names].sort()])),
@@ -1494,8 +1494,7 @@ function kindOf(cls) {
         kind = 'note';
       } else if (lineage.some((c) => typeof c === 'string' && c.endsWith('PlasmidPickup'))) {
         kind = 'pickup';
-      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('SecurityCrate_WallSafe') ||
-        lineage.includes('Lockbox')) {
+      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('SecurityCrate_WallSafe')) {
         kind = 'container';
       }
     }
@@ -1728,7 +1727,7 @@ function readStations(map) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
-// Plasmids and tonics lying in the level, safes and lockboxes: World Item Checks and Safe Checks
+// Plasmids and tonics lying in the level, and safes: World Item Checks and Safe Checks
 // ---------------------------------------------------------------------------------------------------------------
 
 // A plasmid or tonic lying in a level is an actor whose class ends in PlasmidPickup (ActivePlasmidPickup, and the
@@ -1740,21 +1739,21 @@ function readStations(map) {
 // the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
 // before the agent was watching. Not tried in game yet.
 // A safe is a SecurityCrate_Safe or a SecurityCrate_WallSafe (set into a wall, as by Medical's Telekinesis plasmid;
-// found 2026-10-15), a lockbox a Lockbox. All are AnimatedContainers, whose bIsOpened turns true when
-// they are opened and stays true in a save (safes confirmed 2026-10-14; lockboxes not tried yet).
+// found 2026-10-15). Both are AnimatedContainers, whose bIsOpened turns true when they are opened and stays true in
+// a save (confirmed 2026-10-14). Lockboxes are out of scope (Teebs, 2026-10-15).
 // With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
 // of their item: the item class in the pickup's LootSlot is swapped, as the probe's pickupItem() did in game
 // (2026-10-15: Telekinesis gave chips).
 const world = {
   level: null, // the level object the lists below are about
   pickups: [], // { object, name } lying in the level at the last pass
-  containers: [], // safes and lockboxes found by the last pass
+  containers: [], // safes found by the last pass
   taken: new Map(), // map -> names of the pickups seen taken there
   seen: new Set(), // names of the pickups seen lying in this level object
   missing: new Set(), // names seen before and missing at the last pass: taken if the next pass misses them too
   lastListed: null, // the names the last pass found lying, joined
   here: null, // { map, names }: the pickups lying in the player's map, once a pass has listed them all
-  opened: new Map(), // map -> names of the safes and lockboxes seen open there
+  opened: new Map(), // map -> names of the safes seen open there
   deleteFlags: new Map(), // class address -> where bDeleteMe is
   openFlags: new Map(), // class address -> where bIsOpened is
   lootOffsets: new Map(), // `${class} ${property}` -> its offset, or null: where a pickup's item is
@@ -1813,10 +1812,9 @@ function boolNamesOf(cls) {
   return out;
 }
 
-// What says a safe or lockbox has been opened. Safes (AnimatedContainer) have bIsOpened, seen in game 2026-10-14.
-// Lockboxes do not (in game 2026-10-15): the others are guesses, and the log lists a class's flags when none fits.
-const OPEN_FLAGS = ['bIsOpened', 'bOpened', 'bIsOpen', 'bHasBeenOpened', 'bEverOpened', 'bWasOpened',
-  'bHasBeenSearched', 'bSearched', 'bLooted'];
+// What says a safe has been opened: bIsOpened (AnimatedContainer), seen in game 2026-10-14. Lockboxes have none and
+// are out of scope (Teebs, 2026-10-15).
+const OPEN_FLAGS = ['bIsOpened'];
 
 function flagSet(object, flag) {
   const word = flag === null ? null : carefulS32(object.add(flag.offset));

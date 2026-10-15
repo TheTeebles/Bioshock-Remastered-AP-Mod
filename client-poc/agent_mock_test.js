@@ -648,7 +648,7 @@ function makeRuntime({
       poke(at + 0x88, room);
       return at;
     };
-    // Plasmids and tonics lying in a level and safes and lockboxes (bIsOpened). As in game (probe .8): the pickup's
+    // Plasmids and tonics lying in a level and safes (bIsOpened). As in game (probe .8): the pickup's
     // LootSlot (+0x520) holds LootSpec (a LootItemSpecification, ItemClass +0x4C) and Loot (the ItemStack rolled
     // from it, ItemClass +0x50, None until rolled); taking the pickup gives the ItemStack's class.
     const classProperty = cls('ClassProperty', objectClass);
@@ -684,11 +684,9 @@ function makeRuntime({
     fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
     const crateClass = cls('SecurityCrate', containerClass);
     const containerKinds = { SecurityCrate_Safe: cls('SecurityCrate_Safe', crateClass),
-      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass), Lockbox: cls('Lockbox', containerClass),
-      // Lockboxes that are not AnimatedContainers: one with another of the open flags, one with none of them.
-      SearchedLockbox: cls('SearchedLockbox', cls('Lockbox', actor)), BareLockbox: cls('BareLockbox', cls('Lockbox', actor)) };
-    fields(containerKinds.SearchedLockbox, [['bCanBeCarried', boolProperty, 0x5E0], ['bHasBeenSearched', boolProperty, 0x5E0]]);
-    fields(containerKinds.BareLockbox, [['bJiggles', boolProperty, 0x5E0]]);
+      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass),
+      Lockbox: cls('Lockbox', cls('ReactiveActor', actor)) }; // out of scope, and not an AnimatedContainer
+    fields(containerKinds.Lockbox, [['bCanSoftLock', boolProperty, 0x5E0]]);
     const container = (className, actorName) => {
       const at = make(actorName, containerKinds[className], 0x600); poke(at + 0x5DC, 0);
       if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
@@ -2313,7 +2311,7 @@ const tests = {
     r.frames(10);
     assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
   },
-  'state() reports the safes and lockboxes open, by map': () => {
+  'state() reports the safes open, by map, and leaves lockboxes alone': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const safe = model.container('SecurityCrate_Safe', 'SecurityCrate_Safe2');
     const lockbox = model.container('Lockbox', 'Lockbox0');
@@ -2321,25 +2319,13 @@ const tests = {
     const wall = model.container('SecurityCrate_WallSafe', 'SecurityCrate_WallSafe0'); // by Medical's Telekinesis
     r.load(); r.frames(10);
     assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
-    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5DC, 1); r.poke(wall + 0x5DC, 1); r.frames(10);
-    const open = '{"1-medical":["Lockbox0","SecurityCrate_Safe2","SecurityCrate_WallSafe0"]}';
+    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5E0, 1); r.poke(wall + 0x5DC, 1); r.frames(10);
+    const open = '{"1-medical":["SecurityCrate_Safe2","SecurityCrate_WallSafe0"]}';
     assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
     [safe, lockbox, wall].forEach((at) => r.removeActor(game.level, at));
     r.string(game.level + 0x7C, '2-fisheries'); r.frames(10); // another level: what was open stays reported
     assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
-    assert.strictEqual(state(r).worldTrouble, null);
-  },
-  'a lockbox without bIsOpened is followed by another open flag, and one with none lists its flags': () => {
-    const r = makeRuntime(); r.game(); const model = r.objectModel();
-    const searched = model.container('SearchedLockbox', 'Lockbox3');
-    model.container('BareLockbox', 'Lockbox4');
-    r.load(); r.frames(10);
-    r.poke(searched + 0x5E0, 1); r.frames(10); // bCanBeCarried: not open
-    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
-    r.poke(searched + 0x5E0, 3); r.frames(10); // bHasBeenSearched, the second flag in the word
-    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{"1-medical":["Lockbox3"]}');
-    assert.ok(r.logged('objects of class BareLockbox have no bIsOpened or'));
-    assert.ok(r.logged('their flags: bJiggles (BareLockbox)'));
+    assert.strictEqual(state(r).worldTrouble, null, 'no complaint about lockboxes');
   },
   'shuffled pickups give the placeholder, and the kept ones their own item': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();

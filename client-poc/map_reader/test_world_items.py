@@ -75,9 +75,14 @@ def test_ammo_pickups_are_not_weapons():
 def test_safes_are_numbered_per_level_and_keep_their_contents():
     rows, _, _ = candidates([FISHERIES, MEDICAL])
     safes = {row["name"]: row["contents"] for row in rows if row["kind"] == "safe"}
-    assert safes == {"Medical Pavilion Safe 1": [], "Neptune's Bounty Safe 1": ["AutoHack"],
-                     "Neptune's Bounty Safe 2": ["MedHypo"]}
+    assert safes == {"Medical Pavilion Safe 1": [], "Neptune's Bounty Safe 1": ["AutoHack"]}
     assert all(row["vanilla"] is None for row in rows if row["kind"] == "safe")
+
+
+def test_lockboxes_are_left_out_but_keep_their_ids():
+    rows, _, _ = candidates([FISHERIES, MEDICAL])
+    assert not any(row["actor"].startswith("Lockbox") for row in rows)
+    assert 6103 not in {row["id"] for row in rows}
 
 
 def test_classes_the_tables_do_not_know_are_reported():
@@ -107,7 +112,7 @@ def test_wall_safes_are_numbered_after_every_other_safe():
     rows, unknown, duplicates = candidates([FISHERIES, medical])
     names = by_name(rows)
     assert names["Medical Pavilion Safe 1"]["id"] == 6101  # as before wall safes were known
-    assert names["Neptune's Bounty Safe 2"]["id"] == 6103
+    assert "Neptune's Bounty Safe 2" not in names  # the lockbox: out of scope, its ID 6103 kept back
     wall = names["Medical Pavilion Wall Safe 1"]
     assert (wall["id"], wall["kind"], wall["actor"]) == (6104, "safe", "SecurityCrate_WallSafe0")
     assert unknown == [] and duplicates == []

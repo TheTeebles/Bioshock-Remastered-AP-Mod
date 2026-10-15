@@ -353,13 +353,13 @@ MILESTONE_LOCATION: dict[str, int] = {
     milestone.key: _LOCATION_ID[story_location_name(milestone)] for milestone in STORY_MILESTONES
 }
 # (level, line) -> location ID of a Gatherer's Garden line. Lines count from 1 in the order of the Garden's stock list.
-# (map, actor) -> location, for the pickups, safes and lockboxes lying in the levels. The map is spelled as
+# (map, actor) -> location, for the pickups and safes lying in the levels. The map is spelled as
 # normalize_map leaves it.
 PICKUP_LOCATION: dict[tuple[str, str], int] = {
     (spot.map, spot.actor): spot.id for spot in WORLD_SPOTS if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC)
 }
 CONTAINER_LOCATION: dict[tuple[str, str], int] = {
-    (spot.map, spot.actor): spot.id for spot in WORLD_SPOTS if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX)
+    (spot.map, spot.actor): spot.id for spot in WORLD_SPOTS if spot.kind == SpotKind.SAFE
 }
 
 

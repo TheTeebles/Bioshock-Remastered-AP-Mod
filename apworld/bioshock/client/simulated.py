@@ -64,7 +64,7 @@ class SimulatedGame:
         self.quests: set[str] = set()  # the game's quests completed, by name
         self.travel_rules: dict[str, Any] | None = None  # Open Rapture: where the bathysphere goes, as the client said
         self.pickups_taken: dict[str, set[str]] = {}  # map -> plasmid and tonic pickups taken there (actor names)
-        self.containers_opened: dict[str, set[str]] = {}  # map -> safes and lockboxes opened there
+        self.containers_opened: dict[str, set[str]] = {}  # map -> safes opened there
         self.empty_pickups: dict[str, Any] | None = None  # the pickups the client said should give the placeholder
         self.research: dict[str, int] = {}  # research subject (the game's name) -> level reached
         self.research_awards_emptied = False  # research gives the placeholder, as the client asks with research checks
@@ -258,28 +258,28 @@ class SimulatedGame:
         return f"{offer[line]['name']} for {offer[line]['price']} ADAM"
 
     def take_here(self, text: str) -> str:
-        """take_from_world for the one pickup, weapon, safe or lockbox of this level whose name contains `text`."""
+        """take_from_world for the one pickup, weapon or safe of this level whose name contains `text`."""
         wanted = text.strip().lower()
         ids = {spot.id for spot in WORLD_SPOTS if spot.level == self.level}
         names = [location.name for location in LOCATION_TABLE if location.id in ids]
         matches = [name for name in names if name.lower() == wanted or name.lower().endswith(f": {wanted}")
                    or name.lower().endswith(f" - {wanted}")] or [name for name in names if wanted in name.lower()]
         if len(matches) != 1:
-            raise ValueError(f"'{text.strip()}' is not one pickup, weapon, safe or lockbox of {self.level}"
+            raise ValueError(f"'{text.strip()}' is not one pickup, weapon or safe of {self.level}"
                              + (f". There are: {', '.join(names)}" if names else ": it has none."))
         return f"{self.take_from_world(matches[0])} ({matches[0]})"
 
     def take_from_world(self, location_name: str) -> str:
-        """Take the pickup, open the safe or lockbox, or pick up the weapon that is this location. Returns what the
+        """Take the pickup, open the safe, or pick up the weapon that is this location. Returns what the
         player got (a pickup the client has emptied gives a bag of chips)."""
         location_id = next((location.id for location in LOCATION_TABLE if location.name == location_name), None)
         spot = next((spot for spot in WORLD_SPOTS if spot.id == location_id), None)
         if spot is None:
-            raise ValueError(f"{location_name} is no pickup, weapon, safe or lockbox.")
+            raise ValueError(f"{location_name} is no pickup, weapon or safe.")
         if spot.kind == SpotKind.WEAPON:
             self.held_weapons.add(_WEAPON_CLASS[spot.vanilla])
             return spot.vanilla
-        if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX):
+        if spot.kind == SpotKind.SAFE:
             self.containers_opened.setdefault(spot.map, set()).add(spot.actor)
             return f"the {spot.kind}'s contents"
         self.pickups_taken.setdefault(spot.map, set()).add(spot.actor)

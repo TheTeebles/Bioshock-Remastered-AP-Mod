@@ -24,8 +24,8 @@ CAMERA = "Neptune's Bounty - Weapon: Research Camera"
 class TestTable(unittest.TestCase):
     def test_spots(self) -> None:
         self.assertEqual(Counter(spot.kind for spot in WORLD_SPOTS), Counter(
-            {SpotKind.PLASMID: 4, SpotKind.TONIC: 27, SpotKind.WEAPON: 7, SpotKind.SAFE: 41, SpotKind.LOCKBOX: 32}))
-        self.assertEqual(len({(spot.map, spot.actor) for spot in WORLD_SPOTS if spot.actor}), 104, "one actor, one spot")
+            {SpotKind.PLASMID: 4, SpotKind.TONIC: 27, SpotKind.WEAPON: 7, SpotKind.SAFE: 41}))
+        self.assertEqual(len({(spot.map, spot.actor) for spot in WORLD_SPOTS if spot.actor}), 72, "one actor, one spot")
         for spot in WORLD_SPOTS:
             self.assertEqual(game_data.level_of(spot.map, None), spot.level, spot)
             self.assertEqual(game_data.normalize_map(spot.map), spot.map, spot)
@@ -36,7 +36,7 @@ class TestTable(unittest.TestCase):
         self.assertIn("Medical Pavilion - Pickup: Telekinesis", WORLD_ITEM_LOCATIONS)
         self.assertIn("Arcadia - Weapon: Chemical Thrower", WORLD_ITEM_LOCATIONS)
         self.assertIn("Neptune's Bounty - Safe 1", SAFE_LOCATIONS)
-        self.assertIn("Neptune's Bounty - Lockbox 1", SAFE_LOCATIONS)
+        self.assertFalse(any("Lockbox" in name for name in SAFE_LOCATIONS), "lockboxes are out of scope (Teebs, 2026-10-15)")
 
     def test_kept_pickups_are_the_story_plasmids(self) -> None:
         shuffled = {spot.vanilla for spot in shuffled_world_pickups()}
@@ -121,7 +121,7 @@ class TestUniversalTracker(BioShockTestBase):
         self.world.generate_early()
         counts = Counter(location.category for location in locations.enabled_locations(self.world))
         self.assertEqual(counts[LocationCategory.WORLD_ITEM], 37)  # the camera is started with
-        self.assertEqual(counts[LocationCategory.SAFE], 73)
+        self.assertEqual(counts[LocationCategory.SAFE], 41)
         self.assertEqual(counts[LocationCategory.RESEARCH], 11)
 
 
@@ -136,7 +136,7 @@ class TestClient(unittest.TestCase):
         h = self.harness()
         h.game.reports_weapons = True
         h.step(4)
-        for name in ("Medical Pavilion - Pickup: Telekinesis", "Neptune's Bounty - Lockbox 1",
+        for name in ("Medical Pavilion - Pickup: Telekinesis", "Neptune's Bounty - Safe 1",
                      "Medical Pavilion - Weapon: Machine Gun"):
             self.assertNotIn(loc(name), h.sent_checks)
             h.game.take_from_world(name)
@@ -183,11 +183,11 @@ class TestClient(unittest.TestCase):
         state = state_from_agent({
             "map": "1-Medical", "pickupsTaken": {"1-Medical": ["ActivePlasmidPickup0"]},
             "pickupsHere": {"map": "1-Medical", "names": ["ActivePlasmidPickup2"]},
-            "containersOpened": {"2-Fisheries_int": ["Lockbox0", 7]},
+            "containersOpened": {"2-Fisheries_int": ["SecurityCrate_Safe2", 7]},
         })
         self.assertEqual(state.pickups_taken, {"1-medical": frozenset({"ActivePlasmidPickup0"})})
         self.assertEqual(state.pickups_here, ("1-medical", frozenset({"ActivePlasmidPickup2"})))
-        self.assertEqual(state.containers_opened, {"2-fisheries": frozenset({"Lockbox0"})})
+        self.assertEqual(state.containers_opened, {"2-fisheries": frozenset({"SecurityCrate_Safe2"})})
         self.assertIsNone(state_from_agent({"map": "1-Medical"}).pickups_here)
         self.assertEqual(state_from_agent({"researchLevels": {"ThuggishSplicer": 2, "Bouncer": "x", "Rosie": 1065353216,
                                                               "Turret": -1}}).research, {"ThuggishSplicer": 2},

@@ -55,8 +55,8 @@ World Item Checks and Safe Checks (both off by default, and not tried in the gam
 checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
 of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
 as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead and their items go into the
-multiworld, except Electro Bolt, Incinerate! and Telekinesis, which the story needs. Safe Checks makes opening each of the 73
-safes and lockboxes a check; their contents stay as they are.
+multiworld, except Electro Bolt, Incinerate! and Telekinesis, which the story needs. Safe Checks makes opening each of the 41
+safes a check; their contents stay as they are.
 
 Research Checks (off by default, not tried in the game yet) make researching enemies with the Research Camera
 checks. Each of the 11 subjects (Thuggish, Leadhead, Nitro, Spider and Houdini Splicers, Bouncers, Rosies, Little

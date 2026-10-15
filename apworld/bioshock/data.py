@@ -452,7 +452,7 @@ def story_location_name(milestone: StoryMilestone) -> str:
 
 
 # --------------------------------------------------------------------------------------------------------------------
-# Things lying in the levels: plasmid and tonic pickups, weapons, safes and lockboxes
+# Things lying in the levels: plasmid and tonic pickups, weapons and safes
 # --------------------------------------------------------------------------------------------------------------------
 
 class SpotKind:
@@ -460,7 +460,6 @@ class SpotKind:
     TONIC = "tonic"  # a Physical, Engineering or Combat (Weapons) PlasmidPickup: the same
     WEAPON = "weapon"  # the check is holding the weapon for the first time, wherever it came from
     SAFE = "safe"  # a SecurityCrate_Safe or _WallSafe: the check is opening it (its contents stay as they are)
-    LOCKBOX = "lockbox"  # a Lockbox: the same
 
 
 class WorldSpot(NamedTuple):
@@ -469,7 +468,7 @@ class WorldSpot(NamedTuple):
     level: str
     map: str  # the map file it lies in, the way the client's normalize_map spells it
     actor: str | None  # its actor's name in that map (None for weapons)
-    vanilla: str | None  # the plasmid, tonic or weapon it gives (None for safes and lockboxes)
+    vanilla: str | None  # the plasmid, tonic or weapon it gives (None for safes)
 
 
 # Read from the map files with client-poc/map_reader/world_items.py on 2026-10-14
@@ -519,33 +518,15 @@ WORLD_SPOTS: tuple[WorldSpot, ...] = (
     WorldSpot(6101, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe0", None),
     WorldSpot(6102, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe3", None),
     WorldSpot(6103, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe2", None),
-    WorldSpot(6104, SpotKind.LOCKBOX, "Neptune's Bounty", "2-fisheries", "Lockbox0", None),
     WorldSpot(6105, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe1", None),
     WorldSpot(6106, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe3", None),
     WorldSpot(6107, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe0", None),
     WorldSpot(6108, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe3", None),
-    WorldSpot(6109, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox1", None),
-    WorldSpot(6110, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox0", None),
     WorldSpot(6111, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe2", None),
-    WorldSpot(6112, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox2", None),
-    WorldSpot(6113, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox4", None),
-    WorldSpot(6114, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox5", None),
-    WorldSpot(6115, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox3", None),
-    WorldSpot(6116, SpotKind.LOCKBOX, "Arcadia", "3-arcadia", "Lockbox6", None),
     WorldSpot(6117, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe0", None),
     WorldSpot(6118, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe3", None),
-    WorldSpot(6119, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox0", None),
-    WorldSpot(6120, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox7", None),
-    WorldSpot(6121, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox8", None),
-    WorldSpot(6122, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox9", None),
     WorldSpot(6123, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe1", None),
-    WorldSpot(6124, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox6", None),
-    WorldSpot(6125, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox3", None),
-    WorldSpot(6126, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox5", None),
-    WorldSpot(6127, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox4", None),
-    WorldSpot(6128, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox2", None),
     WorldSpot(6129, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe2", None),
-    WorldSpot(6130, SpotKind.LOCKBOX, "Farmer's Market", "3-market", "Lockbox1", None),
     WorldSpot(6131, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe0", None),
     WorldSpot(6132, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe1", None),
     WorldSpot(6133, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe2", None),
@@ -556,29 +537,15 @@ WORLD_SPOTS: tuple[WorldSpot, ...] = (
     WorldSpot(6138, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe1", None),
     WorldSpot(6139, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe0", None),
     WorldSpot(6140, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe2", None),
-    WorldSpot(6141, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox5", None),
-    WorldSpot(6142, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox4", None),
-    WorldSpot(6143, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox2", None),
-    WorldSpot(6144, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox1", None),
-    WorldSpot(6145, SpotKind.LOCKBOX, "Hephaestus", "5-hephaestus", "Lockbox0", None),
-    WorldSpot(6146, SpotKind.LOCKBOX, "Rapture Central Control", "5-ryan", "Lockbox0", None),
-    WorldSpot(6147, SpotKind.LOCKBOX, "Rapture Central Control", "5-ryan", "Lockbox1", None),
     WorldSpot(6148, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe3", None),
     WorldSpot(6149, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe0", None),
     WorldSpot(6150, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe4", None),
     WorldSpot(6151, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe1", None),
-    WorldSpot(6152, SpotKind.LOCKBOX, "Olympus Heights", "6-resi", "Lockbox0", None),
-    WorldSpot(6153, SpotKind.LOCKBOX, "Olympus Heights", "6-resi", "Lockbox1", None),
     WorldSpot(6154, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe1", None),
     WorldSpot(6155, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe0", None),
-    WorldSpot(6156, SpotKind.LOCKBOX, "Point Prometheus", "7-science", "Lockbox1", None),
     WorldSpot(6157, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe2", None),
     WorldSpot(6158, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe1", None),
     WorldSpot(6159, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe0", None),
-    WorldSpot(6160, SpotKind.LOCKBOX, "Point Prometheus", "7-science", "Lockbox0", None),
-    WorldSpot(6161, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox1", None),
-    WorldSpot(6162, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox2", None),
-    WorldSpot(6163, SpotKind.LOCKBOX, "Proving Grounds", "7-gauntlet", "Lockbox0", None),
     WorldSpot(6164, SpotKind.SAFE, "Proving Grounds", "7-gauntlet", "SecurityCrate_Safe2", None),
     # Safes set into walls (SecurityCrate_WallSafe), found with the probe on 2026-10-15 by the Telekinesis plasmid and
     # read from the map files the same day (notes/logs/map_survey_2026-10-15.json). After the others, so their IDs
@@ -601,10 +568,10 @@ KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!", "
 
 
 def world_spot_location_name(spot: WorldSpot, number: int = 0) -> str:
-    """number: the spot's place among the level's safes (or lockboxes), from 1."""
+    """number: the spot's place among the level's safes, from 1."""
     if spot.kind == SpotKind.WEAPON:
         return f"{spot.level} - Weapon: {spot.vanilla}"
-    if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX):
+    if spot.kind == SpotKind.SAFE:
         return f"{spot.level} - {spot.kind.capitalize()} {number}"
     return f"{spot.level} - Pickup: {spot.vanilla}"
 
@@ -707,7 +674,7 @@ def _build_location_table() -> tuple[LocationData, ...]:
     numbers: dict[tuple[str, str], int] = {}
     for spot in WORLD_SPOTS:
         number = numbers[spot.level, spot.kind] = numbers.get((spot.level, spot.kind), 0) + 1
-        category = LocationCategory.SAFE if spot.kind in (SpotKind.SAFE, SpotKind.LOCKBOX) else \
+        category = LocationCategory.SAFE if spot.kind == SpotKind.SAFE else \
             LocationCategory.WORLD_ITEM
         table.append(LocationData(world_spot_location_name(spot, number), spot.id, spot.level, category,
                                   not LEVEL_BY_NAME[spot.level].revisitable))

@@ -38,7 +38,7 @@ class TestGameData(unittest.TestCase):
             LocationCategory.STORY: 28,
             LocationCategory.GATHERERS_GARDEN: 273,
             LocationCategory.WORLD_ITEM: 38,
-            LocationCategory.SAFE: 73,
+            LocationCategory.SAFE: 41,
             LocationCategory.RESEARCH: 55,
         }))
         names = [location.name for location in LOCATION_TABLE]

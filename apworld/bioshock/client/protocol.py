@@ -38,7 +38,7 @@ class GameState:
     pickups_taken: Mapping[str, frozenset[str]] | None = None  # map -> plasmid and tonic pickups seen taken there
     # The map the player is in and the pickups lying in it now, once the agent has looked at all of them
     pickups_here: tuple[str, frozenset[str]] | None = None
-    containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes and lockboxes open there
+    containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes open there
     research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
 
 

@@ -7,7 +7,8 @@ the IDs section 5 keeps for them:
 - weapons: 6051-6057, one per weapon, at the level where it first lies in the world. The maps place many copies of
   each weapon (Neptune's Bounty has three shotguns and three machine guns; a copy you already hold gives ammo), so
   the check is "the weapon is held for the first time", which the agent already reads (weapons.owned);
-- safes and lockboxes: 6101-6199, numbered per level in the order the map lists them.
+- safes: 6101-6199, numbered per level in the order the map lists them. Lockboxes are out of scope (Teebs,
+  2026-10-15) but keep the IDs the first survey gave them, so the safes' IDs stay as they were.
 
 Item names come from the client's tables (game_data.GIVE_CLASS and WEAPON_CLASS, read backwards); a class those
 tables don't know keeps its class name and is listed under "unknown" so it can be added.
@@ -26,7 +27,8 @@ from worlds.bioshock.data import LEVEL_NAMES
 from map_survey import is_weapon_pickup, weapon_of_pickup
 
 WALL_SAFE = "SecurityCrate_WallSafe"  # found with the probe 2026-10-15, by the Telekinesis plasmid
-SAFES = ("SecurityCrate_Safe", WALL_SAFE, "Lockbox")
+LOCKBOX = "Lockbox"
+SAFES = ("SecurityCrate_Safe", WALL_SAFE, LOCKBOX)
 FIRST_ID = {"plasmid": 6001, "tonic": 6011, "weapon": 6051, "safe": 6101}
 LAST_ID = {"plasmid": 6010, "tonic": 6050, "weapon": 6057, "safe": 6199}
 
@@ -81,6 +83,9 @@ def candidates(maps):
                     unknown.add(cls)
                     vanilla = cls
                 name = f"{level} - {vanilla}"
+            elif kind == "safe" and spot["class"] == LOCKBOX:
+                next_id[kind] += 1  # its ID stays reserved
+                continue
             elif kind == "safe" and spot["class"] == WALL_SAFE:
                 wall_safes.append((entry, level, spot))
                 continue
