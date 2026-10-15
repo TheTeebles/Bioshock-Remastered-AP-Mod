@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.5';
+const AGENT_VERSION = '2026-10-15.6';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1444,6 +1444,7 @@ const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null }
 const scan = {
   next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
   bathyspheres: [], changes: [], pickups: [], containers: [],
+  level: null, unsure: false, // the level object a pass started in, and whether a load came during the pass
 };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
@@ -1529,6 +1530,9 @@ function watchObjects(map, now, level) {
     world.pickups = [];
     world.containers = [];
     world.here = null;
+    world.seen = new Set();
+    world.lastListed = null;
+    world.missing = new Set();
     world.emptied = new Set();
     scan.classes = new Map();
     gardens.classes = new Map(); // classes can be loaded somewhere else in another level
@@ -1538,6 +1542,18 @@ function watchObjects(map, now, level) {
   const count = carefulS32(base.add(objectModel.objects + 4));
   if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
     return;
+  }
+  const levelKey = level === null || level === undefined ? null : level.toString();
+  if (scan.next === 0) {
+    scan.level = levelKey;
+    scan.unsure = false;
+  }
+  if (levelKey !== scan.level || readPath(build.loading, (p) => p.readS32())) {
+    scan.unsure = true; // a save loaded during the pass: its list of pickups mixes two levels
+  }
+  if (world.level !== null && levelKey !== world.level) {
+    world.pickups = []; // the last level's objects: they may be freed, and their memory used by others
+    world.containers = [];
   }
   const end = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
   for (let i = scan.next; i < end; i++) {
@@ -1593,7 +1609,11 @@ function watchObjects(map, now, level) {
     scan.changes = [];
     travel.notes = scan.notes;
     scan.notes = [];
-    noteWorldThings(map, level, scan.pickups, scan.containers);
+    try {
+      noteWorldThings(map, level, scan.pickups, scan.containers, scan.unsure);
+    } catch (e) {
+      worldTrouble(e.message);
+    }
     scan.pickups = [];
     scan.containers = [];
     if (scan.placeholder !== null) {
@@ -1632,7 +1652,7 @@ function watchObjects(map, now, level) {
     travelTrouble(e.message);
   }
   try {
-    readWorldThings(map);
+    readWorldThings(map, level);
   } catch (e) {
     worldTrouble(e.message);
   }
@@ -1694,7 +1714,7 @@ function readStations(map) {
 // Physical, Engineering and Weapons kinds). Taking one deletes it, the way taking a diary deletes its LogPickup
 // (bDeleteMe, seen 2026-10-08). Only actors the player's level lists count, so nothing left over from the last level
 // does. After each pass over the objects the agent compares the names of the pickups lying in the level with the
-// last pass's: a name that has gone is a pickup taken. Names, not addresses, because loading a save makes every
+// last passes: a name that two passes in a row miss is a pickup taken. Names, not addresses, because loading a save makes every
 // object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
 // the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
 // before the agent was watching. Not tried in game yet.
@@ -1707,6 +1727,9 @@ const world = {
   pickups: [], // { object, name } lying in the level at the last pass
   containers: [], // safes and lockboxes found by the last pass
   taken: new Map(), // map -> names of the pickups seen taken there
+  seen: new Set(), // names of the pickups seen lying in this level object
+  missing: new Set(), // names seen before and missing at the last pass: taken if the next pass misses them too
+  lastListed: null, // the names the last pass found lying, joined
   here: null, // { map, names }: the pickups lying in the player's map, once a pass has listed them all
   opened: new Map(), // map -> names of the safes and lockboxes seen open there
   deleteFlags: new Map(), // class address -> where bDeleteMe is
@@ -1753,8 +1776,18 @@ function addTo(byMap, map, name) {
   return true;
 }
 
-// After a pass over the objects: the pickups and containers it found, among the actors of the player's level.
-function noteWorldThings(map, level, pickups, containers) {
+// After a pass over the objects: the pickups and containers it found, among the actors of the player's level. A
+// pickup counts as taken only when two passes in a row miss it, and the names lying are reported only when two
+// passes agree, so a pass that a save load cut into (unsure) or half saw takes nothing away.
+function noteWorldThings(map, level, pickups, containers, unsure) {
+  if (unsure || level === null) {
+    world.pickups = [];
+    world.containers = [];
+    world.here = null;
+    world.missing = new Set();
+    world.lastListed = null;
+    return;
+  }
   const { addresses } = actorsOf(level);
   const inLevel = (object) => addresses.has(object.toUInt32());
   const key = level.toString();
@@ -1772,25 +1805,38 @@ function noteWorldThings(map, level, pickups, containers) {
       lying.push({ object, name });
     }
   }
-  if (world.level === key && map !== null && !unnamed) {
-    const names = new Set(lying.map((p) => p.name));
-    for (const { name } of world.pickups) {
-      if (!names.has(name) && addTo(world.taken, map, name)) {
-        log(`${name} taken in ${map}`);
-      }
-    }
-  }
+  const names = new Set(lying.map((p) => p.name));
+  const listed = [...names].sort();
   if (world.level !== key) {
     world.level = key;
     world.emptied = new Set();
+    world.seen = new Set();
+    world.missing = new Set();
+    world.lastListed = null;
+  } else if (map !== null && !unnamed) {
+    const missing = new Set();
+    for (const name of world.seen) {
+      if (names.has(name)) {
+        continue;
+      }
+      if (!world.missing.has(name)) {
+        missing.add(name); // the next pass decides
+      } else if (addTo(world.taken, map, name)) {
+        log(`${name} taken in ${map}`);
+      }
+    }
+    world.missing = missing;
   }
+  names.forEach((name) => world.seen.add(name));
   world.pickups = lying;
   // A list with a name the agent could not read would make that pickup look taken.
-  world.here = unnamed || map === null ? null : { map, names: lying.map((p) => p.name).sort() };
+  const listing = unnamed || map === null ? null : listed.join('|');
+  world.here = listing !== null && listing === world.lastListed ? { map, names: listed } : null;
+  world.lastListed = listing;
   world.containers = containers.filter(inLevel);
 }
 
-function readWorldThings(map) {
+function readWorldThings(map, level) {
   if (map === null) {
     return;
   }
@@ -1805,7 +1851,7 @@ function readWorldThings(map) {
       log(`${name} open in ${map}`);
     }
   }
-  emptyPickups(map);
+  emptyPickups(map, level);
 }
 
 // Where a pickup keeps the class of what it gives: the class property whose value is a class that extends Item.
@@ -1839,11 +1885,11 @@ function itemFieldOf(object, cls) {
   return world.itemFields.get(key);
 }
 
-function emptyPickups(map) {
-  if (world.empty === null) {
+function emptyPickups(map, level) {
+  if (world.empty === null || level === null || level === undefined || world.level !== level.toString()) {
     return;
   }
-  const wanted = world.empty.maps[map];
+  const wanted = world.empty.maps[normalizeMap(map)];
   const placeholder = gardens.placeholder;
   if (!Array.isArray(wanted) || wanted.length === 0) {
     return;
@@ -1856,10 +1902,18 @@ function emptyPickups(map) {
       continue;
     }
     const cls = classOfObject(object);
-    const offset = cls === null ? null : itemFieldOf(object, cls);
+    // Still the pickup the pass found? A save loaded since frees it, and its memory may hold something else now.
+    if (cls === null || kindOf(cls) !== 'pickup' || nameOfObject(object) !== name ||
+      flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
+      continue;
+    }
+    const offset = itemFieldOf(object, cls);
     const before = offset === null ? null : carefulPtr(object.add(offset));
     if (before === null || same(before, placeholder)) {
       continue; // nothing to swap, or done already (a save keeps the swap too)
+    }
+    if (!actorsOf(level).addresses.has(object.toUInt32())) {
+      continue;
     }
     object.add(offset).writePointer(placeholder);
     world.emptied.add(name);

@@ -626,8 +626,9 @@ def research_of(levels: object) -> dict[str, int] | None:
     """The agent's research levels by subject. None while it cannot tell."""
     if not isinstance(levels, dict):
         return None
-    return {name: level for name, level in levels.items()
-            if isinstance(name, str) and isinstance(level, int) and not isinstance(level, bool)}
+    # A level outside the game's 0-5 is a misread, not progress (and would make the client count to it).
+    return {name: level for name, level in levels.items() if isinstance(name, str) and isinstance(level, int)
+            and not isinstance(level, bool) and 0 <= level <= RESEARCH_LEVELS}
 
 
 def pickups_here_of(here: object) -> tuple[str, frozenset[str]] | None:

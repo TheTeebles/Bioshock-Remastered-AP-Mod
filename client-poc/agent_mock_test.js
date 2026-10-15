@@ -2161,6 +2161,56 @@ const tests = {
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":[]}');
   },
+  'a pickup missed by one pass only is not taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const flicker = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, flicker); r.frames(1);
+    assert.strictEqual(state(r).pickupsHere, null, 'two passes disagree: no list');
+    r.addActor(game.level, flicker); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'passes made while a level is loading take nothing away': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const medic = model.itemClass('Medic', 10);
+    const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.load(); r.frames(10);
+    r.memory.set(BASE + 0x1356680, 1); // a save loading
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10);
+    assert.strictEqual(state(r).pickupsHere, null);
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.memory.set(BASE + 0x1356680, 0); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'a pickup whose memory now holds another object is not emptied': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10); const incinerate = model.itemClass('Incinerate', 10);
+    const reused = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    const count = r.memory.get(BASE + 0x1390430); const all = r.memory.get(BASE + 0x139042C);
+    const big = r.object(4 * 40000); // a table of 40000 objects, mostly empty slots: a pass now takes ten ticks
+    for (let i = 0; i < count; i++) { r.poke(big + 4 * i, r.memory.get(all + 4 * i)); }
+    r.poke(BASE + 0x139042C, big); r.poke(BASE + 0x1390430, 40000);
+    r.load(); r.frames(25);
+    r.poke(reused + 0x28, model.nameIndex('ActivePlasmidPickup2')); r.poke(reused + 0x520, incinerate);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(7);
+    assert.strictEqual(r.memory.get(reused + 0x520), incinerate, 'the pass has not seen the new name yet');
+    assert.strictEqual(state(r).pickupsEmptied, 0);
+  },
+  'pickups are emptied whatever spelling of the map the game uses': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.string(game.level + 0x7C, '1-Medical_int');
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.strictEqual(r.memory.get(shuffled + 0x520), model.chips);
+  },
   'state() reports the safes and lockboxes open, by map': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const safe = model.container('SecurityCrate_Safe', 'SecurityCrate_Safe2');

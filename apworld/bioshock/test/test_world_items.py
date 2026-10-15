@@ -188,8 +188,9 @@ class TestClient(unittest.TestCase):
         self.assertEqual(state.pickups_here, ("1-medical", frozenset({"ActivePlasmidPickup2"})))
         self.assertEqual(state.containers_opened, {"2-fisheries": frozenset({"Lockbox0"})})
         self.assertIsNone(state_from_agent({"map": "1-Medical"}).pickups_here)
-        self.assertEqual(state_from_agent({"researchLevels": {"ThuggishSplicer": 2, "Bouncer": "x"}}).research,
-                         {"ThuggishSplicer": 2})
+        self.assertEqual(state_from_agent({"researchLevels": {"ThuggishSplicer": 2, "Bouncer": "x", "Rosie": 1065353216,
+                                                              "Turret": -1}}).research, {"ThuggishSplicer": 2},
+                         "a level the game cannot have is a misread")
 
     def test_missing_pickups_count_as_taken(self) -> None:
         medical = {actor for (map_name, actor) in game_data.PICKUP_LOCATION if map_name == "1-medical"}
