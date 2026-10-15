@@ -12,7 +12,7 @@ from ..client.frida_agent import state_from_agent
 from ..data import (
     KEPT_WORLD_PICKUPS, LOCATION_TABLE, WORLD_SPOTS, LocationCategory, SpotKind, shuffled_world_pickups,
 )
-from ..world import BioShockWorld
+from .. import locations
 from .bases import BioShockTestBase
 from .client_harness import Harness, loc
 
@@ -115,12 +115,14 @@ class TestRoom(BioShockTestBase):
 
 
 class TestUniversalTracker(BioShockTestBase):
-    options = {"world_item_checks": "shuffled", "safe_checks": True}
-
     def test_options_come_back_from_slot_data(self) -> None:
-        tracked = {name: value for name, value in self.world.fill_slot_data().items()
-                   if name in BioShockWorld.TRACKED_OPTIONS}
-        self.assertEqual((tracked["world_item_checks"], tracked["safe_checks"]), (2, 1))
+        slot_data = dict(self.world.fill_slot_data(), world_item_checks=2, safe_checks=1, research_checks=1)
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        counts = Counter(location.category for location in locations.enabled_locations(self.world))
+        self.assertEqual(counts[LocationCategory.WORLD_ITEM], 37)  # the camera is started with
+        self.assertEqual(counts[LocationCategory.SAFE], 64)
+        self.assertEqual(counts[LocationCategory.RESEARCH], 11)
 
 
 class TestClient(unittest.TestCase):

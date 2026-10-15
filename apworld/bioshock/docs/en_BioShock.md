@@ -58,6 +58,14 @@ as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead
 multiworld, except Electro Bolt and Incinerate!, which the story needs. Safe Checks makes opening each of the 64
 safes and lockboxes a check; their contents stay as they are.
 
+Research Checks (off by default, not tried in the game yet) make researching enemies with the Research Camera
+checks. Each of the 11 subjects (Thuggish, Leadhead, Nitro, Spider and Houdini Splicers, Bouncers, Rosies, Little
+Sisters, Security Bots, Turrets and Security Cameras) has 5 research levels. First Level makes the first level of
+each a check (11, one photo each); All makes every level a check (55). Levels 2 to 5 take many photos, so they never
+hold anything needed to progress. With research checks on, the 9 tonics research gives (SportBoost 1 and 2,
+Scrounger, Static Discharge 2, Extra Nutrition 3, Natural Camouflage, Wrench Jockey 2, Photographer's Eye 2 and
+Security Expert 2) come from the multiworld, and research gives a bag of chips instead.
+
 Welcome to Rapture can never be revisited, so its two audio diaries and its Electro Bolt only hold filler whatever
 you choose.
 

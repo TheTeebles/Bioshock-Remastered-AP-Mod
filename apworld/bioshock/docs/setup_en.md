@@ -99,6 +99,9 @@ If the game was started as administrator, Archipelago has to be started as admin
     The client watches the plasmid and tonic pickups lying in the level you are in, the safes and lockboxes (open
     ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give a bag of
     chips instead of their item.
+  - *Research (Research Checks, Steam):* built but not tried in the real game yet. The client reads how far each
+    enemy is researched from the player's research tables, and with research checks on it makes research give a
+    bag of chips instead of its tonics.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
@@ -130,6 +133,7 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 - `/sim buy 3` buys line 3 of the Gatherer's Garden in the level you are in
 - `/sim take telekinesis` or `/sim take safe 1` takes a pickup or weapon, or opens a safe or lockbox, of the level
   you are in (World Item Checks and Safe Checks)
+- `/sim photo thuggish` researches an enemy one level further (Research Checks)
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
 - `/sim fontaine` beats the final boss
 - `/sim die` dies, to try DeathLink
