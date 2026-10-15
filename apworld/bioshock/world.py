@@ -9,7 +9,7 @@ from . import options as bioshock_options
 from .data import GAME_NAME, LEVELS, WEAPON_UPGRADES, LocationData
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.30"
+WORLD_VERSION = "0.1.31"
 RESEARCH_CAMERA = "Research Camera"
 SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
 # 4: station_touch, and shop_checks is 0/1/2

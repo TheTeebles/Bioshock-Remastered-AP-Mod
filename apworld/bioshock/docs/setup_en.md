@@ -143,11 +143,13 @@ game would not get those items afterwards without `/resync`.
 - **Open Rapture** (Level Access: `open_rapture`, not playable yet). Keep the client connected whenever you ride a
   bathysphere: the client tells the game which stops to offer, and without it the menu only shows what the story has
   opened so far. Leaving Medical Pavilion, pull the bathysphere switch there and pick any chapter you hold the access
-  item for. The submarine out of Smuggler's Hideout and the way out of Ryan's office lead on only once you hold the
-  next chapter's item; until then they take you back to Medical Pavilion's bathysphere and the client says why. A
-  level counts as complete when you reach the next level of its chapter or finish its last objective, whatever order
-  you play the chapters in. The levels you have been to are stored on the Archipelago server with your other progress.
-  Universal Tracker follows the same rules.
+  item for. A chapter item that arrives while you are in a level shows up the next time you pull a bathysphere switch,
+  with no reload. Olympus Heights has no station: until you have been there, its line in the menu is the one Apollo
+  Square has later, and a ride starts where the story does, in Tenenbaum's safehouse. The submarine out of Smuggler's
+  Hideout and the way out of Ryan's office lead on only once you hold the next chapter's item; until then they take
+  you back to Medical Pavilion's bathysphere and the client says why. A level counts as complete when you reach the
+  next level of its chapter or finish its last objective, whatever order you play the chapters in. The levels you have
+  been to are stored on the Archipelago server with your other progress. Universal Tracker follows the same rules.
 - **One save per seed.** The client cannot tell saves apart yet. Whatever the loaded save has done is reported to the
   room you are connected to, so start a new game for every seed and never load a save from another one while
   connected.

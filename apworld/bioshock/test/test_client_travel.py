@@ -171,6 +171,31 @@ class TestOpenRaptureClient(unittest.TestCase):
         rules = h.game.travel_rules or {}
         self.assertEqual(next(s["arrival"] for s in rules["stops"] if s["map"] == "3-arcadia"), "ArcBathyEndPS")
 
+    def test_olympus_heights_is_ridden_to_then_its_line_turns_back_into_apollo_square(self) -> None:
+        h = open_rapture().connect().attach()
+        h.game.travel("Medical Pavilion")
+        h.receive(*EVERY_CHAPTER)
+        h.step(3)
+        self.assertIn("Olympus Heights", h.game.bathysphere_stops())
+        self.assertNotIn("Apollo Square", h.game.bathysphere_stops())
+        self.assertEqual(h.game.travel_rules["flags"], {"global_transitionedFromRyan": "1"})
+        h.game.ride("Olympus Heights")
+        h.step(3)
+        self.assertEqual(h.core.level, "Olympus Heights")
+        self.assertIn("Apollo Square", h.game.bathysphere_stops())
+        self.assertNotIn("Olympus Heights", h.game.bathysphere_stops())
+
+    def test_rules_are_sent_again_after_the_server_connection_comes_back(self) -> None:
+        h = open_rapture().connect().attach()
+        h.receive(FORT_FROLIC_ACCESS)
+        h.game.travel("Medical Pavilion")
+        h.step(3)
+        h.disconnect()
+        h.step(2)
+        h.connect()
+        h.step(3)
+        self.assertEqual(h.game.bathysphere_stops(), ["Medical Pavilion", "Fort Frolic"])
+
 
 class TestLockedWayOn(unittest.TestCase):
     def test_entering_a_level_whose_way_on_is_locked_says_so_once(self) -> None:

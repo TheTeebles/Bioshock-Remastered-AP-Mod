@@ -19,7 +19,9 @@ back for it.
 **Open Rapture** (Level Access: `open_rapture`, not playable yet) goes further: access items open travel itself, one
 per chapter. After Medical Pavilion, the bathysphere takes you to Neptune's Bounty, Arcadia or Fort Frolic in any
 order, as soon as you hold that chapter's access item. Hephaestus opens once you hold its item and the three before it,
-and Olympus Heights and Point Prometheus follow in story order, each behind its own item. A way into a chapter you
+and Olympus Heights and Point Prometheus follow in story order, each behind its own item. Each one appears in the
+bathysphere menu as soon as its item arrives. Olympus Heights has no station of its own, so it appears on Apollo
+Square's line until you have been there once. A way into a chapter you
 can't enter yet (the submarine out of Smuggler's Hideout, the way out of Ryan's office) takes you back to Medical
 Pavilion's bathysphere instead.
 
