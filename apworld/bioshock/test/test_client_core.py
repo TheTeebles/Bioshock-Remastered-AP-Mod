@@ -7,7 +7,10 @@ from ..client import game_data
 from ..client.core import REFUSED, UNKNOWN, BridgeCore
 from ..client.protocol import CommandResult, CommandStarted, ScoutedItem
 from ..client.simulated import SimulatedGame
-from ..data import GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
+from ..data import (
+    GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, WORLD_VERSION,
+    ItemKind,
+)
 from .client_harness import IDENTITY, Harness, item, loc, not_known_yet, play_level
 
 
@@ -1423,3 +1426,19 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual(len(lines), 5)
         self.assertEqual([entry["line"] for entry in lines], [1, 2, 3, 4, 5])
         self.assertEqual(set(h.game.garden_lines), {MEDICAL_PAVILION}, "only the level the player is in")
+
+
+class TestVersions(unittest.TestCase):
+    def test_says_which_apworld_it_is(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_version"] = WORLD_VERSION
+        h.connect().attach()
+        h.step(1)
+        self.assertFalse(h.warnings())
+
+    def test_warns_when_the_seed_was_made_with_another(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_version"] = "0.1.0"
+        h.connect().attach()
+        h.step(1)
+        self.assertTrue(any("made with 0.1.0" in text for text in h.warnings()), h.warnings())

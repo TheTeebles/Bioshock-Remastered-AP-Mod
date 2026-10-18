@@ -103,17 +103,16 @@ class TestShuffled(BioShockTestBase):
         self.collect_by_name("Neptune's Bounty Access")
         self.assertTrue(self.can_reach_location("Medical Pavilion - Pickup: Telekinesis"))
         self.assertTrue(self.can_reach_location("Medical Pavilion - Pickup: Wrench Jockey"))
-        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Medical Pavilion - Weapon: Machine Gun",
-                     "Neptune's Bounty - Pickup: Security Bullseye"):
+        self.assertTrue(self.can_reach_location("Medical Pavilion - Weapon: Machine Gun"))
+        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Neptune's Bounty - Pickup: Security Bullseye"):
             self.assertFalse(self.can_reach_location(name), name)
         self.collect_by_name("Telekinesis")
-        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Medical Pavilion - Weapon: Machine Gun",
-                     "Neptune's Bounty - Pickup: Security Bullseye"):
+        for name in ("Medical Pavilion - Story: Defeat Dr. Steinman", "Neptune's Bounty - Pickup: Security Bullseye"):
             self.assertTrue(self.can_reach_location(name), name)
 
     def test_past_the_debris_names_real_checks(self) -> None:
         self.assertLessEqual(PAST_THE_DEBRIS, {location.name for location in LOCATION_TABLE})
-        self.assertEqual(len(PAST_THE_DEBRIS), 25)
+        self.assertEqual(len(PAST_THE_DEBRIS), 23)
 
 
 class TestShuffledOpenRapture(BioShockTestBase):
