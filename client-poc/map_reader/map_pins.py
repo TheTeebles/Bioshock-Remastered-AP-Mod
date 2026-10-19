@@ -23,7 +23,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from map_stock import SIZES, compact  # noqa: E402
-from map_survey import SKIP_MAPS, Ref, Survey, is_world_item, position  # noqa: E402
+from map_survey import KNOWN, SKIP_MAPS, Ref, Survey, is_world_item, position  # noqa: E402
 
 PINNED = ("LogPickup", "PlaceableGrowthStation", "PlaceableWeaponUpgradeStation", "PlacedGathererVent",
           "ProtectorSpawner", "BathysphereSwitch", "PlayerStart")
@@ -49,6 +49,24 @@ def numbered(name, number):
 class Pins(Survey):
     """As Survey, but name properties keep their number (map_survey drops it): two zones can be FontaineFreezerHall
     1 and 2."""
+
+    def props(self, i):
+        """As Survey's, but a parse that finds the map screen's properties wins. In 3-Arcadia.bsm a floor marker's
+        bytes also parse from an earlier start into junk plus every property but RegionNames, one more property than
+        the right parse, which Survey's scoring would pick."""
+        if i not in self._props:
+            b = self.body(self.exports[i - 1])
+            best, best_score = {}, None
+            for start in range(0, min(len(b), 96)):
+                try:
+                    found, _ = self.properties(b, start)
+                except (ValueError, IndexError, struct.error, UnicodeDecodeError):
+                    continue
+                score = (len(MAP_PROPERTIES & found.keys()), len(KNOWN & found.keys()), len(found))
+                if best_score is None or score > best_score:
+                    best, best_score = found, score
+            self._props[i] = best
+        return self._props[i]
 
     def properties(self, b, p):
         out, end = super().properties(b, p)
@@ -88,6 +106,7 @@ class Pins(Survey):
 
 
 NAME_PROPERTIES = frozenset({"MapUIRegion", "LayerName", "ScaleMarkerName"})
+MAP_PROPERTIES = NAME_PROPERTIES | {"RegionNames", "Location", "Region"}
 
 
 def zone_of(pkg, found):

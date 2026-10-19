@@ -1,5 +1,25 @@
 [
  [
+  "Welcome to Rapture",
+  [
+   "Welcome to Rapture",
+   "Welcome to Rapture: Floor 1",
+   "Welcome to Rapture: Floor 2",
+   "Welcome to Rapture: Floor 3",
+   "Welcome to Rapture: Floor 4",
+   "Welcome to Rapture: Floor 5"
+  ]
+ ],
+ [
+  "Medical Pavilion",
+  [
+   "Medical Pavilion",
+   "Medical Pavilion: Floor 1",
+   "Medical Pavilion: Floor 2",
+   "Medical Pavilion: Floor 3"
+  ]
+ ],
+ [
   "Neptune's Bounty",
   [
    "Neptune's Bounty",
@@ -8,6 +28,109 @@
    "Neptune's Bounty: Floor 3",
    "Neptune's Bounty: Floor 4",
    "Neptune's Bounty: Floor 5"
+  ]
+ ],
+ [
+  "Smuggler's Hideout",
+  [
+   "Smuggler's Hideout",
+   "Smuggler's Hideout: Floor 1",
+   "Smuggler's Hideout: Floor 2"
+  ]
+ ],
+ [
+  "Arcadia",
+  [
+   "Arcadia",
+   "Arcadia: Floor 1",
+   "Arcadia: Floor 2",
+   "Arcadia: Floor 3",
+   "Arcadia: Floor 4",
+   "Arcadia: Floor 5",
+   "Arcadia: Floor 6"
+  ]
+ ],
+ [
+  "Farmer's Market",
+  [
+   "Farmer's Market",
+   "Farmer's Market: Floor 2",
+   "Farmer's Market: Floor 3",
+   "Farmer's Market: Floor 4"
+  ]
+ ],
+ [
+  "Fort Frolic",
+  [
+   "Fort Frolic",
+   "Fort Frolic: Floor 1",
+   "Fort Frolic: Floor 2",
+   "Fort Frolic: Floor 3",
+   "Fort Frolic: Floor 4",
+   "Fort Frolic: Floor 5"
+  ]
+ ],
+ [
+  "Hephaestus",
+  [
+   "Hephaestus",
+   "Hephaestus: Floor 1",
+   "Hephaestus: Floor 2",
+   "Hephaestus: Floor 3",
+   "Hephaestus: Floor 4"
+  ]
+ ],
+ [
+  "Rapture Central Control",
+  [
+   "Rapture Central Control",
+   "Rapture Central Control: Floor 1"
+  ]
+ ],
+ [
+  "Olympus Heights",
+  [
+   "Olympus Heights",
+   "Olympus Heights: Floor 1",
+   "Olympus Heights: Floor 2",
+   "Olympus Heights: Floor 3",
+   "Olympus Heights: Floor 4",
+   "Olympus Heights: Floor 5",
+   "Olympus Heights: Floor 6",
+   "Olympus Heights: Floor 7",
+   "Olympus Heights: Floor 8"
+  ]
+ ],
+ [
+  "Apollo Square",
+  [
+   "Apollo Square",
+   "Apollo Square: Floor 1",
+   "Apollo Square: Floor 2",
+   "Apollo Square: Floor 3",
+   "Apollo Square: Floor 4",
+   "Apollo Square: Floor 5",
+   "Apollo Square: Floor 6",
+   "Apollo Square: Floor 7",
+   "Apollo Square: Floor 8",
+   "Apollo Square: Floor 9"
+  ]
+ ],
+ [
+  "Point Prometheus",
+  [
+   "Point Prometheus",
+   "Point Prometheus: Floor 1",
+   "Point Prometheus: Floor 2",
+   "Point Prometheus: Floor 3"
+  ]
+ ],
+ [
+  "Proving Grounds",
+  [
+   "Proving Grounds",
+   "Proving Grounds: Floor 1",
+   "Proving Grounds: Floor 2"
   ]
  ]
 ]

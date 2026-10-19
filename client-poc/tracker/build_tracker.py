@@ -157,19 +157,21 @@ def save_png(image, path):
 
 
 def calibrate(floor, scales, art):
-    """(kx, ky) and the picture position of the floor marker, from the floor's scale marker; None if they disagree."""
+    """The scale its own markers give a floor, (kx, ky), or None; and the picture position of the floor marker."""
     (px, py), (sx, sy) = art.floor_markers(floor["layer"])
     lx, ly = floor["at"][:2]
     scale = scales.get(floor.get("scale"))
-    if scale is None:
+    if scale is None or scale[0] == lx or scale[1] == ly:
         return None, (px, py)
-    dx, dy = scale[0] - lx, scale[1] - ly
-    if dx == 0 or dy == 0:
-        return None, (px, py)
-    kx, ky = (sx - px) / dx, (sy - py) / dy
-    if abs(abs(kx) - abs(ky)) / max(abs(kx), abs(ky)) > 0.02:
-        return None, (px, py)
-    return (kx, ky), (px, py)
+    return ((sx - px) / (scale[0] - lx), (sy - py) / (scale[1] - ly)), (px, py)
+
+
+def level_scale(calibrations):
+    """One scale for all of a level's floors: the median of what their scale markers say. The art of a level is drawn
+    at one scale, and the markers were placed by hand: most agree to 1%, some are 5 to 30% off on one axis (Hephaestus
+    floor 4, Apollo Square floor 4), one has both axes negative (Olympus Heights floor 7)."""
+    values = sorted(abs(v) for k, _ in calibrations.values() if k is not None for v in k)
+    return values[len(values) // 2] if values else None
 
 
 def level_of_map(name):
@@ -289,24 +291,23 @@ def build(pins_path, swf_path, out):
             scales = {s["actor"]: s["at"] for s in level_map["scales"]}
             floors = [f for f in level_map["floors"] if f["layer"] in art.ex and f["at"]]
             calibrations = {f["layer"]: calibrate(f, scales, art) for f in floors}
-            good = [k for k, _ in calibrations.values() if k is not None]
-            if not good:
+            shared = level_scale(calibrations)
+            if shared is None:
                 report.append(f"{level}: no floor could be calibrated, skipped")
                 continue
-            shared = (sorted(k[0] for k in good)[len(good) // 2], sorted(k[1] for k in good)[len(good) // 2])
             pages = {}  # layer -> (picture, transform: world (x, y) -> picture (x, y))
             for floor in sorted(floors, key=lambda f: floor_number(f["layer"])):
-                k, (px, py) = calibrations[floor["layer"]]
-                if k is None:
-                    report.append(f"{level}: {floor['layer']} uses the level's shared scale")
-                    k = shared
+                own, (px, py) = calibrations[floor["layer"]]
+                if own is None or max(abs(abs(v) - shared) / shared for v in own) > 0.03:
+                    report.append(f"{level}: {floor['layer']}'s scale markers disagree with the level's ({own})")
+                k = (shared, shared)
                 svg_text, missing = art.floor_svg(floor["regions"])
                 if missing:
                     report.append(f"{level}: {floor['layer']} has no art for {', '.join(missing)}")
                 picture = rasterize(svg_text, work)
                 box = crop_box(picture)
                 if box is None:
-                    report.append(f"{level}: {floor['layer']} drew nothing")
+                    report.append(f"{level}: {floor['layer']} drew nothing ({', '.join(floor['regions'])})")
                     continue
                 picture = picture.crop(box)
                 lx, ly = floor["at"][:2]
@@ -317,6 +318,9 @@ def build(pins_path, swf_path, out):
                     return (stage_x - vx) * SCALE - box[0], (stage_y - vy) * SCALE - box[1]
                 pages[floor["layer"]] = (picture, to_picture, k, (px, py, lx, ly, box))
 
+            if not pages:
+                report.append(f"{level}: no floor drew anything, skipped")
+                continue
             regions[stem] = {region.lower(): floor["layer"] for floor in floors for region in floor["regions"]
                              if floor["layer"] in pages}
             assign_floors(level_map, pages)
@@ -342,7 +346,11 @@ def build(pins_path, swf_path, out):
                 for actor in actors:
                     if actor.get("floor") not in pages or not actor["at"]:
                         continue
+                    picture = pages[actor["floor"]][0]
                     x, y = pages[actor["floor"]][1](actor["at"])
+                    if not (0 <= x < picture.width and 0 <= y < picture.height):
+                        report.append(f"{level}: {title} ({actor['actor']}) falls outside {actor['floor']}, no pin")
+                        continue
                     map_locations.append(spot(used, f"{level}: Floor {floor_number(actor['floor'])}", x, y))
                     ox, oy, factor = placement[actor["floor"]]
                     map_locations.append(spot(used, overview_name, ox + x * factor, oy + y * factor))

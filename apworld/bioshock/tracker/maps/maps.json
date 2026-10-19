@@ -1,39 +1,215 @@
 [
  {
+  "name": "Welcome to Rapture",
+  "img": "images/1-welcome.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome01Marker": [
+    567.19,
+    0.099177,
+    830.4,
+    0.099177
+   ],
+   "Welcome02Marker": [
+    1678.52,
+    0.099177,
+    -271.18,
+    0.099177
+   ],
+   "Welcome03Marker": [
+    2091.03,
+    0.099177,
+    37.18,
+    0.099177
+   ],
+   "Welcome04Marker": [
+    1144.11,
+    0.099177,
+    943.43,
+    0.099177
+   ],
+   "Welcome05Marker": [
+    1898.1,
+    0.099177,
+    789.93,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Welcome to Rapture: Floor 1",
+  "img": "images/1-welcome_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome01Marker": [
+    567.19,
+    0.099177,
+    790.4,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Welcome to Rapture: Floor 2",
+  "img": "images/1-welcome_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome02Marker": [
+    777.52,
+    0.099177,
+    -311.18,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Welcome to Rapture: Floor 3",
+  "img": "images/1-welcome_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome03Marker": [
+    831.03,
+    0.099177,
+    -2.82,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Welcome to Rapture: Floor 4",
+  "img": "images/1-welcome_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome04Marker": [
+    1144.11,
+    0.099177,
+    -215.57,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Welcome to Rapture: Floor 5",
+  "img": "images/1-welcome_5.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Welcome05Marker": [
+    1533.1,
+    0.099177,
+    -369.07,
+    0.099177
+   ]
+  }
+ },
+ {
+  "name": "Medical Pavilion",
+  "img": "images/1-medical.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Medical01Marker": [
+    2973.68,
+    0.076883,
+    188.97,
+    0.076883
+   ],
+   "Medical02Marker": [
+    3872.56,
+    0.076883,
+    -273.33,
+    0.076883
+   ],
+   "Medical03Marker": [
+    3913.84,
+    0.076883,
+    79.79,
+    0.076883
+   ]
+  }
+ },
+ {
+  "name": "Medical Pavilion: Floor 1",
+  "img": "images/1-medical_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Medical01Marker": [
+    3603.11,
+    0.093156,
+    180.5,
+    0.093156
+   ]
+  }
+ },
+ {
+  "name": "Medical Pavilion: Floor 2",
+  "img": "images/1-medical_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Medical02Marker": [
+    2604.55,
+    0.093156,
+    -379.65,
+    0.093156
+   ]
+  }
+ },
+ {
+  "name": "Medical Pavilion: Floor 3",
+  "img": "images/1-medical_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Medical03Marker": [
+    2443.74,
+    0.093156,
+    48.22,
+    0.093156
+   ]
+  }
+ },
+ {
   "name": "Neptune's Bounty",
   "img": "images/2-fisheries.png",
   "location_size": 16,
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Fisheries01Marker": [
-    374.33,
-    0.074251,
-    526.06,
-    0.074221
+    374.15,
+    0.074213,
+    526.1,
+    0.074213
    ],
    "Fisheries02Marker": [
     631.96,
     0.074213,
-    -120.29,
-    0.074221
+    -120.25,
+    0.074213
    ],
    "Fisheries03Marker": [
     1849.73,
     0.074213,
-    626.77,
-    0.074248
+    626.72,
+    0.074213
    ],
    "Fisheries04Marker": [
-    1033.89,
-    0.074204,
-    1612.23,
-    0.074148
+    1033.98,
+    0.074213,
+    1612.54,
+    0.074213
    ],
    "Fisheries05Marker": [
-    875.46,
-    0.074196,
-    1441.5,
-    0.074148
+    875.51,
+    0.074213,
+    1441.59,
+    0.074213
    ]
   }
  },
@@ -44,10 +220,10 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Fisheries01Marker": [
-    374.33,
-    0.074251,
-    486.06,
-    0.074221
+    374.15,
+    0.074213,
+    486.1,
+    0.074213
    ]
   }
  },
@@ -60,8 +236,8 @@
    "Fisheries02Marker": [
     -147.04,
     0.074213,
-    -160.29,
-    0.074221
+    -160.25,
+    0.074213
    ]
   }
  },
@@ -74,8 +250,8 @@
    "Fisheries03Marker": [
     751.73,
     0.074213,
-    586.77,
-    0.074248
+    586.72,
+    0.074213
    ]
   }
  },
@@ -86,10 +262,10 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Fisheries04Marker": [
-    1033.89,
-    0.074204,
-    572.23,
-    0.074148
+    1033.98,
+    0.074213,
+    572.54,
+    0.074213
    ]
   }
  },
@@ -100,10 +276,950 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Fisheries05Marker": [
-    241.46,
-    0.074196,
-    401.5,
-    0.074148
+    241.51,
+    0.074213,
+    401.59,
+    0.074213
+   ]
+  }
+ },
+ {
+  "name": "Smuggler's Hideout",
+  "img": "images/2-subbay.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "SubBay01Marker": [
+    104.22,
+    0.110247,
+    340.12,
+    0.110247
+   ],
+   "SubBay02Marker": [
+    1243.66,
+    0.110247,
+    271.57,
+    0.110247
+   ]
+  }
+ },
+ {
+  "name": "Smuggler's Hideout: Floor 1",
+  "img": "images/2-subbay_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "SubBay01Marker": [
+    104.22,
+    0.110247,
+    300.12,
+    0.110247
+   ]
+  }
+ },
+ {
+  "name": "Smuggler's Hideout: Floor 2",
+  "img": "images/2-subbay_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "SubBay02Marker": [
+    426.66,
+    0.110247,
+    231.57,
+    0.110247
+   ]
+  }
+ },
+ {
+  "name": "Arcadia",
+  "img": "images/3-arcadia.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia01Marker": [
+    1961.79,
+    0.076688,
+    -446.41,
+    0.076688
+   ],
+   "Arcadia02Marker": [
+    2742.85,
+    0.076688,
+    -1056.47,
+    0.076688
+   ],
+   "Arcadia03Marker": [
+    3499.28,
+    0.076688,
+    -745.39,
+    0.076688
+   ],
+   "Arcadia04Marker": [
+    1777.68,
+    0.076688,
+    294.49,
+    0.076688
+   ],
+   "Arcadia05Marker": [
+    2512.24,
+    0.076688,
+    1029.47,
+    0.076688
+   ],
+   "Arcadia06Marker": [
+    3087.32,
+    0.076688,
+    558.49,
+    0.076688
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 1",
+  "img": "images/3-arcadia_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia01Marker": [
+    1987.13,
+    0.077679,
+    -492.69,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 2",
+  "img": "images/3-arcadia_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia02Marker": [
+    1545.56,
+    0.077679,
+    -1110.63,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 3",
+  "img": "images/3-arcadia_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia03Marker": [
+    1809.36,
+    0.077679,
+    -795.54,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 4",
+  "img": "images/3-arcadia_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia04Marker": [
+    1800.64,
+    0.077679,
+    -845.29,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 5",
+  "img": "images/3-arcadia_5.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia05Marker": [
+    2244.87,
+    0.077679,
+    -100.81,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Arcadia: Floor 6",
+  "img": "images/3-arcadia_6.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Arcadia06Marker": [
+    1927.91,
+    0.077679,
+    -577.88,
+    0.077679
+   ]
+  }
+ },
+ {
+  "name": "Farmer's Market",
+  "img": "images/3-market.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Market02Marker": [
+    902.7,
+    0.092721,
+    -182.21,
+    0.092721
+   ],
+   "Market03Marker": [
+    1709.89,
+    0.092721,
+    -131.65,
+    0.092721
+   ],
+   "Market04Marker": [
+    2172.75,
+    0.092721,
+    -181.86,
+    0.092721
+   ]
+  }
+ },
+ {
+  "name": "Farmer's Market: Floor 2",
+  "img": "images/3-market_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Market02Marker": [
+    902.7,
+    0.092721,
+    -222.21,
+    0.092721
+   ]
+  }
+ },
+ {
+  "name": "Farmer's Market: Floor 3",
+  "img": "images/3-market_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Market03Marker": [
+    796.89,
+    0.092721,
+    -171.65,
+    0.092721
+   ]
+  }
+ },
+ {
+  "name": "Farmer's Market: Floor 4",
+  "img": "images/3-market_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Market04Marker": [
+    624.75,
+    0.092721,
+    -221.86,
+    0.092721
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic",
+  "img": "images/4-recreation.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation01Marker": [
+    531.58,
+    0.077136,
+    196.74,
+    0.077136
+   ],
+   "Recreation02Marker": [
+    1295.41,
+    0.077136,
+    -78.17,
+    0.077136
+   ],
+   "Recreation03Marker": [
+    2547.33,
+    0.077136,
+    80.98,
+    0.077136
+   ],
+   "Recreation04Marker": [
+    476.83,
+    0.077136,
+    1317.75,
+    0.077136
+   ],
+   "Recreation05Marker": [
+    573.93,
+    0.077136,
+    598.61,
+    0.077136
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic: Floor 1",
+  "img": "images/4-recreation_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation01Marker": [
+    542.21,
+    0.078678,
+    159.87,
+    0.078678
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic: Floor 2",
+  "img": "images/4-recreation_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation02Marker": [
+    -168.9,
+    0.078678,
+    -120.53,
+    0.078678
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic: Floor 3",
+  "img": "images/4-recreation_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation03Marker": [
+    379.77,
+    0.078678,
+    41.8,
+    0.078678
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic: Floor 4",
+  "img": "images/4-recreation_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation04Marker": [
+    486.36,
+    0.078678,
+    417.95,
+    0.078678
+   ]
+  }
+ },
+ {
+  "name": "Fort Frolic: Floor 5",
+  "img": "images/4-recreation_5.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Recreation05Marker": [
+    -260.17,
+    0.078678,
+    -315.57,
+    0.078678
+   ]
+  }
+ },
+ {
+  "name": "Hephaestus",
+  "img": "images/5-hephaestus.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Hephaestus01Marker": [
+    863.32,
+    0.067357,
+    416.89,
+    0.067357
+   ],
+   "Hephaestus02Marker": [
+    916.28,
+    0.067357,
+    -546.38,
+    0.067357
+   ],
+   "Hephaestus03Marker": [
+    1950.67,
+    0.067357,
+    -453.71,
+    0.067357
+   ],
+   "Hephaestus04Marker": [
+    163.95,
+    0.067357,
+    -268.34,
+    0.067357
+   ]
+  }
+ },
+ {
+  "name": "Hephaestus: Floor 1",
+  "img": "images/5-hephaestus_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Hephaestus01Marker": [
+    914.04,
+    0.071314,
+    399.03,
+    0.071314
+   ]
+  }
+ },
+ {
+  "name": "Hephaestus: Floor 2",
+  "img": "images/5-hephaestus_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Hephaestus02Marker": [
+    -287.69,
+    0.071314,
+    -620.83,
+    0.071314
+   ]
+  }
+ },
+ {
+  "name": "Hephaestus: Floor 3",
+  "img": "images/5-hephaestus_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Hephaestus03Marker": [
+    458.09,
+    0.071314,
+    -522.72,
+    0.071314
+   ]
+  }
+ },
+ {
+  "name": "Hephaestus: Floor 4",
+  "img": "images/5-hephaestus_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Hephaestus04Marker": [
+    173.58,
+    0.071314,
+    -1428.61,
+    0.071314
+   ]
+  }
+ },
+ {
+  "name": "Rapture Central Control",
+  "img": "images/5-ryan.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Ryan01Marker": [
+    1640.55,
+    0.188,
+    561.74,
+    0.188
+   ]
+  }
+ },
+ {
+  "name": "Rapture Central Control: Floor 1",
+  "img": "images/5-ryan_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Ryan01Marker": [
+    1640.55,
+    0.188,
+    521.74,
+    0.188
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights",
+  "img": "images/6-resi.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi01Marker": [
+    237.06,
+    0.063009,
+    -211.14,
+    0.063009
+   ],
+   "Resi02Marker": [
+    540.34,
+    0.063009,
+    508.89,
+    0.063009
+   ],
+   "Resi03Marker": [
+    839.14,
+    0.063009,
+    1122.97,
+    0.063009
+   ],
+   "Resi04Marker": [
+    1289.27,
+    0.063009,
+    1066.6,
+    0.063009
+   ],
+   "Resi05Marker": [
+    -124.65,
+    0.063009,
+    2202.61,
+    0.063009
+   ],
+   "Resi06Marker": [
+    235.79,
+    0.063009,
+    2165.18,
+    0.063009
+   ],
+   "Resi07Marker": [
+    298.35,
+    0.063009,
+    1951.96,
+    0.063009
+   ],
+   "Resi08Marker": [
+    1037.1,
+    0.063009,
+    1951.63,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 1",
+  "img": "images/6-resi_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi01Marker": [
+    237.06,
+    0.063009,
+    -251.14,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 2",
+  "img": "images/6-resi_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi02Marker": [
+    284.34,
+    0.063009,
+    468.89,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 3",
+  "img": "images/6-resi_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi03Marker": [
+    110.14,
+    0.063009,
+    1082.97,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 4",
+  "img": "images/6-resi_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi04Marker": [
+    170.27,
+    0.063009,
+    1026.6,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 5",
+  "img": "images/6-resi_5.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi05Marker": [
+    -124.65,
+    0.063009,
+    1062.61,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 6",
+  "img": "images/6-resi_6.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi06Marker": [
+    101.79,
+    0.063009,
+    1025.18,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 7",
+  "img": "images/6-resi_7.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi07Marker": [
+    -327.65,
+    0.063009,
+    811.96,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Olympus Heights: Floor 8",
+  "img": "images/6-resi_8.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Resi08Marker": [
+    180.1,
+    0.063009,
+    811.63,
+    0.063009
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square",
+  "img": "images/6-slums.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums01Marker": [
+    -523.67,
+    0.055992,
+    -4.63,
+    0.055992
+   ],
+   "Slums02Marker": [
+    -246.32,
+    0.055992,
+    56.28,
+    0.055992
+   ],
+   "Slums03Marker": [
+    27.78,
+    0.055992,
+    58.07,
+    0.055992
+   ],
+   "Slums04Marker": [
+    982.66,
+    0.055992,
+    20.41,
+    0.055992
+   ],
+   "Slums05Marker": [
+    -225.65,
+    0.055992,
+    574.03,
+    0.055992
+   ],
+   "Slums06Marker": [
+    -58.29,
+    0.055992,
+    242.76,
+    0.055992
+   ],
+   "Slums07Marker": [
+    151.26,
+    0.055992,
+    242.91,
+    0.055992
+   ],
+   "Slums08Marker": [
+    361.71,
+    0.055992,
+    245.49,
+    0.055992
+   ],
+   "Slums09Marker": [
+    -256.11,
+    0.055992,
+    637.51,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 1",
+  "img": "images/6-slums_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums01Marker": [
+    -523.67,
+    0.055992,
+    -44.63,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 2",
+  "img": "images/6-slums_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums02Marker": [
+    -522.32,
+    0.055992,
+    16.28,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 3",
+  "img": "images/6-slums_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums03Marker": [
+    -524.22,
+    0.055992,
+    18.07,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 4",
+  "img": "images/6-slums_4.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums04Marker": [
+    154.66,
+    0.055992,
+    -19.59,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 5",
+  "img": "images/6-slums_5.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums05Marker": [
+    -225.65,
+    0.055992,
+    -577.97,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 6",
+  "img": "images/6-slums_6.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums06Marker": [
+    -184.29,
+    0.055992,
+    -909.24,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 7",
+  "img": "images/6-slums_7.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums07Marker": [
+    -184.74,
+    0.055992,
+    -909.09,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 8",
+  "img": "images/6-slums_8.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums08Marker": [
+    -184.29,
+    0.055992,
+    -906.51,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Apollo Square: Floor 9",
+  "img": "images/6-slums_9.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Slums09Marker": [
+    -256.11,
+    0.055992,
+    -905.49,
+    0.055992
+   ]
+  }
+ },
+ {
+  "name": "Point Prometheus",
+  "img": "images/7-science.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Science01Marker": [
+    1047.88,
+    0.049295,
+    355.45,
+    0.049295
+   ],
+   "Science02Marker": [
+    1443.48,
+    0.049295,
+    -148.16,
+    0.049295
+   ],
+   "Science03Marker": [
+    2011.33,
+    0.049295,
+    241.83,
+    0.049295
+   ]
+  }
+ },
+ {
+  "name": "Point Prometheus: Floor 1",
+  "img": "images/7-science_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Science01Marker": [
+    1711.98,
+    0.080536,
+    515.37,
+    0.080536
+   ]
+  }
+ },
+ {
+  "name": "Point Prometheus: Floor 2",
+  "img": "images/7-science_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Science02Marker": [
+    188.66,
+    0.080536,
+    -307.41,
+    0.080536
+   ]
+  }
+ },
+ {
+  "name": "Point Prometheus: Floor 3",
+  "img": "images/7-science_3.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Science03Marker": [
+    704.69,
+    0.080536,
+    329.74,
+    0.080536
+   ]
+  }
+ },
+ {
+  "name": "Proving Grounds",
+  "img": "images/7-gauntlet.png",
+  "location_size": 16,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Gauntlet01Marker": [
+    963.64,
+    0.059484,
+    387.66,
+    0.059484
+   ],
+   "Gauntlet02Marker": [
+    1527.56,
+    0.059484,
+    175.93,
+    0.059484
+   ]
+  }
+ },
+ {
+  "name": "Proving Grounds: Floor 1",
+  "img": "images/7-gauntlet_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Gauntlet01Marker": [
+    1476.78,
+    0.091159,
+    532.79,
+    0.091159
+   ]
+  }
+ },
+ {
+  "name": "Proving Grounds: Floor 2",
+  "img": "images/7-gauntlet_2.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Gauntlet02Marker": [
+    451.41,
+    0.091159,
+    208.32,
+    0.091159
    ]
   }
  }
