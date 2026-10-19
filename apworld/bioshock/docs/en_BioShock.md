@@ -113,4 +113,9 @@ there: story objectives, Little Sisters, Power to the People stations, audio dia
 Garden purchases. DeathLink works both ways. No whole seed has been played through in the real game yet, and the
 GOG and Epic versions are not supported. See the setup guide for exactly what has been tried in the game.
 
-Universal Tracker works without your YAML: it takes the options from the seed.
+Universal Tracker works without your YAML: it takes the options from the seed. Its map tab shows the game's own map
+screen, one page per floor and an overview of each level, with a pin on every check that has a place in the level:
+audio diaries, plasmid, tonic and weapon pickups, safes, the Gatherer's Garden and the Power to the People stations.
+Story checks, Little Sisters and Level Complete share one pin per level, at its bathysphere or where you arrive.
+Research has no pin. While the BioShock Client is connected to the game, the tab turns to the floor you are on and a
+red dot shows where you stand.

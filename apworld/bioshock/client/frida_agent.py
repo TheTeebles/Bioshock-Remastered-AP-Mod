@@ -31,7 +31,7 @@ from .game_data import (
 )
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
-    LittleSisterResolved, PlayerDied, TravelRedirected,
+    LittleSisterResolved, PlayerDied, Position, TravelRedirected,
 )
 
 PROCESS_NAME = "BioshockHD.exe"
@@ -136,7 +136,19 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         pickups_here=pickups_here_of(raw.get("pickupsHere")),
         containers_opened=actors_of(raw.get("containersOpened")),
         research=research_of(raw.get("researchLevels")),
+        position=position_of(raw.get("where")),
     )
+
+
+def position_of(where: object) -> Position | None:
+    """The agent's { region, x, y, z }: where the player stands. None while it cannot tell."""
+    if not isinstance(where, dict):
+        return None
+    numbers = [where.get(axis) for axis in ("x", "y", "z")]
+    if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and abs(n) < 1e7 for n in numbers):
+        return None
+    region = where.get("region")
+    return Position(region if isinstance(region, str) and region else None, *(round(n) for n in numbers))
 
 
 def weapons_of(held: object) -> frozenset[str] | None:

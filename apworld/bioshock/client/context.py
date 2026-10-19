@@ -23,13 +23,14 @@ from MultiServer import mark_raw
 from NetUtils import ClientStatus
 from Utils import async_start, gui_enabled
 
+from .. import map_tracker
 from ..data import GAME_NAME
 from . import flash_movies, frida_agent, game_data
 from .core import BridgeCore
 from .frida_agent import AgentUnusable, FridaAgent
 from .protocol import (
     Action, AgentError, GameAgent, KillPlayer, Notice, RunAction, RunCommand, SaveState, ScoutedItem,
-    ScoutLocations, SendChecks, SendDeath, SendGoal,
+    ScoutLocations, SendChecks, SendDeath, SendGoal, ShowOnMap,
 )
 from .simulated import SimulatedGame, resolve_level
 
@@ -466,8 +467,21 @@ class BioShockContext(CommonContext):
                     "cmd": "Set", "key": self.storage_key, "default": {}, "want_reply": False,
                     "operations": [{"operation": "replace", "value": action.data}],
                 }])
+            elif isinstance(action, ShowOnMap):
+                await self.send_msgs(self.map_messages(action))
             else:
                 self._to_agent(action)
+
+    def map_messages(self, action: ShowOnMap) -> list[dict[str, Any]]:
+        """Data storage writes that show the player on Universal Tracker's map tab (map_tracker.py)."""
+        keys = {"team": self.team, "player": self.slot}
+        messages = [{"cmd": "Set", "key": map_tracker.POSITION_KEY.format(**keys), "default": {}, "want_reply": False,
+                     "operations": [{"operation": "replace",
+                                     "value": {"layer": action.floor, "x": action.x, "y": action.y}}]}]
+        if action.floor_changed:
+            messages.append({"cmd": "Set", "key": map_tracker.MAP_KEY.format(**keys), "default": "",
+                             "want_reply": False, "operations": [{"operation": "replace", "value": action.floor}]})
+        return messages
 
     def _to_agent(self, action: Action) -> None:
         agent = self.agent

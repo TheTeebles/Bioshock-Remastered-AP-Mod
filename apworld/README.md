@@ -17,6 +17,9 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
       Frida, and has to stay valid for Python 3.7.
     - `agent.js` runs inside the game.
 - `bioshock/components.py`: the Launcher entry.
+- `bioshock/map_tracker.py` and `bioshock/tracker/`: Universal Tracker's map tab. The pages and pins in `tracker/` are
+  generated: `client-poc/map_reader/map_pins.py` reads the game's map files, then `client-poc/tracker/build_tracker.py`
+  draws the floors from the game's `Maps.swf` and places the pins (run with Pillow and Chromium).
 - `bioshock/test/`: 322 tests.
 
 ## Rebuild `bioshock.apworld`

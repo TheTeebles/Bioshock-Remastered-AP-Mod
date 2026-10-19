@@ -1,0 +1,789 @@
+[
+ {
+  "name": "Audio Diary: ADAM Discovery",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 292,
+    "y": 520
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 292,
+    "y": 560
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: ADAM Discovery"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Meeting Ryan",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 471,
+    "y": 887
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 471,
+    "y": 927
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Meeting Ryan"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Eden Leaking",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 323,
+    "y": 621
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 323,
+    "y": 661
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Eden Leaking"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Finding the Sea Slug",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 386,
+    "y": 409
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 386,
+    "y": 449
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Finding the Sea Slug"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Masha Come Home",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 283,
+    "y": 297
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 283,
+    "y": 337
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Masha Come Home"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Saw Masha Today",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 264,
+    "y": 143
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1043,
+    "y": 183
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Saw Masha Today"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Smugglers",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 263,
+    "y": 768
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 263,
+    "y": 808
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Fontaine's Smugglers"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Have My Badge",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 222,
+    "y": 182
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 856,
+    "y": 1222
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Have My Badge"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Timmy H. Interrogation",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 411,
+    "y": 431
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1509,
+    "y": 471
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Timmy H. Interrogation"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Bathysphere Keys",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 844,
+    "y": 642
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1942,
+    "y": 682
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Bathysphere Keys"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Putting the Screws On",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 600,
+    "y": 179
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 600,
+    "y": 1219
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Putting the Screws On"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Arresting Fontaine",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 167,
+    "y": 49
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 946,
+    "y": 89
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Arresting Fontaine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Rapture Changing",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 746,
+    "y": 843
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 746,
+    "y": 883
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Rapture Changing"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Working Late Again",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 580,
+    "y": 692
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 580,
+    "y": 732
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Working Late Again"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine Must Go",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 704,
+    "y": 506
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1802,
+    "y": 546
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Fontaine Must Go"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Death Penalty in Rapture",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 203,
+    "y": 874
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 203,
+    "y": 914
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Death Penalty in Rapture"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Watch Fontaine",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 288,
+    "y": 148
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 288,
+    "y": 188
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Watch Fontaine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Smuggling Ring",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 527,
+    "y": 779
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 527,
+    "y": 819
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Smuggling Ring"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 721,
+    "y": 758
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 721,
+    "y": 798
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Focused Hacker",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 253,
+    "y": 461
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1351,
+    "y": 501
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Focused Hacker"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 29,
+    "y": 271
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 808,
+    "y": 311
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 587,
+    "y": 178
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 587,
+    "y": 1218
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Medical Expert",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 829,
+    "y": 473
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1927,
+    "y": 513
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Medical Expert"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Shorten Alarms",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 284,
+    "y": 121
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1063,
+    "y": 161
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Shorten Alarms"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 239,
+    "y": 192
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 873,
+    "y": 1232
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Security Bullseye",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 352,
+    "y": 480
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 352,
+    "y": 520
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Security Bullseye"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Shotgun",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 309,
+    "y": 478
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 309,
+    "y": 518
+   },
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 185,
+    "y": 233
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 964,
+    "y": 273
+   },
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 40,
+    "y": 277
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 819,
+    "y": 317
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 911,
+    "y": 636
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2009,
+    "y": 676
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Shotgun"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Research Camera",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 92,
+    "y": 827
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 92,
+    "y": 867
+   },
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 90,
+    "y": 351
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 724,
+    "y": 1391
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Research Camera"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Pistol",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 459,
+    "y": 104
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 459,
+    "y": 1144
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 652,
+    "y": 440
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1750,
+    "y": 480
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 280,
+    "y": 273
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1378,
+    "y": 313
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Pistol"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Grenade Launcher",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 287,
+    "y": 402
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1385,
+    "y": 442
+   },
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 240,
+    "y": 187
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 874,
+    "y": 1227
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Grenade Launcher"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 652,
+    "y": 427
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1750,
+    "y": 467
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Sonic Boom"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Winter Blast"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: EVE Link"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Extra Nutrition"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 450,
+    "y": 212
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 450,
+    "y": 1252
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Power to the People 1"
+   }
+  ]
+ },
+ {
+  "name": "Neptune's Bounty: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 374,
+    "y": 67
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1472,
+    "y": 107
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Story: Photograph the Spider Splicers"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 1"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 2"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 3"
+   },
+   {
+    "name": "Neptune's Bounty - Level Complete"
+   }
+  ]
+ }
+]

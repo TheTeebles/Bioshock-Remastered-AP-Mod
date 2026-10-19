@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-15.15';
+const AGENT_VERSION = '2026-10-19.1';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -628,6 +628,10 @@ function readState() {
     completedQuests: quests.flag === null ? null : quests.completed,
     questsWatched: quests.list.length,
     questTrouble: quests.trouble,
+    // Where the player stands ({ region, x, y, z }: the map screen region of their zone and their position), for the
+    // map tracker; null while it cannot tell.
+    where: playerLevel === undefined ? null : standing.report,
+    whereTrouble: standing.trouble,
     // Classes of the audio diaries and radio messages received since the agent started watching.
     logsReceived: [...logClassesSeen].sort(),
   };
@@ -2206,6 +2210,85 @@ function readWeapons(pawn) {
     weapons.reported = text;
     log(`weapons held: ${text || 'none'}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Where the player is, for the map tracker
+// ---------------------------------------------------------------------------------------------------------------
+
+// The pawn's Location (a vector of three floats) and its Region (a PointRegion: the ZoneInfo it stands in first), and
+// that zone's MapUIRegion: the map screen region the game draws the player in, which names the floor. All found by
+// name in the classes, as the map files spell them (Region.Zone -> ZoneInfo.MapUIRegion, read from 2-Fisheries.bsm).
+const WHERE_INTERVAL_MS = 500;
+const standing = { at: 0, pawnClass: null, location: null, region: null, zones: new Map(), report: null, trouble: null };
+
+function whereTrouble(text) {
+  if (standing.trouble === null) {
+    standing.trouble = text;
+    log(`map tracker: ${text}`);
+  }
+}
+
+// A name property's value as the map files spell it: the name, then its number less one ("FontaineFreezerHall1").
+function numberedNameAt(at) {
+  const name = nameOf(carefulS32(at));
+  const number = name === null ? null : carefulS32(at.add(4));
+  if (number === null || number < 0 || number > 0x100000) {
+    return null;
+  }
+  return number === 0 ? name : `${name}${number - 1}`;
+}
+
+function mapRegionOf(zone) {
+  const cls = classOfObject(zone);
+  if (cls === null) {
+    return null;
+  }
+  const key = cls.toString();
+  if (!standing.zones.has(key)) {
+    const found = findProperty(cls, 'MapUIRegion', 'NameProperty');
+    standing.zones.set(key, found === null || found.offset < 0x30 ? null : found.offset);
+  }
+  const offset = standing.zones.get(key);
+  return offset === null ? null : numberedNameAt(zone.add(offset));
+}
+
+function readWhere(pawn, now) {
+  if (now - standing.at < WHERE_INTERVAL_MS) {
+    return;
+  }
+  standing.at = now;
+  const cls = classOfObject(pawn);
+  if (cls === null) {
+    return;
+  }
+  if (standing.pawnClass === null || !same(standing.pawnClass, cls)) {
+    standing.pawnClass = cls;
+    const location = findProperty(cls, 'Location', 'StructProperty');
+    const region = findProperty(cls, 'Region', 'StructProperty');
+    standing.location = location === null || location.offset < 0x30 ? null : location.offset;
+    standing.region = region === null || region.offset < 0x30 ? null : region.offset;
+    if (standing.location === null) {
+      whereTrouble("could not find the player's Location");
+    }
+  }
+  if (standing.location === null) {
+    standing.report = null;
+    return;
+  }
+  const at = pawn.add(standing.location);
+  if (!readable(at) || !readable(at.add(11))) {
+    standing.report = null;
+    return;
+  }
+  const [x, y, z] = [at.readFloat(), at.add(4).readFloat(), at.add(8).readFloat()];
+  if (![x, y, z].every(Number.isFinite)) {
+    standing.report = null;
+    return;
+  }
+  const zone = standing.region === null ? null : carefulPtr(pawn.add(standing.region));
+  const region = zone === null || zone.isNull() ? null : mapRegionOf(zone);
+  standing.report = { region, x: Math.round(x), y: Math.round(y), z: Math.round(z) };
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -3981,6 +4064,11 @@ function watchPlayer(level, info, map, now) {
   carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
+  try {
+    readWhere(body.pawn, now);
+  } catch (e) {
+    whereTrouble(e.message);
+  }
   try {
     readResearch(body.pawn, now);
   } catch (e) {

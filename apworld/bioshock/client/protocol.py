@@ -40,6 +40,15 @@ class GameState:
     pickups_here: tuple[str, frozenset[str]] | None = None
     containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes open there
     research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
+    position: Position | None = None  # where the player stands, for the map tracker
+
+
+@dataclass(frozen=True)
+class Position:
+    region: str | None  # the map screen region of the zone the player is in ("FontaineFreezerHall1"), if any
+    x: int  # world units
+    y: int
+    z: int
 
 
 @dataclass(frozen=True)
@@ -167,9 +176,19 @@ class SaveState:
 
 
 @dataclass(frozen=True)
+class ShowOnMap:
+    """Tell the map tracker where the player is: the floor (the map screen's LayerName) and the world position."""
+    floor: str
+    x: int
+    y: int
+    floor_changed: bool  # the floor is new since the last one told, so the tracker turns to its page
+
+
+@dataclass(frozen=True)
 class Notice:
     text: str
     warning: bool = False
 
 
-Action = SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice
+Action = (SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice
+          | ShowOnMap)

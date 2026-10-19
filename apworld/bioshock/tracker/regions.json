@@ -1,0 +1,24 @@
+{
+ "2-fisheries": {
+  "bathyspherestation": "Fisheries03Marker",
+  "fisheriesfoyer": "Fisheries03Marker",
+  "fontainefreezerentrance": "Fisheries03Marker",
+  "fontainefreezerfoyer": "Fisheries03Marker",
+  "fontainefreezerhall1": "Fisheries03Marker",
+  "fontainefreezerhall2": "Fisheries03Marker",
+  "fontainefreezerlower": "Fisheries04Marker",
+  "fontainefreezerupper": "Fisheries03Marker",
+  "hubhallhigh": "Fisheries01Marker",
+  "hubhallmedium": "Fisheries03Marker",
+  "lowerhub": "Fisheries03Marker",
+  "mailannex": "Fisheries01Marker",
+  "mcdonaghhigh": "Fisheries02Marker",
+  "mcdonaghlow": "Fisheries01Marker",
+  "mcdonaghmid": "Fisheries01Marker",
+  "resroom": "Fisheries03Marker",
+  "secrettunnel": "Fisheries04Marker",
+  "securityoffice": "Fisheries05Marker",
+  "upperhub": "Fisheries01Marker",
+  "watertunnel": "Fisheries01Marker"
+ }
+}
