@@ -1544,9 +1544,18 @@ const tests = {
     r.load(); r.frames(3);
     r.removeActor(game.level, sister); r.frames(3);
     const again = r.sister(game.level, model); // out of another vent, as a new object
-    r.frames(3);
+    r.frames(21); // new sisters are looked for every 2 s
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
     r.poke(again + 0x1038, 0x2); r.frames(2);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+  },
+  'new sisters are looked for every 2 s, and one found late still counts': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.load(); r.frames(3);
+    const sister = r.sister(game.level, model); r.poke(sister + 0x1038, 0x2); // rescued before she is found
+    r.frames(5);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 0, 'not looked for yet');
+    r.frames(16);
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
   },
   'the actors of levels the player is not in are not looked through': () => {
@@ -1569,7 +1578,7 @@ const tests = {
     r.load(); r.frames(3);
     r.removeActor(game.level, sister); r.poke(sister, 0x1234); r.frames(3); // deleted: its vtable changed
     assert.strictEqual(state(r).sistersWatched, 0);
-    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(3);
+    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(21);
     assert.strictEqual(state(r).sistersWatched, 1);
     r.poke(sister + 0x1038, 0x2); r.frames(3);
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
@@ -2047,7 +2056,7 @@ const tests = {
     const seen = state(r);
     assert.strictEqual(typeof seen.hookMsPerSecond, 'number');
     assert.ok(seen.hookCallsPerSecond >= 9, String(seen.hookCallsPerSecond)); // ten frames, once per loaded level
-    assert.ok(['level', 'commands'].every((part) => typeof seen.hookParts[part] === 'number'),
+    assert.ok(['sisters', 'other'].every((part) => typeof seen.hookParts[part] === 'number'),
       JSON.stringify(seen.hookParts));
   },
   'a crossing that led back into its own level is reported when that level comes up again': () => {

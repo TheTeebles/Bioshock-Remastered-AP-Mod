@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.7';
+const AGENT_VERSION = '2026-10-19.8';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1436,17 +1436,41 @@ function noteSister(object, cls) {
   }
 }
 
+// Going through every actor of the level took most of the agent's time in game (Teebs, 2026-10-19: 90 ms of each
+// second at 10 looks a second), so new sisters are looked for less often, on arriving in a level and then every few
+// seconds; the sisters already found are still read every look. The object scan finds them too.
+const SISTER_SEARCH_INTERVAL_MS = 2000;
+const sisterSearch = { level: null, at: 0 };
+
+function findSisters(level) {
+  const data = ptrAt(level.add(LAYOUT.levelActors));
+  const count = s32At(level.add(LAYOUT.levelActors + 4));
+  if (data === null || data.isNull() || count === null || count < 1 || count > MAX_ACTORS) {
+    return;
+  }
+  for (let i = 0; i < count; i++) {
+    const actor = ptrAt(data.add(i * 4));
+    if (actor === null || actor.isNull()) {
+      continue;
+    }
+    const cls = ptrAt(actor.add(objectModel.objectClass)); // a listed actor is a real object: plain reads will do
+    if (cls !== null && !cls.isNull() && kindOf(cls) === 'sister') {
+      noteSister(actor, cls);
+    }
+  }
+}
+
 // Runs on the game thread for the level the player is in, a few times a second.
 function watchSisters(level, map, now) {
   if (objectModel === null || virtualQuery === null || now - lastSisterLook < SISTER_INTERVAL_MS) {
     return;
   }
   lastSisterLook = now;
-  for (const actor of actorsOf(level).actors) {
-    const cls = ptrAt(actor.add(objectModel.objectClass)); // a listed actor is a real object: plain reads will do
-    if (cls !== null && !cls.isNull()) {
-      noteSister(actor, cls);
-    }
+  const levelKey = level.toUInt32();
+  if (levelKey !== sisterSearch.level || now - sisterSearch.at >= SISTER_SEARCH_INTERVAL_MS) {
+    sisterSearch.level = levelKey;
+    sisterSearch.at = now;
+    findSisters(level);
   }
   for (const [key, sister] of [...sistersKnown]) {
     if (!same(carefulPtr(sister.object), sister.vtable) || !same(classOfObject(sister.object), sister.cls)) {
@@ -4230,8 +4254,9 @@ function noteLoad(startedAt, now) {
     load.last = load.spent * 1000 / Math.max(now - load.from, 1);
     load.lastTicks = load.ticks;
     const elapsed = Math.max(now - load.from, 1);
-    load.lastParts = Object.fromEntries(Object.entries(load.parts)
-      .map(([part, spent]) => [part, Math.round(spent * 10000 / elapsed) / 10]));
+    const timedParts = Object.values(load.parts).reduce((sum, spent) => sum + spent, 0);
+    load.lastParts = Object.fromEntries([...Object.entries(load.parts), ['other', load.spent - timedParts]]
+      .map(([part, spent]) => [part, Math.round(Math.max(spent, 0) * 10000 / elapsed) / 10]));
     load.parts = {};
     load.from = now;
     load.spent = 0;
@@ -4248,8 +4273,10 @@ function onLevelTick(level) {
     }
     const info = levelInfoOf(level);
     if (info !== null) {
-      timed('player search', () => lookForPlayer(level, now));
-      timed('level', () => noteLevel(level, info, now));
+      // Not timed by part: these run on every call, and reading the clock around them cost about as much as they
+      // do (6.7 ms of each second for a lookForPlayer that returns at once, in game). They are in "other".
+      lookForPlayer(level, now);
+      noteLevel(level, info, now);
       const seen = levelsSeen.get(level.toString());
       const wait = Math.max(WATCH_INTERVAL_MS, watchCost * (1 - WATCH_SHARE) / WATCH_SHARE);
       if (seen !== undefined && seen.hasPlayer && seen.map !== null && now - lastWatchAt >= wait) {
@@ -4270,7 +4297,7 @@ function onLevelTick(level) {
     }
     dropLateKills(now);
     dropLateTraps(now);
-    timed('commands', () => runQueuedCommand(level, info, now));
+    runQueuedCommand(level, info, now);
   } catch (e) {
     if (!complained) {
       complained = true;
