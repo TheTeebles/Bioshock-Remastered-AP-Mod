@@ -39,8 +39,13 @@ def regions() -> dict[str, dict[str, str]]:
 
 
 def page_of_floor(layer: Any) -> int:
-    """The page that shows this floor on its own; -1 (stay on the page shown) for anything else."""
-    if isinstance(layer, str) and layer:
+    """The page that shows this floor on its own; -1 (stay on the page shown) for anything else.
+
+    With no floor stored yet ("" or None), the first page: Universal Tracker only sets up a page's player dot once
+    some page is open, and a stored position arriving before that drops its connection (UT of 2026-10-10)."""
+    if layer is None or layer == "":
+        return 0 if pages() else -1
+    if isinstance(layer, str):
         for index, page in enumerate(pages()):
             if list(page.get("bioshock_layers", {})) == [layer]:
                 return index

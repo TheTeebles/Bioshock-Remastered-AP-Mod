@@ -63,8 +63,10 @@ class TestPlayerOnTheMap(unittest.TestCase):
     def test_the_tab_turns_to_the_players_floor(self) -> None:
         page = map_tracker.pages()[map_tracker.page_of_floor(FLOOR_3)]
         self.assertEqual(page["name"], f"{NEPTUNES_BOUNTY}: Floor 3")
-        for nothing in ("", None, "NoSuchMarker", 3, {"layer": FLOOR_3}):
+        for nothing in ("NoSuchMarker", 3, {"layer": FLOOR_3}):
             self.assertEqual(map_tracker.page_of_floor(nothing), -1)
+        for unset in ("", None):
+            self.assertEqual(map_tracker.page_of_floor(unset), 0, "a page opens at once, so the dot has somewhere to go")
 
     def test_the_dot_shows_on_the_floor_and_on_the_overview(self) -> None:
         position = {"layer": FLOOR_1, "x": -299, "y": -79}  # the Security Bullseye pickup
