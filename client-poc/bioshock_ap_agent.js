@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.10';
+const AGENT_VERSION = '2026-10-19.11';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1659,10 +1659,10 @@ function watchObjects(map, now, level) {
   const slots = last > scan.next ? slotsOf(table, scan.next, last) : null;
   let end = scan.next;
   for (let i = scan.next; i < last; i++) {
-    end = i + 1;
     if ((i - scan.next) % OBJECT_SCAN_BATCH === OBJECT_SCAN_BATCH - 1 && Date.now() - started >= OBJECT_SCAN_BUDGET_MS) {
-      break; // the rest next time
+      break; // the rest, this object included, next time
     }
+    end = i + 1;
     let object;
     let cls;
     if (slots !== null) {

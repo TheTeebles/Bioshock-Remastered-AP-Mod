@@ -1645,6 +1645,14 @@ const tests = {
     assert.ok(r.bytesRead.includes(Math.min(count, 4000) * 4), `sizes read: ${r.bytesRead}`);
     assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey"]');
   },
+  'a scan cut short by its time limit picks up at the object it had not looked at': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const names = Array.from({ length: 1200 }, (_, i) => `Goal${i}x`); // no number at the end: a name's number is kept apart
+    names.forEach((name) => model.quest(name, true));
+    r.context.Date.now = () => (r.time += 1); // every look at the clock takes a millisecond: slices end early
+    r.load(); r.frames(200);
+    assert.strictEqual(state(r).completedQuests.length, names.length);
+  },
   'the object scan rests between passes': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     r.load(); r.frames(3);
