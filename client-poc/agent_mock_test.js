@@ -2047,6 +2047,8 @@ const tests = {
     const seen = state(r);
     assert.strictEqual(typeof seen.hookMsPerSecond, 'number');
     assert.ok(seen.hookCallsPerSecond >= 9, String(seen.hookCallsPerSecond)); // ten frames, once per loaded level
+    assert.ok(['level', 'commands'].every((part) => typeof seen.hookParts[part] === 'number'),
+      JSON.stringify(seen.hookParts));
   },
   'a crossing that led back into its own level is reported when that level comes up again': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();

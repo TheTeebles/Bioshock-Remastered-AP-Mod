@@ -146,6 +146,16 @@ class TestAgentLoad(unittest.TestCase):
         h.core.on_state(GameState(map="2-fisheries", hook_ms=3.5))
         self.assertIn("Game agent: 3.5 ms of each second of the game's time", h.core.status_lines())
 
+    def test_parts_biggest_first(self) -> None:
+        from ..client.frida_agent import state_from_agent
+        raw = {"hookMsPerSecond": 9, "hookParts": {"level": 1, "sisters": 6.5, "bad": "x", "flag": True}}
+        self.assertEqual(state_from_agent(raw).hook_parts, (("sisters", 6.5), ("level", 1.0)))
+        self.assertEqual(state_from_agent({"hookParts": [1]}).hook_parts, ())
+        h = Harness().connect().attach()
+        h.core.on_state(GameState(map="2-fisheries", hook_ms=9, hook_parts=(("sisters", 6.5), ("level", 1.0))))
+        self.assertIn("Game agent: 9.0 ms of each second of the game's time (sisters 6.5, level 1.0)",
+                      h.core.status_lines())
+
 
 class TestAgentPosition(unittest.TestCase):
     def test_read_from_the_agent(self) -> None:

@@ -105,6 +105,15 @@ def _packaged(name: str) -> str:
     return data.decode("utf-8")
 
 
+def hook_parts_of(raw: Any) -> tuple[tuple[str, float], ...]:
+    """The agent's hookParts ({part: ms of each second}) as (part, ms) pairs, biggest first."""
+    if not isinstance(raw, dict):
+        return ()
+    parts = [(name, float(spent)) for name, spent in raw.items()
+             if isinstance(name, str) and isinstance(spent, (int, float)) and not isinstance(spent, bool)]
+    return tuple(sorted(parts, key=lambda part: -part[1]))
+
+
 def state_from_agent(raw: dict[str, Any]) -> GameState:
     """Translate the agent's `state()` answer. Kept apart from Frida so it can be tested."""
     loading = raw.get("loading")
@@ -140,6 +149,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         position=position_of(raw.get("where")),
         hook_ms=hook_ms if isinstance(hook_ms := raw.get("hookMsPerSecond"), (int, float))
         and not isinstance(hook_ms, bool) else None,
+        hook_parts=hook_parts_of(raw.get("hookParts")),
     )
 
 

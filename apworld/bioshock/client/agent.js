@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.6';
+const AGENT_VERSION = '2026-10-19.7';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -569,6 +569,7 @@ function readState() {
     agent: AGENT_VERSION,
     hookMsPerSecond: load.last === null ? null : Math.round(load.last * 10) / 10, // game-thread time the hook took
     hookCallsPerSecond: load.lastTicks,
+    hookParts: load.lastParts, // the same, by part: { name: ms of each second }
     build: build.name,
     exe: mod.path, // where the game is, for the client to find its Flash movies
     execAvailable: execInfo !== null && !disabled,
@@ -4192,7 +4193,21 @@ const WATCH_INTERVAL_MS = 33; // 30 times a second; with the object scan's budge
 let lastWatchAt = 0;
 
 // How much of the game thread's time the hook takes, for state() (milliseconds per second, over the last second).
-const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null };
+const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null, parts: {}, lastParts: {} };
+// A round of watching costs what it costs; the next one waits so that watching takes at most about a tenth of the
+// game's time. In game 2026-10-19 (Teebs, 0.1.49) the hook took 989 ms of each second with rounds every 33 ms.
+const WATCH_SHARE = 0.1;
+let watchCost = 0;
+
+// Runs fn, adding the time it took to the hook's part of that name.
+function timed(part, fn) {
+  const startedAt = clock();
+  try {
+    return fn();
+  } finally {
+    load.parts[part] = (load.parts[part] || 0) + clock() - startedAt;
+  }
+}
 const clock = (() => {
   try {
     const kernel32 = Process.getModuleByName('kernel32.dll');
@@ -4214,6 +4229,10 @@ function noteLoad(startedAt, now) {
   if (now - load.from >= 1000) {
     load.last = load.spent * 1000 / Math.max(now - load.from, 1);
     load.lastTicks = load.ticks;
+    const elapsed = Math.max(now - load.from, 1);
+    load.lastParts = Object.fromEntries(Object.entries(load.parts)
+      .map(([part, spent]) => [part, Math.round(spent * 10000 / elapsed) / 10]));
+    load.parts = {};
     load.from = now;
     load.spent = 0;
     load.ticks = 0;
@@ -4229,15 +4248,18 @@ function onLevelTick(level) {
     }
     const info = levelInfoOf(level);
     if (info !== null) {
-      lookForPlayer(level, now);
-      noteLevel(level, info, now);
+      timed('player search', () => lookForPlayer(level, now));
+      timed('level', () => noteLevel(level, info, now));
       const seen = levelsSeen.get(level.toString());
-      if (seen !== undefined && seen.hasPlayer && seen.map !== null && now - lastWatchAt >= WATCH_INTERVAL_MS) {
+      const wait = Math.max(WATCH_INTERVAL_MS, watchCost * (1 - WATCH_SHARE) / WATCH_SHARE);
+      if (seen !== undefined && seen.hasPlayer && seen.map !== null && now - lastWatchAt >= wait) {
         lastWatchAt = now;
-        watchSisters(level, seen.map, now);
-        watchObjects(seen.map, now, level);
-        watchPlayer(level, info, seen.map, now);
-        finishTouchedStation(now);
+        const roundStarted = clock();
+        timed('sisters', () => watchSisters(level, seen.map, now));
+        timed('objects', () => watchObjects(seen.map, now, level));
+        timed('player', () => watchPlayer(level, info, seen.map, now));
+        timed('stations', () => finishTouchedStation(now));
+        watchCost = clock() - roundStarted;
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
@@ -4248,7 +4270,7 @@ function onLevelTick(level) {
     }
     dropLateKills(now);
     dropLateTraps(now);
-    runQueuedCommand(level, info, now);
+    timed('commands', () => runQueuedCommand(level, info, now));
   } catch (e) {
     if (!complained) {
       complained = true;

@@ -418,7 +418,9 @@ class BridgeCore:
         lines.append(f"Checks: {len(self.checked | self.sent)} sent"
                      + (f", {len(held)} held until you receive {', '.join(waiting_for)}" if held else ""))
         if self.agent_attached and self.state.hook_ms is not None:
-            lines.append(f"Game agent: {self.state.hook_ms:.1f} ms of each second of the game's time")
+            parts = ", ".join(f"{name} {spent:.1f}" for name, spent in self.state.hook_parts)
+            detail = f" ({parts})" if parts else ""
+            lines.append(f"Game agent: {self.state.hook_ms:.1f} ms of each second of the game's time{detail}")
         if self.goal_reached:
             lines.append("Goal: Fontaine defeated" + ("" if self.has_access(GOAL_LEVEL) else
                                                     f", held until you receive {self.access_items.get(GOAL_LEVEL)}"))

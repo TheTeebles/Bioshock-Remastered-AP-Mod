@@ -42,6 +42,7 @@ class GameState:
     research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
     position: Position | None = None  # where the player stands, for the map tracker
     hook_ms: float | None = None  # milliseconds of each second the agent took from the game's own thread
+    hook_parts: tuple[tuple[str, float], ...] = ()  # the same, by what the agent was doing, biggest first
 
 
 @dataclass(frozen=True)
