@@ -11,6 +11,8 @@ PopTracker's format.
   marker's world position) and a ScaleMarker (its scale marker's). Picture = PositionalMarker + (world - floor
   marker) * k on each axis.
 
+Room names come from the regions' own text boxes (TextBox1), as the map screen writes them.
+
 Writes images/ (one picture per floor and one overview per level, floors side by side), maps/maps.json,
 locations/locations.json, and prints which checks have no pin. Each pin's sections are named exactly like the AP
 locations, which is how Universal Tracker colours them with the world's own logic. Needs Pillow, and Chromium to turn
@@ -26,6 +28,7 @@ import subprocess
 import sys
 import tempfile
 import types
+from html import escape
 from collections import defaultdict
 from pathlib import Path
 
@@ -34,7 +37,7 @@ from PIL import Image, ImageDraw, ImageFont
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 from shape import parse, svg  # noqa: E402
-from swfscan import index, sprite_children  # noqa: E402
+from swfscan import index, rect, sprite_children  # noqa: E402
 
 
 def _load_world_tables():
@@ -70,6 +73,30 @@ def tf(m):
     return "matrix(%g %g %g %g %g %g)" % tuple(m)
 
 
+def edit_text(b, q):
+    """A DefineEditText's bounds, font height and starting text: the room names the map screen shows."""
+    bounds, p = rect(b, q + 2)
+    flags, more = b[p], b[p + 1]
+    p += 2
+    height = None
+    if flags & 1:  # HasFont
+        height = int.from_bytes(b[p + 2:p + 4], "little") / 20
+        p += 4
+    if more & 0x80:  # HasFontClass
+        p = b.index(b"\0", p) + 1
+    if flags & 4:  # HasTextColor
+        p += 4
+    if flags & 2:  # HasMaxLength
+        p += 2
+    align = 0
+    if more & 0x20:  # HasLayout
+        align = b[p]
+        p += 9
+    p = b.index(b"\0", p) + 1  # the variable name
+    text = b[p:b.index(b"\0", p)].decode("latin1") if flags & 0x80 else ""
+    return bounds, height, align, text
+
+
 class MapArt:
     def __init__(self, path):
         self.b, self.defs, self.ex = index(str(path))
@@ -96,15 +123,42 @@ class MapArt:
             return self.cache[cid]
         if code != 39:
             return []
-        out = []
+        out, labels = [], []
         for child in sprite_children(self.b, self.defs, cid):
             name = child.get("name", "")
-            if "char" not in child or name in ("PositionalMarker", "ScaleMarker") or name.startswith("TextBox"):
+            if "char" not in child or name in ("PositionalMarker", "ScaleMarker"):
+                continue
+            if name.startswith("TextBox"):
+                if name == "TextBox1":  # TextBox2 is the same name again, a pixel off: the game's shadow
+                    labels.append('<g transform="%s">%s</g>' % (tf(child.get("m", (1, 0, 0, 1, 0, 0))),
+                                                                 "".join(self.label(child["char"]))))
                 continue
             inner = self.render(child["char"], depth + 1)
             if inner:
                 out.append('<g transform="%s">%s</g>' % (tf(child.get("m", (1, 0, 0, 1, 0, 0))), "".join(inner)))
-        return out
+        return out + labels  # names on top of the rooms
+
+    def label(self, cid, depth=0):
+        """A room's name as the map screen writes it: its text box's lines, centred in the box."""
+        if cid not in self.defs or depth > 3:
+            return []
+        code, q, _ = self.defs[cid]
+        if code == 39:
+            return ['<g transform="%s">%s</g>' % (tf(child.get("m", (1, 0, 0, 1, 0, 0))),
+                                                    "".join(self.label(child["char"], depth + 1)))
+                    for child in sprite_children(self.b, self.defs, cid) if "char" in child]
+        if code != 37:
+            return []
+        (x0, x1, y0, y1), height, _, text = edit_text(self.b, q)
+        lines = [line.strip() for line in text.replace("\n", "\r").split("\r") if line.strip()]
+        if not lines:
+            return []
+        size = min(height or 10, 10)
+        top = (y0 + y1) / 2 - size * 1.1 * (len(lines) - 1) / 2 + size * 0.35
+        spans = "".join('<tspan x="%g" y="%g">%s</tspan>' % ((x0 + x1) / 2, top + n * size * 1.1, escape(line))
+                        for n, line in enumerate(lines))
+        return ['<text font-family="DejaVu Sans Condensed, Arial Narrow, sans-serif" font-weight="bold" '
+                'font-size="%g" fill="#c9b48a" text-anchor="middle">%s</text>' % (size, spans)]
 
     def floor_svg(self, regions):
         body, missing = [], []
