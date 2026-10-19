@@ -95,6 +95,13 @@ If the game was started as administrator, Archipelago has to be started as admin
     The Archipelago icon shows from the first save or level you load after the client connects to the game. For it,
     the client keeps a copy of the Garden's menu in Archipelago's cache folder and the game is handed that copy when
     it opens the menu. Nothing in the game's folder is changed.
+  - *World items and safes (World Item Checks and Safe Checks, Steam):* built but not tried in the real game yet.
+    The client watches the plasmid and tonic pickups lying in the level you are in, the safes and lockboxes (open
+    ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give a bag of
+    chips instead of their item.
+  - *Research (Research Checks, Steam):* built but not tried in the real game yet. The client reads how far each
+    enemy is researched from the player's research tables, and with research checks on it makes research give a
+    bag of chips instead of its tonics.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
@@ -124,6 +131,9 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 - `/sim story` does the next story objective in the level you are in
 - `/sim sister` and `/sim station` do the next one of those in the level you are in
 - `/sim buy 3` buys line 3 of the Gatherer's Garden in the level you are in
+- `/sim take telekinesis` or `/sim take safe 1` takes a pickup or weapon, or opens a safe or lockbox, of the level
+  you are in (World Item Checks and Safe Checks)
+- `/sim photo thuggish` researches an enemy one level further (Research Checks)
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
 - `/sim fontaine` beats the final boss
 - `/sim die` dies, to try DeathLink
@@ -140,6 +150,16 @@ game would not get those items afterwards without `/resync`.
 
 - **Held checks.** With Level Access on, a level's checks are only sent once you have its access item. The client
   remembers what you found and sends it the moment the item arrives. `/bioshock` lists what is waiting.
+- **Open Rapture** (Level Access: `open_rapture`, not playable yet). Keep the client connected whenever you ride a
+  bathysphere: the client tells the game which stops to offer, and without it the menu only shows what the story has
+  opened so far. Leaving Medical Pavilion, pull the bathysphere switch there and pick any chapter you hold the access
+  item for. A chapter item that arrives while you are in a level shows up the next time you pull a bathysphere switch,
+  with no reload. Olympus Heights has no station: until you have been there, its line in the menu is the one Apollo
+  Square has later, and a ride starts where the story does, in Tenenbaum's safehouse. The submarine out of Smuggler's
+  Hideout and the way out of Ryan's office lead on only once you hold the next chapter's item; until then they take
+  you back to Medical Pavilion's bathysphere and the client says why. A level counts as complete when you reach the
+  next level of its chapter or finish its last objective, whatever order you play the chapters in. The levels you have
+  been to are stored on the Archipelago server with your other progress. Universal Tracker follows the same rules.
 - **One save per seed.** The client cannot tell saves apart yet. Whatever the loaded save has done is reported to the
   room you are connected to, so start a new game for every seed and never load a save from another one while
   connected.

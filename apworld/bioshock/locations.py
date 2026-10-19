@@ -5,11 +5,11 @@ from typing import TYPE_CHECKING
 from BaseClasses import Location, LocationProgressType
 
 from .data import (
-    GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, VICTORY_ITEM,
-    LocationCategory, LocationData,
+    GAME_NAME, GATHERERS_GARDEN_FIRST_APPEARANCES, GOAL_LEVEL, GOAL_LOCATION, LOCATION_TABLE, PAST_THE_DEBRIS, SURGERY,
+    VICTORY_ITEM, WORLD_SPOTS, LocationCategory, LocationData,
 )
 from .items import BioShockItem
-from .options import CollectibleChecks, ShopChecks
+from .options import CollectibleChecks, ResearchChecks, ShopChecks, WorldItemChecks
 
 if TYPE_CHECKING:
     from .world import BioShockWorld
@@ -32,6 +32,9 @@ def _build_location_groups() -> dict[str, set[str]]:
 
 LOCATION_NAME_GROUPS: dict[str, set[str]] = _build_location_groups()
 
+# Holding the Research Camera is no check for a player who starts with it.
+RESEARCH_CAMERA_LOCATION: int = next(spot.id for spot in WORLD_SPOTS if spot.vanilla == "Research Camera")
+
 
 def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
     options = world.options
@@ -44,12 +47,20 @@ def is_enabled(world: BioShockWorld, location: LocationData) -> bool:
         LocationCategory.GATHERERS_GARDEN: options.shop_checks == ShopChecks.option_all or (
             options.shop_checks == ShopChecks.option_first_appearances
             and location.id in GATHERERS_GARDEN_FIRST_APPEARANCES),
+        LocationCategory.WORLD_ITEM: options.world_item_checks != WorldItemChecks.option_off and not (
+            options.start_with_research_camera and location.id == RESEARCH_CAMERA_LOCATION),
+        LocationCategory.SAFE: bool(options.safe_checks),
+        LocationCategory.RESEARCH: options.research_checks == ResearchChecks.option_all or (
+            options.research_checks == ResearchChecks.option_first_level and location.id % 10 == 1),
     }[location.category]
 
 
 def may_hold_progression(location: LocationData) -> bool:
     """False for checks that can hold useful items but nothing needed to progress. Shop purchases cost ADAM, and
-    how much a player has depends on how they play, so a shop check might never be bought."""
+    how much a player has depends on how they play, so a shop check might never be bought. Research past the first
+    level takes many photos, which is a grind nobody should need."""
+    if location.category == LocationCategory.RESEARCH:
+        return location.id % 10 == 1
     return location.category != LocationCategory.GATHERERS_GARDEN
 
 
@@ -85,7 +96,7 @@ def progression_locations(world: BioShockWorld) -> list[LocationData]:
 
 def create_all_locations(world: BioShockWorld) -> None:
     for data in enabled_locations(world):
-        region = world.get_region(data.level)
+        region = world.get_region(SURGERY if data.name in PAST_THE_DEBRIS else data.level)
         location = BioShockLocation(world.player, data.name, data.id, region)
         if is_filler_only(world, data):
             location.progress_type = LocationProgressType.EXCLUDED

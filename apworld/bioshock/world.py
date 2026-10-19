@@ -6,13 +6,15 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVEL_BY_NAME, LEVELS, WEAPON_UPGRADES, LocationData
+from .data import (
+    CHAPTER_OF_LEVEL, GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE,
+    WORLD_VERSION, LocationData,
+)
 from .web_world import BioShockWebWorld
 
-WORLD_VERSION = "0.1.28"
 RESEARCH_CAMERA = "Research Camera"
-SLOT_DATA_VERSION = 4  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
-# 4: station_touch, and shop_checks is 0/1/2
+SLOT_DATA_VERSION = 5  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
+# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2), safe_checks, research_checks (0/1/2)
 
 
 class BioShockWorld(World):
@@ -36,7 +38,9 @@ class BioShockWorld(World):
     # Universal Tracker builds the player's world again from the slot data, without their YAML.
     ut_can_gen_without_yaml = True
     TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
-                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link")
+                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
+                       "start_with_research_camera", "world_item_checks", "safe_checks",
+                       "research_checks")
 
     @staticmethod
     def interpret_slot_data(slot_data: dict[str, Any]) -> dict[str, Any]:
@@ -65,36 +69,47 @@ class BioShockWorld(World):
                           "count.")
         if needed > len(open_checks):
             raise OptionError(
-                f"{self.player_name}: Level Access needs {needed} checks that may hold an access item, but these "
+                f"{self.player_name}: Level Access and Telekinesis need {needed} checks that may hold progression, "
+                "but these "
                 f"options leave only {len(open_checks)}. {does_not_count} Turn on story, Little Sister, Power to "
                 "the People or level completion checks, exclude fewer locations, set audio diaries "
                 "to 'all', or set Level Access to 'vanilla'.")
         if needed and not self._open_from_the_start(open_checks):
             # Without this the fill fails whenever no other player has room for the first access item either.
             raise OptionError(
-                f"{self.player_name}: with Level Access on, at least one check that may hold an access item has to "
-                "be open from the start, and here every one of them is in a level that needs an access item "
-                f"first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
+                f"{self.player_name}: with Level Access on or the pickups shuffled, at least one check that may hold "
+                "progression has to be open from the start, and here every one of them needs an access item or "
+                f"Telekinesis first. {does_not_count} Turn on story, Little Sister or level completion checks, exclude fewer "
                 "locations in Welcome to Rapture and Medical Pavilion, set Level Access to 'vanilla', or add an "
                 "access item to start_inventory.")
         # As create_all_items counts it: access items taken back out of the pool still took their place in it.
         room = len(locations.open_locations(self)) - len(items.progression_item_names(self))
-        if items.stations_shuffled(self) and room < len(WEAPON_UPGRADES):
-            # The stations give no upgrade then, so an upgrade left out of the pool could never be had.
+        required = len(items.required_useful_items(self))
+        if required and room < required:
+            # The game gives these no more, so one left out of the pool could never be had.
             raise OptionError(
-                f"{self.player_name}: with Power to the People checks on, the 12 weapon upgrades come only from the "
-                f"multiworld and need 12 checks that may hold useful items, but these options leave room for "
-                f"{max(room, 0)}. Filler-only collectibles and locations under exclude_locations do not count. "
-                "Turn on more kinds of checks, set audio diaries to 'all' or exclude fewer locations.")
+                f"{self.player_name}: {required} items come only from the multiworld (the 12 weapon upgrades with "
+                "Power to the People checks on, the shuffled pickups with World Item Checks set to 'shuffled', the "
+                "9 research tonics with Research Checks on) and need as many checks that may hold useful items, but "
+                f"these options leave room for {max(room, 0)}. "
+                "Filler-only collectibles and locations under exclude_locations do not count. Turn on more kinds of "
+                "checks, set audio diaries to 'all' or exclude fewer locations.")
 
     def _open_from_the_start(self, open_checks: list[LocationData]) -> list[LocationData]:
         """The checks among these that need no access item the player does not start with."""
         start_items = set(self.options.start_inventory.value) | set(self.options.start_inventory_from_pool.value)
+        if items.world_pickups_shuffled(self) and TELEKINESIS not in start_items:  # the debris before Surgery
+            open_checks = [location for location in open_checks if location.name not in PAST_THE_DEBRIS
+                           and location.level in (WELCOME_TO_RAPTURE, MEDICAL_PAVILION)]
+        if self.options.level_access == bioshock_options.LevelAccess.option_open_rapture:
+            # A chapter's own item is not enough: chapter 5 needs 2 to 4 first, and so on (rules.py).
+            return [location for location in open_checks if rules.items_to_reach_chapter(
+                self, CHAPTER_OF_LEVEL[location.level].number) <= start_items]
         return [location for location in open_checks
-                if LEVEL_BY_NAME[location.level].access_item in (None, *start_items)]
+                if items.access_item_of(self, location.level) in (None, *start_items)]
 
     def create_regions(self) -> None:
-        regions.create_and_connect_regions(self)
+        regions.create_regions(self)
         locations.create_all_locations(self)
 
     def set_rules(self) -> None:
@@ -110,7 +125,7 @@ class BioShockWorld(World):
         return items.get_random_filler_item_name(self)
 
     def fill_slot_data(self) -> Mapping[str, Any]:
-        access_items = self.options.level_access == bioshock_options.LevelAccess.option_access_items
+        access_items = self.options.level_access != bioshock_options.LevelAccess.option_vanilla
         return {
             "slot_data_version": SLOT_DATA_VERSION,
             "world_version": WORLD_VERSION,
@@ -118,5 +133,6 @@ class BioShockWorld(World):
             # Stations open no menu: using one sends its check and closes it, and the upgrades come from the pool.
             "station_touch": items.stations_shuffled(self),
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
-            "level_access_items": {level.name: level.access_item for level in LEVELS} if access_items else {},
+            "level_access_items": {level.name: items.access_item_of(self, level.name) for level in LEVELS}
+            if access_items else {},
         }

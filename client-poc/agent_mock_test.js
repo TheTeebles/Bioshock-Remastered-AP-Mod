@@ -22,6 +22,7 @@ const EPIC_SIZE = 23552000;
 const STEAM = { enginePtr: 0x1375368, vtable: 0xE0DFF4, exec: 0x4C5970, delta: 0x53D850 };
 const VIRTUAL_QUERY = 0x76000000;
 const HEAP_GET = 0x76000100; const HEAP_ALLOC = 0x76000200; // GetProcessHeap and HeapAlloc
+const HEAP_VALIDATE = 0x76000400; const HEAP_REALLOC = 0x76000500; // HeapValidate and HeapReAlloc
 const CREATE_FILE = 0x76000300; // CreateFileW
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
@@ -80,7 +81,7 @@ class Ptr {
   writeU32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   writeS32(v) { this.runtime.memory.set(this.value, v >>> 0); return this; }
   compare(other) { return this.value < other.value ? -1 : (this.value > other.value ? 1 : 0); }
-  writeUtf16String(text) { this.runtime.strings.set(this.value, text); return this; }
+  writeUtf16String(text) { this.runtime.strings.set(this.value, text); this.runtime.text.set(this.value, text); return this; }
   writeFloat(f) { this.runtime.memory.set(this.value, Math.round(f * 10) >>> 0); return this; }
 }
 
@@ -104,6 +105,8 @@ function makeRuntime({
     nextStack: 0x0A000000,
     scriptCalls: [], // what the agent ran through ProcessEvent: object, function, the frame's words
     heapAllocs: [], // the size of everything the agent took from the game's heap
+    processHeap: new Set(), // blocks the game took from the process heap
+    reallocs: [], // the size of every block the agent grew
     onScriptCall: null,
   };
   // ProcessEvent's first instructions, as the agent checks them before calling it
@@ -138,7 +141,8 @@ function makeRuntime({
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') {
           if (!virtualQuery) { throw new Error('unable to find module'); }
-          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE }[name] ||
+          return { getExportByName: (name) => ptr({ GetProcessHeap: HEAP_GET, HeapAlloc: HEAP_ALLOC, CreateFileW: CREATE_FILE,
+            HeapValidate: HEAP_VALIDATE, HeapReAlloc: HEAP_REALLOC }[name] ||
             VIRTUAL_QUERY) };
         }
         return {
@@ -181,6 +185,19 @@ function makeRuntime({
         };
       }
       if (address.value === HEAP_GET) { return () => ptr(0x00A00000); }
+      if (address.value === HEAP_VALIDATE) { // a block the game took from the process heap
+        return (heap, flags, block) => (runtime.processHeap.has(block.value) ? 1 : 0);
+      }
+      if (address.value === HEAP_REALLOC) {
+        return (heap, flags, block, size) => {
+          const p = runtime.nextAlloc; runtime.nextAlloc += size + 16;
+          for (let at = 0; at < size; at += 4) {
+            if (runtime.memory.has(block.value + at)) { runtime.memory.set(p + at, runtime.memory.get(block.value + at)); }
+          }
+          runtime.processHeap.add(p); runtime.reallocs.push(size);
+          return ptr(p);
+        };
+      }
       if (address.value === HEAP_ALLOC) {
         return (heap, flags, size) => {
           const p = ptr(runtime.nextAlloc); runtime.nextAlloc += size + 16; runtime.heapAllocs.push(size); return p;
@@ -402,8 +419,14 @@ function makeRuntime({
     const all = runtime.object(0x10000); // the table of all objects
     let objectCount = 0;
     poke(BASE + 0x139042C, all);
+    // An object's name is a name and a number, as in the engine: "SecurityCrate_WallSafe2" is the name
+    // "SecurityCrate_WallSafe" with number 3 (0 is no number).
+    const rename = (at, text) => {
+      const split = /^(.*?[^\d])(0|[1-9]\d*)$/.exec(text);
+      poke(at + 0x28, name(split ? split[1] : text)); poke(at + 0x2C, split ? Number(split[2]) + 1 : 0);
+    };
     const make = (text, cls, size = 0x200) => {
-      const at = runtime.object(size); poke(at + 0x28, name(text)); poke(at + 0x30, cls);
+      const at = runtime.object(size); rename(at, text); poke(at + 0x30, cls);
       poke(all + 4 * objectCount, at); objectCount++; poke(BASE + 0x1390430, objectCount);
       return at;
     };
@@ -531,8 +554,199 @@ function makeRuntime({
         poke(updateUIStats + 0x44, updateUIBioAmmoBank); poke(playerClass + 0x5C, updateUIStats);
       }
     };
-    return { playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item };
+    // Open Rapture: the level's BathysphereManager, with Destinations {Title, MapName, StartLocationLabel} (28 bytes
+    // each) at +0x80 and UnlockedDestinations at +0x8C; and scripted level changes (ActionChangeLevel) with their
+    // two strings and resolveInfoList rows {PropertyName, Variable} that hand them names.
+    const nameProperty = cls('NameProperty', objectClass);
+    const arrayOfStructs = (owner, arrayName, offset, structName, structFields) => {
+      const struct = make(structName, scriptStruct);
+      fields(struct, structFields);
+      fields(owner, [[arrayName, arrayProperty, offset]]);
+      const arrayField = runtime.memory.get(owner + 0x5C);
+      const innerField = make(arrayName, structProperty); poke(arrayField + 0x7C, innerField); poke(innerField + 0x78, struct);
+    };
+    const managerClass = cls('BathysphereManager', objectClass);
+    fields(managerClass, [['UnlockedDestinations', arrayProperty, 0x8C]]);
+    const unlockedField = runtime.memory.get(managerClass + 0x5C);
+    arrayOfStructs(managerClass, 'Destinations', 0x80, 'BathysphereDestination',
+      [['Title', strProperty, 0], ['MapName', nameProperty, 0xC], ['StartLocationLabel', nameProperty, 0x14]]);
+    poke(runtime.memory.get(managerClass + 0x5C) + 0x44, unlockedField); // Destinations, then UnlockedDestinations
+    const unlockDestination = make('UnlockDestination', functionClass); // the script function the levels call
+    poke(unlockedField + 0x44, unlockDestination);
+    // ShockPlayer.UnlockBathysphereDestination(name MapName), which makes the level's manager when there is none.
+    const unlockBathysphereDestination = make('UnlockBathysphereDestination', functionClass);
+    fields(unlockBathysphereDestination, [['MapName', nameProperty, 0]]);
+    const playerUnlocks = () => {
+      poke(unlockBathysphereDestination + 0x44, runtime.memory.get(playerClass + 0x5C));
+      poke(playerClass + 0x5C, unlockBathysphereDestination);
+    };
+    const STOPS = [['Medical Pavilion', '1-Medical', 'Backtrack_MedicalStart'], ["Neptune's Bounty", '2-Fisheries', 'PlayerStart'],
+      ['Arcadia', '3-Arcadia', 'ArcBathyEndPS'], ['Fort Frolic', '4-Recreation', 'PlayerStart'],
+      ['Hephaestus', '5-Hephaestus', 'EngBathyStartPS'], ['Apollo Square', '6-Slums', 'PlayerStart_FromDeck7Bathy'],
+      ['Point Prometheus', '7-Science', 'FromResidential'], ['', 'None', 'None']];
+    ['FromFisheriesPS', 'FromSubBayPS', '6-Resi', 'PlayerStart_First', '3-Arcadia', '2-SubBay', 'FromArcadiaPS', 'MapName', 'StartLocationLabel'].forEach(name);
+    // The manager: every destination, `unlocked` offered, with room for `room`; `onHeap` if its buffer is the
+    // process heap's.
+    const bathysphere = (unlocked, room = unlocked.length, onHeap = false) => {
+      const at = make('BioshockBathyspheres', managerClass, 0x100);
+      const destinations = runtime.object(28 * STOPS.length);
+      STOPS.forEach(([title, map, label], i) => {
+        runtime.string(destinations + 28 * i, title || 'x');
+        poke(destinations + 28 * i + 0xC, name(map)); poke(destinations + 28 * i + 0x10, 0);
+        poke(destinations + 28 * i + 0x14, name(label)); poke(destinations + 28 * i + 0x18, 0);
+      });
+      poke(at + 0x80, destinations); poke(at + 0x84, STOPS.length); poke(at + 0x88, STOPS.length);
+      const data = runtime.object(Math.max(4, 4 * room));
+      unlocked.forEach((index, i) => poke(data + 4 * i, index));
+      for (let i = unlocked.length; i < room; i++) { poke(data + 4 * i, 0); }
+      if (onHeap) { runtime.processHeap.add(data); }
+      poke(at + 0x8C, data); poke(at + 0x90, unlocked.length); poke(at + 0x94, room);
+      return at;
+    };
+    const unlockedOf = (manager) => {
+      const data = runtime.memory.get(manager + 0x8C);
+      return Array.from({ length: runtime.memory.get(manager + 0x90) }, (_, i) => runtime.memory.get(data + 4 * i));
+    };
+    const arrivalOf = (manager, i) => names[runtime.memory.get(runtime.memory.get(manager + 0x80) + 28 * i + 0x14)];
+    const lineOf = (manager, i) => {
+      const at = runtime.memory.get(manager + 0x80) + 28 * i;
+      return { title: runtime.text.get(runtime.memory.get(at)), map: names[runtime.memory.get(at + 0xC)],
+        arrival: names[runtime.memory.get(at + 0x14)] };
+    };
+    // The game's UnlockDestination: adds the destination whose MapName is the one handed to it, in order, in a
+    // buffer of its own.
+    const gameUnlocks = (parms, manager) => {
+      const wanted = runtime.memory.get(parms);
+      const destinations = runtime.memory.get(manager + 0x80);
+      const index = STOPS.findIndex((_, i) => runtime.memory.get(destinations + 28 * i + 0xC) === wanted);
+      const now = unlockedOf(manager);
+      if (index < 0 || now.includes(index)) { return; }
+      const next = [...now, index].sort((a, b) => a - b);
+      const data = runtime.object(4 * next.length);
+      next.forEach((value, i) => poke(data + 4 * i, value));
+      poke(manager + 0x8C, data); poke(manager + 0x90, next.length); poke(manager + 0x94, next.length);
+    };
+    const changeClass = cls('ActionChangeLevel', cls('Action', objectClass));
+    fields(changeClass, [['MapName', strProperty, 0x80], ['StartLocationLabel', strProperty, 0x8C]]);
+    const mapField = runtime.memory.get(changeClass + 0x5C);
+    arrayOfStructs(changeClass, 'resolveInfoList', 0x98, 'ResolveInfo',
+      [['PropertyName', nameProperty, 0], ['Variable', nameProperty, 8]]);
+    poke(runtime.memory.get(changeClass + 0x5C) + 0x44, mapField);
+    // A level change to this map and arrival point, with room for `room` characters in each string.
+    const levelChange = (map, label, room = 0) => {
+      const at = make('ActionChangeLevel0', changeClass, 0x100);
+      for (const [offset, text] of [[0x80, map], [0x8C, label]]) {
+        runtime.string(at + offset, text);
+        if (room) { poke(at + offset + 8, room); }
+      }
+      const rows = runtime.object(0x20);
+      poke(rows, name('MapName')); poke(rows + 4, 0); poke(rows + 8, name(map)); poke(rows + 12, 0);
+      poke(rows + 16, name('StartLocationLabel')); poke(rows + 20, 0); poke(rows + 24, name(label)); poke(rows + 28, 0);
+      poke(at + 0x98, rows); poke(at + 0x9C, 2); poke(at + 0xA0, 2);
+      return at;
+    };
+    // A script note (ActionScriptNote) whose Label has room for `room` characters: a string the game made that
+    // nothing reads while playing.
+    const noteClass = cls('ActionScriptNote', cls('Action', objectClass));
+    fields(noteClass, [['Label', strProperty, 0x80]]);
+    const note = (text, room) => {
+      const at = make('ActionScriptNote0', noteClass, 0x100);
+      runtime.string(at + 0x80, text);
+      poke(at + 0x88, room);
+      return at;
+    };
+    // Plasmids and tonics lying in a level and safes (bIsOpened). As in game (probe .8): the pickup's
+    // LootSlot (+0x520) holds LootSpec (a LootItemSpecification, ItemClass +0x4C) and Loot (the ItemStack rolled
+    // from it, ItemClass +0x50, None until rolled); taking the pickup gives the ItemStack's class.
+    const classProperty = cls('ClassProperty', objectClass);
+    const pickupClass = cls('PlasmidPickup', actor);
+    fields(pickupClass, [['PickupMesh', objectProperty, 0x518], ['LootSlot', objectProperty, 0x520]]);
+    const lootSlotClass = cls('LootSlot', objectClass);
+    fields(lootSlotClass, [['LootSpec', objectProperty, 0x40], ['Loot', objectProperty, 0x44]]);
+    const specClass = cls('LootItemSpecification', cls('DeletableObject', objectClass));
+    fields(specClass, [['ItemClass', classProperty, 0x4C]]);
+    const stackClass = cls('ItemStack', cls('ReferenceCountedObject', objectClass));
+    fields(stackClass, [['ItemClass', classProperty, 0x50]]);
+    const pickupKinds = new Map();
+    const pickup = (className, actorName, gives, rolled = true) => {
+      if (!pickupKinds.has(className)) { pickupKinds.set(className, cls(className, pickupClass)); }
+      const at = make(actorName, pickupKinds.get(className), 0x600); poke(at + 0xCC, 0);
+      const slot = make('LootSlot', lootSlotClass, 0x80); poke(at + 0x520, slot);
+      const spec = make('LootItemSpecification', specClass, 0x80); poke(spec + 0x4C, gives); poke(slot + 0x40, spec);
+      if (rolled) { const stack = make('ItemStack', stackClass, 0x80); poke(stack + 0x50, gives); poke(slot + 0x44, stack); }
+      if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); } // the player's level
+      return at;
+    };
+    // What a pickup gives: its LootSpec's class and its ItemStack's (0 when not rolled).
+    const gives = (at) => {
+      const slot = runtime.memory.get(at + 0x520); const stack = runtime.memory.get(slot + 0x44);
+      return [runtime.memory.get(runtime.memory.get(slot + 0x40) + 0x4C), stack ? runtime.memory.get(stack + 0x50) : 0];
+    };
+    const roll = (at) => { // the game rolls the pickup: an ItemStack of what LootSpec says
+      const slot = runtime.memory.get(at + 0x520);
+      const stack = make('ItemStack', stackClass, 0x80);
+      poke(stack + 0x50, runtime.memory.get(runtime.memory.get(slot + 0x40) + 0x4C)); poke(slot + 0x44, stack);
+    };
+    const containerClass = cls('AnimatedContainer', actor);
+    fields(containerClass, [['bIsOpened', boolProperty, 0x5DC]]);
+    const crateClass = cls('SecurityCrate', containerClass);
+    const containerKinds = { SecurityCrate_Safe: cls('SecurityCrate_Safe', crateClass),
+      SecurityCrate_WallSafe: cls('SecurityCrate_WallSafe', crateClass),
+      Lockbox: cls('Lockbox', cls('ReactiveActor', actor)) }; // out of scope, and not an AnimatedContainer
+    fields(containerKinds.Lockbox, [['bCanSoftLock', boolProperty, 0x5E0]]);
+    const container = (className, actorName) => {
+      const at = make(actorName, containerKinds[className], 0x600); poke(at + 0x5DC, 0);
+      if (runtime.levels.length > 1) { runtime.addActor(runtime.levels[1], at); }
+      return at;
+    };
+    // Research, as ShockPlayer declares it: ResearchTracks {ResearchName, CurrentScore} (16 bytes each here) and
+    // ResearchLevels {ResearchName, LevelNumber, ScoreRequired, AwardItemClass} (20 bytes each).
+    const research = (tracks, levels) => {
+      arrayOfStructs(playerClass, 'ResearchTracks', 0xB00, 'ResearchTrack',
+        [['ResearchName', nameProperty, 0], ['CurrentScore', intProperty, 8], ['MaxScore', intProperty, 0xC]]);
+      const tracksField = runtime.memory.get(playerClass + 0x5C);
+      arrayOfStructs(playerClass, 'ResearchLevels', 0xB10, 'ResearchLevel',
+        [['ResearchName', nameProperty, 0], ['LevelNumber', intProperty, 8], ['ScoreRequired', intProperty, 0xC],
+          ['AwardItemClass', classProperty, 0x10]]);
+      poke(runtime.memory.get(playerClass + 0x5C) + 0x44, tracksField); // ResearchLevels, then ResearchTracks
+      const fill = (offset, rows, size, write) => (pawn) => {
+        const data = runtime.object(Math.max(4, size * rows.length));
+        rows.forEach((row, i) => write(data + size * i, row));
+        poke(pawn + offset, data); poke(pawn + offset + 4, rows.length); poke(pawn + offset + 8, rows.length);
+        return data;
+      };
+      return {
+        tracks: fill(0xB00, tracks, 16, (at, [subject, score]) => {
+          poke(at, name(subject)); poke(at + 4, 0); poke(at + 8, score); poke(at + 0xC, 100);
+        }),
+        levels: fill(0xB10, levels, 20, (at, [subject, number, score, award]) => {
+          poke(at, name(subject)); poke(at + 4, 0); poke(at + 8, number); poke(at + 0xC, score); poke(at + 0x10, award);
+        }),
+      };
+    };
+    // Story flags: global_ variables are VariableBool objects with Value at +0x40, made by
+    // Script.newGlobalVariable(VariableName, variableType) -> ReturnValue.
+    const storyFlags = () => {
+      const variableClass = cls('Variable', objectClass);
+      const variableBool = cls('VariableBool', variableClass);
+      fields(variableBool, [['bSomethingElse', boolProperty, 0x40], ['Value', boolProperty, 0x40]]);
+      const scriptClass = cls('Script', objectClass);
+      const newGlobal = make('newGlobalVariable', functionClass);
+      fields(newGlobal, [['VariableName', nameProperty, 0], ['variableType', classProperty, 8],
+        ['ReturnValue', objectProperty, 0xC]]);
+      poke(scriptClass + 0x5C, newGlobal);
+      const script = make('Script', scriptClass);
+      const variable = (text) => { const at = make(text, variableBool, 0x80); poke(at + 0x40, 0); return at; };
+      return { variableBool, script, newGlobal, variable };
+    };
+    const textOf = (at) => runtime.text.get(runtime.memory.get(at));
+    const changeOf = (change) => ({
+      map: runtime.text.get(runtime.memory.get(change + 0x80)), label: runtime.text.get(runtime.memory.get(change + 0x8C)),
+      rows: [names[runtime.memory.get(runtime.memory.get(change + 0x98) + 8)],
+        names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
+    });
+    return { nameIndex: name, rename, storyFlags, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -581,6 +795,7 @@ const exec = (r, id, command) => r.context.rpc.exports.exec(id, command);
 const state = (r) => r.context.rpc.exports.state();
 const gardenLines = (r, id, lines) => r.context.rpc.exports.action(id, 'garden_lines ' +
   JSON.stringify({ level: 'Medical Pavilion', map: '1-medical', lines }));
+const travelRules = (r, id, rules) => r.context.rpc.exports.action(id, `travel_rules ${JSON.stringify(rules)}`);
 const raisedMessages = (r) => r.messages.filter((m) => m.type === 'exec_raised');
 
 // What the client is told about one exception the game raises while a command runs: the text, or null if nothing.
@@ -1276,6 +1491,13 @@ const tests = {
       assert.strictEqual(seen.execAvailable, false);
     }
     assert.strictEqual(r.messages.filter((m) => m.type === 'exec_disabled').length, 1);
+    assert.match(r.messages.find((m) => m.type === 'exec_disabled').reason || JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /different build/);
+  },
+  'an engine that matched and then changes is the game quitting, not another build': () => {
+    const r = makeRuntime(); r.game(); r.load(); r.frame();
+    assert.strictEqual(state(r).engineReady, true);
+    r.engine(ENGINE, 0x424242); state(r);
+    assert.match(JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /shutting down/);
   },
   'unknown build tries the Steam addresses behind the vtable check': () => {
     const good = makeRuntime({ moduleSize: 12345 }); good.engine(); good.load();
@@ -1520,6 +1742,310 @@ const tests = {
     assert.deepStrictEqual([...state(r).weaponsHeld], [], 'the shotgun was the last body\'s');
     assert.strictEqual(state(r).weaponsPending, false);
   },
+  // ---- Open Rapture ----
+  'travel_rules makes the bathysphere offer exactly the stops given, at their arrival points': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 1], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 4, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '3-arcadia', arrival: 'FromFisheriesPS' }, { map: '4-recreation', arrival: 'PlayerStart' }], redirects: [] });
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.name, m.ok]),
+      [[4, 'travel_rules', true]]);
+    r.frames(8);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3]);
+    assert.strictEqual(model.arrivalOf(manager, 2), 'FromFisheriesPS', 'a first ride to Arcadia docks with the submarine');
+    assert.strictEqual(model.arrivalOf(manager, 3), 'PlayerStart');
+    assert.deepStrictEqual([...state(r).travelOffered], [0, 2, 3]);
+    assert.strictEqual(state(r).travelTrouble, null);
+    r.poke(r.memory.get(manager + 0x8C) + 4, 1); r.poke(manager + 0x90, 2); // the level's script unlocks its own again
+    r.frames(6);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'taken back out');
+  },
+  'more stops than the array has room for are added by the game itself, one at a time': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([1, 2], 2);
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '7-science' }], redirects: [] });
+    r.frames(4);
+    assert.deepStrictEqual(model.unlockedOf(manager), [1], 'what must go is dropped in place');
+    assert.strictEqual(r.scriptCalls.length, 0, 'no call of the game\'s to copy yet');
+    r.gameEvent(game.hud, model.tick);
+    r.frames(30); // one destination each time the bathysphere is looked at
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 6]);
+    assert.deepStrictEqual(r.scriptCalls.map((c) => [c.self, c.fn]),
+      [[manager, model.unlockDestination], [manager, model.unlockDestination]]);
+    assert.deepStrictEqual(r.reallocs, [], 'no memory of ours');
+    assert.deepStrictEqual(r.heapAllocs, []);
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a destination the game does not unlock when asked is asked for once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([1], 1);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }], redirects: [] });
+    r.frames(10); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.strictEqual(r.scriptCalls.length, 1);
+    assert.deepStrictEqual(model.unlockedOf(manager), [1]);
+    assert.match(state(r).travelTrouble, /did not unlock bathysphere destination 0/);
+  },
+  "a stop that stands in for another level points Apollo Square's line there, and back": () => {
+    for (const withNote of [true, false]) {
+      const r = makeRuntime(); r.game(); const model = r.objectModel();
+      const manager = model.bathysphere([0, 1], 8);
+      const spare = withNote ? model.note('a note', 40) : null;
+      const spareBuffer = withNote ? r.memory.get(spare + 0x80) : null;
+      r.load(); r.frames(2);
+      travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+        { map: '6-slums', arrival: 'PlayerStart_First', to: '6-resi', title: 'Olympus Heights' }], redirects: [] });
+      r.frames(8);
+      assert.deepStrictEqual(model.unlockedOf(manager), [0, 5]);
+      assert.deepStrictEqual(model.lineOf(manager, 5), { title: withNote ? 'Olympus Heights' : 'Apollo Square',
+        map: '6-Resi', arrival: 'PlayerStart_First' });
+      if (withNote) {
+        assert.strictEqual(model.textOf(spare + 0x80), 'Apollo Square', 'the note holds the old title meanwhile');
+      }
+      assert.strictEqual(state(r).travelTrouble, null);
+      r.frames(6);
+      assert.strictEqual(model.lineOf(manager, 5).map, '6-Resi', 'still found by the station it was');
+      travelRules(r, 2, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+        { map: '6-slums', arrival: 'PlayerStart_FromDeck7Bathy' }, { map: '7-science', arrival: 'FromResidential' }],
+      redirects: [] });
+      r.frames(8);
+      assert.deepStrictEqual(model.unlockedOf(manager), [0, 5, 6]);
+      assert.deepStrictEqual(model.lineOf(manager, 5), { title: 'Apollo Square', map: '6-Slums',
+        arrival: 'PlayerStart_FromDeck7Bathy' });
+      if (withNote) {
+        assert.strictEqual(r.memory.get(spare + 0x80), spareBuffer, 'its string given back');
+      }
+    }
+  },
+  "a save made with Apollo Square's line pointed at Olympus Heights still has it put back": () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 5], 8);
+    const line = r.memory.get(manager + 0x80) + 28 * 5;
+    r.string(line, 'Olympus Heights');
+    r.poke(line + 0xC, model.nameIndex('6-Resi'));
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '6-slums', arrival: 'PlayerStart_FromDeck7Bathy' }], redirects: [] });
+    r.frames(12);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 5]);
+    assert.deepStrictEqual(model.lineOf(manager, 5), { title: 'Apollo Square', map: '6-Slums',
+      arrival: 'PlayerStart_FromDeck7Bathy' });
+  },
+  'an arrival point the game does not know yet is looked up again on the next level': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '4-Recreation');
+    const manager = model.bathysphere([0, 5], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '6-slums', arrival: 'Hammer_Start' }], redirects: [] });
+    r.frames(12);
+    assert.strictEqual(model.arrivalOf(manager, 5), 'PlayerStart_FromDeck7Bathy', 'left as it was');
+    model.nameIndex('Hammer_Start'); // a level that has it was loaded
+    r.string(g.level + 0x7C, '1-Medical');
+    r.frames(12);
+    assert.strictEqual(model.arrivalOf(manager, 5), 'Hammer_Start');
+  },
+  'a story flag that exists is set in place, and Olympus Heights is still offered': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0], 8);
+    const flags = model.storyFlags(); const flag = flags.variable('global_transitionedFromRyan');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '6-slums', arrival: 'PlayerStart_First', to: '6-resi',
+      title: 'Olympus Heights' }], flags: { global_transitionedFromRyan: '1' }, redirects: [] });
+    r.frames(12);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 5], 'the rest of the rules still apply');
+    assert.strictEqual(r.memory.get(flag + 0x40), 2, 'Value is the second flag in its word');
+    assert.ok(r.logged('story flag global_transitionedFromRyan = 1'));
+    assert.strictEqual(r.scriptCalls.length, 0, 'no call needed');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a story flag from a skipped chapter is made by the game, then set': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    model.bathysphere([0], 8);
+    const flags = model.storyFlags(); model.nameIndex('global_transitionedFromRyan');
+    let made = null;
+    r.onScriptCall = (self, fn) => {
+      if (fn === flags.newGlobal) {
+        const parms = r.scriptCalls.at(-1).parms;
+        assert.strictEqual(self, flags.script);
+        assert.strictEqual(r.memory.get(parms), model.nameIndex('global_transitionedFromRyan'));
+        assert.strictEqual(r.memory.get(parms + 8), flags.variableBool);
+        made = flags.variable('global_transitionedFromRyan');
+        r.poke(parms + 0xC, made);
+      }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '6-slums', to: '6-resi', title: 'Olympus Heights' }],
+      flags: { global_transitionedFromRyan: '1' }, redirects: [] });
+    r.frames(12);
+    assert.strictEqual(made, null, 'no call of the game\'s to copy yet');
+    r.gameEvent(game.hud, model.tick); r.frames(40);
+    assert.notStrictEqual(made, null);
+    assert.strictEqual(r.memory.get(made + 0x40), 2);
+    assert.ok(r.logged('the game made story flag global_transitionedFromRyan'));
+    assert.strictEqual(r.scriptCalls.filter((c) => c.fn === flags.newGlobal).length, 1, 'once');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a destination the game unlocked and then lost (a save loaded in the same map) is asked for again': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const manager = model.bathysphere([0, 1], 2);
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '2-fisheries' }, { map: '4-recreation' }], redirects: [] });
+    r.frames(4); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 3]);
+    const calls = r.scriptCalls.length;
+    const buffer = r.object(8); r.poke(buffer, 0); r.poke(buffer + 4, 1); // the save's own array, room for 2
+    r.poke(manager + 0x8C, buffer); r.poke(manager + 0x90, 2); r.poke(manager + 0x94, 2);
+    r.frames(4); r.gameEvent(game.hud, model.tick); r.frames(30);
+    assert.ok(r.scriptCalls.length > calls, 'asked again');
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 1, 3]);
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'a crossing into a locked chapter is pointed at the hub, and back once the chapter opens': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    const back = model.levelChange('2-Fisheries', 'FromSubBayPS', 32);
+    r.load(); r.frames(2);
+    const locked = { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] };
+    travelRules(r, 1, locked);
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '1-Medical', label: 'Backtrack_MedicalStart', rows: ['1-Medical', 'Backtrack_MedicalStart'] });
+    assert.deepStrictEqual(model.changeOf(back).rows, ['2-Fisheries', 'FromSubBayPS'], 'the way back is left alone');
+    assert.strictEqual(state(r).travelRedirects, 1);
+    travelRules(r, 2, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+    assert.strictEqual(state(r).travelRedirects, 0);
+  },
+  'a crossing a save kept pointed at the hub goes where the story sends it once its chapter is open': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    model.levelChange('3-Arcadia', 'FromArcadiaPS', 32); // nothing to do with it
+    const saved = model.levelChange('1-Medical', 'Backtrack_MedicalStart', 32);
+    const fallback = model.levelChange('2-SubBay', 'FromArcadiaPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [], restores: [
+      { from: '2-subbay', to: '3-arcadia', arrival: 'FromFisheriesPS', hub: '1-medical',
+        hubArrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(saved),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+    assert.deepStrictEqual(model.changeOf(fallback).rows, ['2-SubBay', 'FromArcadiaPS'], 'the fallback is never undone');
+    assert.ok(r.logged('that a save kept pointed at 1-medical leads to 3-arcadia again'));
+  },
+  'rules turned off put a redirected crossing back': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.strictEqual(model.changeOf(change).map, '1-Medical');
+    travelRules(r, 2, { off: true });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+  },
+  'a save loaded in the same map: the last level\'s crossings are forgotten and the new ones redirected': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const old = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.strictEqual(model.changeOf(old).map, '1-Medical');
+    r.poke(old + 0x30, 0); // freed with its level
+    r.levels.splice(1, 1);
+    const again = r.level('2-SubBay', { extra: 6, capacity: 1030 }); r.player(again, { viewport: g.player });
+    const fresh = model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    r.frames(30);
+    assert.strictEqual(model.changeOf(fresh).map, '1-Medical');
+    assert.strictEqual(state(r).travelRedirects, 1);
+  },
+  'a redirect taken is reported when the hub level comes up': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.levelChange('3-Arcadia', 'FromFisheriesPS', 32);
+    model.bathysphere([0], 8);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '2-subbay', to: '3-arcadia', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    r.string(g.level + 0x7C, '1-Medical');
+    r.frames(4);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected').map((m) => [m.from, m.to]),
+      [['2-subbay', '3-arcadia']]);
+  },
+  'where the hub does not fit, a crossing takes the fallback, which does': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '2-SubBay', label: 'FromArcadiaPS', rows: ['2-SubBay', 'FromArcadiaPS'] });
+    assert.strictEqual(state(r).travelTrouble, null);
+    r.frames(6);
+    assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
+  },
+  'where the hub does not fit, the crossing borrows script notes\' strings, and gives them back when it opens': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    const short = model.note('tiny', 4);
+    const first = model.note('A long note about the submarine', 40);
+    const second = model.note('Another long note about the dock', 40);
+    const change = model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    const labelBuffer = r.memory.get(change + 0x8C);
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '1-Medical', label: 'Backtrack_MedicalStart', rows: ['1-Medical', 'Backtrack_MedicalStart'] });
+    assert.strictEqual(model.textOf(short + 0x80), 'tiny', 'a note without room is left alone');
+    // "1-Medical" fits where "3-Arcadia" was; the arrival point does not, so it takes the first note's buffer.
+    assert.strictEqual(r.memory.get(first + 0x80), labelBuffer, 'the note now owns the old buffer: one owner each');
+    assert.strictEqual(model.textOf(second + 0x80), 'Another long note about the dock', 'only what is needed');
+    assert.strictEqual(state(r).travelTrouble, null);
+    travelRules(r, 2, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }], redirects: [] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change),
+      { map: '3-Arcadia', label: 'FromFisheriesPS', rows: ['3-Arcadia', 'FromFisheriesPS'] });
+  },
+  'a level change whose strings have no room and no note to borrow from is left alone and said': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '5-Ryan');
+    model.bathysphere([0], 8);
+    const change = model.levelChange('6-Resi', 'PlayerStart_First');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [
+      { from: '5-ryan', to: '6-resi', map: '1-medical', arrival: 'Backtrack_MedicalStart' }] });
+    r.frames(8);
+    assert.deepStrictEqual(model.changeOf(change).rows, ['6-Resi', 'PlayerStart_First']);
+    assert.match(state(r).travelTrouble, /could not point the level change to 6-resi elsewhere/);
+  },
   // ---- Gatherer's Gardens ----
   'garden_lines makes each line a copy of chips with its own name, priced from the item': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
@@ -1749,6 +2275,194 @@ const tests = {
     const answers = r.messages.filter((m) => m.type === 'action_result');
     assert.deepStrictEqual(answers.map((m) => [m.id, m.ok]), [[1, false]]);
     assert.ok(answers[0].reason.includes('no BioAmmo'), answers[0].reason);
+  },
+  'state() reports the plasmids and tonics taken, and the ones still lying in the map': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const telekinesis = model.itemClass('Telekinesis', 10);
+    const taken = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup0', telekinesis);
+    model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', model.itemClass('WrenchJockey', 10));
+    r.load(); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere),
+      '{"map":"1-medical","names":["ActivePlasmidPickup0","WeaponsPlasmidPickup1"]}');
+    r.poke(taken + 0xCC, 0x2); r.frames(10); // bDeleteMe: the player took it
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["ActivePlasmidPickup0"]}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["WeaponsPlasmidPickup1"]}');
+    assert.ok(r.logged('ActivePlasmidPickup0 taken in 1-medical'));
+  },
+  'a pickup the level no longer lists counts as taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const taken = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, taken); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["PhysicalPlasmidPickup0"]}');
+  },
+  'loading a save makes new pickups with the same names, which are not taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const medic = model.itemClass('Medic', 10);
+    const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.load(); r.frames(10);
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); // the save's level has its own copy
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'pickups of another level object are not compared with the last one': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const gone = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, gone);
+    r.levels.splice(1, 1); // the level is unloaded, and the same map is made anew (a save loaded)
+    const again = r.level('1-medical', { extra: 6, capacity: 1030 }); r.player(again, { viewport: game.player });
+    r.frames(30);
+    assert.strictEqual(state(r).playerReady, true);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":[]}');
+  },
+  'a pickup missed by one pass only is not taken': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const flicker = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
+    r.load(); r.frames(10);
+    r.removeActor(game.level, flicker); r.frames(1);
+    assert.strictEqual(state(r).pickupsHere, null, 'two passes disagree: no list');
+    r.addActor(game.level, flicker); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'passes made while a level is loading take nothing away': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const medic = model.itemClass('Medic', 10);
+    const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.load(); r.frames(10);
+    r.memory.set(BASE + 0x1356680, 1); // a save loading
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10);
+    assert.strictEqual(state(r).pickupsHere, null);
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
+    r.memory.set(BASE + 0x1356680, 0); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
+    assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
+  },
+  'a pickup whose memory now holds another object is not emptied': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10); const incinerate = model.itemClass('Incinerate', 10);
+    const reused = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    const count = r.memory.get(BASE + 0x1390430); const all = r.memory.get(BASE + 0x139042C);
+    const big = r.object(4 * 40000); // a table of 40000 objects, mostly empty slots: a pass now takes ten ticks
+    for (let i = 0; i < count; i++) { r.poke(big + 4 * i, r.memory.get(all + 4 * i)); }
+    r.poke(BASE + 0x139042C, big); r.poke(BASE + 0x1390430, 40000);
+    r.load(); r.frames(25);
+    model.rename(reused, 'ActivePlasmidPickup2');
+    const slot = r.memory.get(reused + 0x520);
+    r.poke(r.memory.get(slot + 0x40) + 0x4C, incinerate); r.poke(r.memory.get(slot + 0x44) + 0x50, incinerate);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(7);
+    assert.deepStrictEqual(model.gives(reused), [incinerate, incinerate], 'the pass has not seen the new name yet');
+    assert.strictEqual(state(r).pickupsEmptied, 0);
+  },
+  'pickups are emptied whatever spelling of the map the game uses': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.string(game.level + 0x7C, '1-Medical_int');
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
+  },
+  'state() reports the safes open, by map, and leaves lockboxes alone': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const safe = model.container('SecurityCrate_Safe', 'SecurityCrate_Safe2');
+    const lockbox = model.container('Lockbox', 'Lockbox0');
+    model.container('Lockbox', 'Lockbox1');
+    const wall = model.container('SecurityCrate_WallSafe', 'SecurityCrate_WallSafe0'); // by Medical's Telekinesis
+    r.load(); r.frames(10);
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), '{}');
+    r.poke(safe + 0x5DC, 1); r.poke(lockbox + 0x5E0, 1); r.poke(wall + 0x5DC, 1); r.frames(10);
+    const open = '{"1-medical":["SecurityCrate_Safe2","SecurityCrate_WallSafe0"]}';
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
+    [safe, lockbox, wall].forEach((at) => r.removeActor(game.level, at));
+    r.string(game.level + 0x7C, '2-fisheries'); r.frames(10); // another level: what was open stays reported
+    assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
+    assert.strictEqual(state(r).worldTrouble, null, 'no complaint about lockboxes');
+  },
+  'shuffled pickups give the placeholder, and the kept ones their own item': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10); const incinerate = model.itemClass('Incinerate', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    const kept = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup2', incinerate);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'], '2-fisheries': ['x'] } }));
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[7, true]]);
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips], 'its LootSpec and its rolled ItemStack');
+    assert.deepStrictEqual(model.gives(kept), [incinerate, incinerate]);
+    assert.strictEqual(state(r).pickupsEmptied, 1);
+    assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
+    assert.strictEqual(state(r).worldTrouble, null);
+    r.context.rpc.exports.action(8, 'empty_pickups ' + JSON.stringify({ placeholder: 'Bread', maps: {} }));
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[7, true], [8, false]]);
+  },
+  'a pickup not rolled yet gives the placeholder once it rolls': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const later = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey, false);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(later), [model.chips, 0], 'what it will roll');
+    model.roll(later); r.frames(10); // rolled from the swapped LootSpec: chips already
+    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    const stack = r.memory.get(r.memory.get(later + 0x520) + 0x44);
+    r.poke(stack + 0x50, jockey); r.frames(10); // a stack rolled from before the swap is swapped on a later pass
+    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    assert.strictEqual(state(r).pickupsEmptied, 1);
+  },
+  'state() reports the level of each research subject and the table of levels': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    const sportBoost = model.itemClass('SportBoost', 10);
+    const fill = model.research([['ThuggishSplicer', 30], ['Bouncer', 0]],
+      [['ThuggishSplicer', 1, 10, 0], ['ThuggishSplicer', 2, 25, sportBoost], ['ThuggishSplicer', 3, 60, 0],
+        ['Bouncer', 1, 20, 0]]);
+    const tracks = fill.tracks(game.pawn); fill.levels(game.pawn);
+    r.load(); r.frames(15);
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":0}');
+    assert.strictEqual(state(r).researchTable.length, 4);
+    assert.strictEqual(state(r).holdItems, false, 'levels found on attaching open no research screen');
+    assert.strictEqual(JSON.stringify(state(r).researchTable[1]),
+      '{"name":"ThuggishSplicer","level":2,"score":25,"award":"SportBoost"}');
+    r.poke(tracks + 16 + 8, 20); r.frames(15); // a photo of a Bouncer
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{"ThuggishSplicer":2,"Bouncer":1}');
+    assert.ok(r.logged('research: Bouncer at level 1'));
+    assert.strictEqual(state(r).holdItems, true, 'items wait while the research screen opens');
+    assert.strictEqual(state(r).researchTrouble, null);
+  },
+  'research awards can be emptied': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    const sportBoost = model.itemClass('SportBoost', 10);
+    const fill = model.research([['ThuggishSplicer', 0]], [['ThuggishSplicer', 1, 10, 0], ['ThuggishSplicer', 2, 25, sportBoost],
+      ['ThuggishSplicer', 3, 60, game.pawn]]); // a field read wrong: not a class at all
+    fill.tracks(game.pawn); const levels = fill.levels(game.pawn);
+    r.load(); r.frames(15);
+    r.context.rpc.exports.action(5, 'empty_research_awards'); r.frames(15);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[5, true]]);
+    assert.strictEqual(r.memory.get(levels + 20 + 0x10), model.chips);
+    assert.strictEqual(r.memory.get(levels + 0x10), 0, 'a level that gives nothing is left alone');
+    assert.strictEqual(r.memory.get(levels + 40 + 0x10), game.pawn, 'only item classes are swapped');
+    assert.strictEqual(state(r).researchAwardsEmptied, 1);
+  },
+  'a player without research tables says so once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(30);
+    assert.strictEqual(JSON.stringify(state(r).researchLevels), '{}');
+    assert.ok(state(r).researchTrouble.includes('no ResearchTracks'));
   },
   'a trap waits for a body and gives up after a while': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();

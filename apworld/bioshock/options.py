@@ -16,10 +16,16 @@ class LevelAccess(Choice):
     Proving Grounds shares Point Prometheus Access.
 
     Vanilla: no access items. Every check is available from the start.
+
+    Open Rapture (NOT PLAYABLE YET: the game side is still being built): access items open travel itself, one per
+    chapter. After Medical Pavilion the bathysphere takes you to any of Neptune's Bounty, Arcadia and Fort Frolic you
+    hold the access item for, in any order. Hephaestus needs its access item and the three before it; Olympus
+    Heights and Point Prometheus follow in story order, each with its access item.
     """
     display_name = "Level Access"
     option_vanilla = 0
     option_access_items = 1
+    option_open_rapture = 2
     default = option_access_items
 
 
@@ -98,6 +104,53 @@ class ShopChecks(Choice):
     default = option_off
 
 
+class WorldItemChecks(Choice):
+    """
+    Experimental, not tried in game yet. Taking the plasmids and gene tonics that lie in the levels sends checks
+    (31), and so does holding each weapon for the first time (7, or 6 when you start with the Research Camera).
+
+    Off: nothing lying in the levels is a check.
+    Keep Items: each pickup still gives its own plasmid, tonic or weapon, and sends a check as well.
+    Shuffled: the plasmid and tonic pickups give a bag of chips instead, and what they held goes into the
+    multiworld. Telekinesis comes from the multiworld too, as a progression item: the debris in front of Surgery,
+    and every level after Medical Pavilion, wait for it. Electro Bolt and Incinerate! still give themselves,
+    because the story needs them, and weapons stay where they are.
+    """
+    display_name = "World Item Checks"
+    option_off = 0
+    option_keep_items = 1
+    option_shuffled = 2
+    default = option_off
+
+
+class SafeChecks(Toggle):
+    """
+    Opening each safe sends a check (41). What is inside stays as it is.
+    """
+    display_name = "Safe Checks"
+
+
+class ResearchChecks(Choice):
+    """
+    Experimental, not tried in game yet. Researching enemies with the Research Camera sends checks: each of the 11
+    subjects (the five kinds of splicer, Bouncers, Rosies, Little Sisters, Security Bots, Turrets and Security
+    Cameras) has 5 research levels.
+
+    Off: research works as in the game.
+    First Level: the first research level of each subject is a check (11). One photo is enough.
+    All: every research level is a check (55). Levels 2 to 5 take many photos, so they never hold anything needed
+    to progress.
+
+    With research checks on, the 9 gene tonics that research gives (SportBoost, Scrounger, Natural Camouflage and
+    others) come from the multiworld instead, and research gives a bag of chips in their place.
+    """
+    display_name = "Research Checks"
+    option_off = 0
+    option_first_level = 1
+    option_all = 2
+    default = option_off
+
+
 class LevelCompletionChecks(DefaultOnToggle):
     """Finishing each level for the first time sends a check (12 checks)."""
     display_name = "Level Completion Checks"
@@ -107,7 +160,8 @@ class StartWithResearchCamera(DefaultOnToggle):
     """
     You start with the Research Camera instead of finding it in Neptune's Bounty. Research makes you deal more
     damage to the enemies you photograph, and some later enemies (spider splicers) are hard to hurt without it.
-    The camera in Neptune's Bounty is still there and gives film.
+    The camera in Neptune's Bounty is still there and gives film. Off with Open Rapture: Fort Frolic's checks also
+    need Neptune's Bounty Access, since Cohen opens most of Fort Frolic only for photographs.
     """
     display_name = "Start With Research Camera"
 
@@ -134,6 +188,9 @@ class BioShockOptions(PerGameCommonOptions):
     level_completion_checks: LevelCompletionChecks
     audio_diary_checks: AudioDiaryChecks
     shop_checks: ShopChecks
+    world_item_checks: WorldItemChecks
+    safe_checks: SafeChecks
+    research_checks: ResearchChecks
     start_with_research_camera: StartWithResearchCamera
     trap_chance: TrapChance
     death_link: DeathLink
@@ -143,7 +200,8 @@ class BioShockOptions(PerGameCommonOptions):
 option_groups = [
     OptionGroup("Progression", [LevelAccess]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
-                           AudioDiaryChecks, ShopChecks]),
+                           AudioDiaryChecks, ShopChecks, WorldItemChecks, SafeChecks,
+                           ResearchChecks]),
     OptionGroup("Item Pool", [StartWithResearchCamera, TrapChance]),
 ]
 

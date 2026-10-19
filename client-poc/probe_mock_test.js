@@ -87,6 +87,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     readPointer() { return new Ptr(readU32(this.value)); }
     writeS32(v) { writeU32(this.value, v); return this; }
     writeFloat(v) { writeU32(this.value, new Uint32Array(new Float32Array([v]).buffer)[0]); return this; }
+    writePointer(p) { writeU32(this.value, p instanceof Ptr ? p.value : p); return this; }
     readByteArray(length) {
       const out = new Uint8Array(length);
       for (let i = 0; i < length; i++) { out[i] = getByte(this.value + i); }
@@ -119,7 +120,12 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     'AwardAchievementsManager0', 'Timer', 'AQuestName', ...FUNCTIONS, 'Class', 'Quest', 'AwardAchievementsManager',
     'NameProperty', 'Package', 'Completed', 'Active', 'NumberOfObjectivesCompleted', 'NumberOfObjectivesToComplete',
     'HintName', 'FriendlyName', 'Description', 'DumpQuest', 'Function', 'NumGatherersHarvested',
-    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer', 'StructProperty', 'Actor', 'Location', 'Rotation', 'Velocity', 'ShockPlayer', 'PlaceableWeaponUpgradeStation', 'PlaceableWeaponUpgradeStation0', 'VendingStation', 'VendingStation0', 'ArrayProperty', 'ObjectProperty', 'ItemsForSale', 'Price', 'HealthUpgrade'];
+    'NumGatherersInteracted', 'PlayerRespawned', 'SavedGatherer', 'Medical_FindRyan', 'Medical_GetKey', 'Core', 'Medical', 'LittleSisterHarvestable', 'LittleSister0', 'SpawnedGatherer', 'StructProperty', 'Actor', 'Location', 'Rotation', 'Velocity', 'ShockPlayer', 'PlaceableWeaponUpgradeStation', 'PlaceableWeaponUpgradeStation0', 'VendingStation', 'VendingStation0', 'ArrayProperty', 'ObjectProperty', 'ItemsForSale', 'Price', 'HealthUpgrade', 'Object', 'Item', 'Pickup',
+    'ActivePlasmidPickup', 'ActivePlasmidPickup0', 'LootSlot', 'LootSlot0', 'ItemClass', 'ClassProperty',
+    'CollisionDamage', 'CollisionDamageClass', 'Telekinesis', 'chips', 'SecurityCrate_Safe', 'SecurityCrate_Safe0',
+    'bIsOpened', 'Container', 'Container0', 'Owner', 'LootSlots', 'LootSpec', 'LootItemSpecification',
+    'LootItemSpecification0', 'Loot', 'ItemStack', 'ItemStack0', 'Variable', 'VariableInt', 'global_GatherersKilled',
+    'Value'];
   while (names.length < 1500) { names.push(`Filler${names.length}`); }
   const index = (text) => names.indexOf(text);
   names.forEach((text, i) => {
@@ -155,6 +161,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
   let gathererAt = null;
   let playerAt = null;
   let stationAt = null;
+  let plasmidAt = null;
   if (gobjects) {
     // The object table: name at +0x20, class at +0x24. Fields: next at +0x30; a class's first field at +0x40;
     // a property's offset at +0x48 and a bool's mask at +0x4C.
@@ -230,6 +237,51 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     sold.forEach((c, i) => writeU32(0x14000000 + 4 * i, c));
     writeU32(shop + 0xAC, 25);
     writeU32(q2 + 0x60, 1); writeU32(q2 + 0x5C, 0); writeU32(q2 + 0x58, 1);
+    // The class a class extends, at +0x34, up to Object; and a plasmid pickup whose LootSlot gives Telekinesis
+    // (as in game 2026-10-15), a safe next to it and a Container, part of the safe, with no place of its own.
+    const objectClass = cls('Object');
+    const extend = (c, parent) => { writeU32(c + 0x34, parent); return c; };
+    [quest, manager, actor, sisterClass, vending, readU32(stationAt + 0x24), readU32(playerAt + 0x24)]
+      .forEach((c) => extend(c, objectClass));
+    extend(actor, objectClass);
+    [readU32(stationAt + 0x24), readU32(playerAt + 0x24)].forEach((c) => extend(c, actor));
+    const classProperty = cls('ClassProperty');
+    const item = extend(cls('Item'), objectClass);
+    const telekinesis = extend(cls('Telekinesis'), item);
+    extend(cls('chips'), item);
+    const collision = extend(cls('CollisionDamage'), objectClass);
+    const pickup = extend(cls('Pickup'), actor);
+    fields(pickup, [['CollisionDamageClass', classProperty, 0xB4], ['LootSlot', objectProperty, 0xB0]]);
+    const plasmidPickup = extend(cls('ActivePlasmidPickup'), pickup);
+    const lootSlot = extend(cls('LootSlot'), objectClass);
+    fields(lootSlot, [['LootSpec', objectProperty, 0x40], ['Loot', objectProperty, 0x44]]);
+    const specClass = extend(cls('LootItemSpecification'), objectClass);
+    fields(specClass, [['ItemClass', classProperty, 0x60]]);
+    const spec = make('LootItemSpecification0', specClass);
+    writeU32(spec + 0x60, telekinesis);
+    const stackClass = extend(cls('ItemStack'), objectClass);
+    fields(stackClass, [['ItemClass', classProperty, 0x50]]);
+    const stack = make('ItemStack0', stackClass); // what was rolled: in game the pickup gives this
+    writeU32(stack + 0x50, telekinesis);
+    const lootSlot0 = make('LootSlot0', lootSlot);
+    writeU32(lootSlot0 + 0x40, spec); writeU32(lootSlot0 + 0x44, stack);
+    const plasmid = make('ActivePlasmidPickup0', plasmidPickup);
+    plasmidAt = plasmid;
+    float(plasmid + 0x80, 200); float(plasmid + 0x84, 0); float(plasmid + 0x88, 0);
+    writeU32(plasmid + 0xB0, lootSlot0); writeU32(plasmid + 0xB4, collision);
+    const safeClass = extend(cls('SecurityCrate_Safe'), actor);
+    fields(safeClass, [['bIsOpened', boolProperty, 0xC0, 1]]);
+    const safe = make('SecurityCrate_Safe0', safeClass);
+    float(safe + 0x80, 0); float(safe + 0x84, 300); float(safe + 0x88, 0);
+    writeU32(safe + 0xC0, 1);
+    const container = extend(cls('Container'), objectClass);
+    fields(container, [['Owner', objectProperty, 0x50]]);
+    writeU32(make('Container0', container) + 0x50, safe);
+    // A script global: an object of a Variable class named for it.
+    const variable = extend(cls('Variable'), objectClass);
+    const variableInt = extend(cls('VariableInt'), variable);
+    fields(variableInt, [['Value', intProperty, 0x60]]);
+    writeU32(make('global_GatherersKilled', variableInt) + 0x60, 2);
     const m = make('AwardAchievementsManager0', manager);
     writeU32(m + 0x40, 1); writeU32(m + 0x44, 3);
     writeU32(TABLE, DATA);
@@ -272,7 +324,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, playerAt: () => playerAt, stationAt: () => stationAt, time: 1000,
+    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, playerAt: () => playerAt, stationAt: () => stationAt, plasmidAt: () => plasmidAt, readU32, time: 1000,
   };
 
   const context = {
@@ -478,11 +530,54 @@ test('where() lists the matching objects, and goto() moves the player in front o
   assert.strictEqual(rt.context.where('Nope'), 'nothing matches Nope here');
 });
 
+test('pickups() names what a pickup gives through its LootSlot, and pickupItem() writes only an item class', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.pickups(), '1 found');
+  let text = rt.logs.join('\n');
+  assert.match(text, /0: ActivePlasmidPickup ActivePlasmidPickup0 at \(200, 0, 0\), 200 away; gives: LootItemSpecification0\.ItemClass \+0x60 = Telekinesis, ItemStack0\.ItemClass \+0x50 = Telekinesis; classes: CollisionDamageClass \+0xb4 = CollisionDamage/);
+  assert.match(text, /its LootSlot LootSlot0 at 0x[0-9a-f]+, every setting:\n.*LootSpec \(LootSlot\) \+0x40 = LootItemSpecification0/);
+  assert.match(text, /its LootSpec LootItemSpecification LootItemSpecification0 at 0x[0-9a-f]+, every setting:\n.*ItemClass \(LootItemSpecification\) \+0x60 = class Telekinesis/);
+  const slot = rt.ptr(rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x40));
+  const before = rt.readU32(slot.toUInt32() + 0x60);
+  const damageBefore = rt.readU32(rt.plasmidAt() + 0xB4);
+  assert.strictEqual(rt.context.pickupItem(0, 'Quest'), 'Quest is not an item class');
+  assert.strictEqual(rt.context.pickupItem(0, 'chips'), 'pick it up: what do you get, and does the game say so?');
+  assert.notStrictEqual(rt.readU32(slot.toUInt32() + 0x60), before);
+  assert.strictEqual(rt.readU32(rt.plasmidAt() + 0xB4), damageBefore, 'CollisionDamageClass untouched');
+  const stack = rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x44);
+  assert.strictEqual(rt.readU32(stack + 0x50), rt.readU32(slot.toUInt32() + 0x60), 'the rolled stack too');
+  assert.match(rt.logs.join('\n'), /LootItemSpecification LootItemSpecification0\.ItemClass Telekinesis -> chips/);
+  assert.match(rt.logs.join('\n'), /ItemStack ItemStack0\.ItemClass Telekinesis -> chips/);
+  assert.strictEqual(rt.context.pickupItem(0), 'put back');
+  assert.strictEqual(rt.readU32(slot.toUInt32() + 0x60), before);
+  assert.strictEqual(rt.readU32(stack + 0x50), before);
+  assert.strictEqual(rt.context.pickups('Container'), '0 found; 1 more are parts of other actors, see nearby()');
+});
+
+test('nearby() lists the actors around the player, nearest first, with bIsOpened and what each gives', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.nearby(400), '2 actors within 400');
+  const text = rt.logs.join('\n');
+  assert.match(text, /0: ActivePlasmidPickup ActivePlasmidPickup0 at \(200, 0, 0\), 200 away \(Pickup < Actor < Object\), gives Telekinesis/);
+  assert.match(text, /1: SecurityCrate_Safe SecurityCrate_Safe0 at \(0, 300, 0\), 300 away \(Actor < Object\), bIsOpened true/);
+  assert.doesNotMatch(text, /Container0/);
+  assert.strictEqual(rt.context.nearby(400, 'Safe'), '1 actors within 400');
+});
+
+test('globals() lists the Variable objects without searching memory, and names the one asked for', () => {
+  const rt = startedProbe();
+  assert.strictEqual(rt.context.globals('global_GatherersKilled'), 'done');
+  const text = rt.logs.join('\n');
+  assert.match(text, /objects of Variable classes: VariableInt 1/);
+  assert.match(text, /global_GatherersKilled: VariableInt global_GatherersKilled at 0x[0-9a-f]+ in .*:\n.*Value \(VariableInt\) \+0x60 = 2/);
+  assert.doesNotMatch(text, /places hold/, 'no memory search unless asked');
+});
+
 test('stock() lists each shop with the values of its own properties', () => {
   const rt = startedProbe();
   assert.strictEqual(rt.context.stock(), '1 shops');
   const text = rt.logs.join('\n');
-  assert.match(text, /0: VendingStation0 \(VendingStation\)/);
+  assert.match(text, /0: VendingStation0 \(VendingStation( < \w+)*\)/);
   assert.match(text, /ItemsForSale \(VendingStation\) = \[2: class HealthUpgrade, class Quest\]/);
   assert.match(text, /Price \(VendingStation\) = 25/);
   assert.strictEqual(rt.context.stock('^Nope$'), 'no shops loaded here');

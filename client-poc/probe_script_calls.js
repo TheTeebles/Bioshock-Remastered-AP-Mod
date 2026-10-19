@@ -76,11 +76,42 @@
  *                     (events() looks for ProcessEvent: the function that calls the one it watched)
  *   peek()            after events(): prints the start of that function's machine code, and the raw words of a few
  *                     script functions, to see what it checks before it runs one
+ *
+ * Open Rapture (level randomization), 2026-10-14:
+ *   bathy()           the bathysphere network in this level: every destination (index, title, map, arrival point),
+ *                     which are unlocked, whether their memory can be grown, the switches, and the functions of the
+ *                     bathysphere classes (to find one that unlocks a destination)
+ *   bathySet([0, 1, 2, 3])  the bathysphere offers exactly these destinations (indexes from bathy()). Save first
+ *   bathyDest(2, '3-Arcadia', 'FromFisheriesPS')  points destination 2 at that map and arrival point (names only)
+ *   levels()          every scripted level change loaded now: map, arrival point, every other setting, and the
+ *                     values it is handed
+ *   A crash is logged with where it happened (CRASH ... called from ...), from 2026-10-14.18
+ *   route(0, '2-Fisheries', 'PlayerStart')  level change 0 of levels() goes there instead. Save first
+ *   facts()           the story facts (FactDatabase) carried from level to level; dump('Class', 'Array') for others
+ *   globals('global_GatherersKilled')  where the game keeps the scripts' global_ variables (2026-10-15): functions
+ *                     and properties named like variables, the variable-setting actions and their functions, the
+ *                     objects of Variable classes (the one named so, with its settings) and LevelInfo's
+ *                     GlobalTravelContainer. globals(name, true) also searches all memory for the name (slow: it
+ *                     locked the game up on 2026-10-15)
+ *   research()        where research progress is kept: every property named like research or photos, the classes
+ *                     that have them and their values now, and the research camera's functions. Then photograph an
+ *                     enemy and run researchDiff(): what changed
+ *   scriptApi()       the functions of the script system's own classes (Script, the Action base, anything named
+ *                     like a script or variable manager), to find a way to set a story flag through the game
+ *   pickups()         the item pickups lying in this level (plasmids, tonics, weapons), nearest first, numbered,
+ *                     with what each gives (an item class of its own, its LootSlot's or the LootSlot's LootSpec)
+ *                     and the LootSlot's and LootSpec's settings with their addresses; pickups('Safe|Lockbox') for
+ *                     other kinds
+ *   pickupItem(0, 'chips')  make pickup 0 of pickups() give chips instead, to see whether a world item can be
+ *                     swapped like a Garden line. Only an item-class setting is written (2026-10-15.6: .5 wrote
+ *                     CollisionDamageClass and crashed). pickupItem(0) puts it back
+ *   nearby(600)       every actor within 600 of the player, nearest first: class and the classes above it,
+ *                     bIsOpened if it has one, and what it gives. nearby(600, 'Safe') only matching classes
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-14.16';
+const PROBE_VERSION = '2026-10-15.8';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -112,6 +143,32 @@ function rel(pointer) {
 }
 
 log(`probe ${PROBE_VERSION}, ${GAME} at ${base}, size ${mod.size}`);
+
+// If the game crashes, say where: the faulting instruction and the calls that led there, as module offsets.
+// Nothing is handled here, so the game crashes exactly as it would have.
+let crashesLogged = 0;
+try {
+  Process.setExceptionHandler((details) => {
+    if (crashesLogged >= 5 || details.type !== 'access-violation' && details.type !== 'illegal-instruction') {
+      return false;
+    }
+    crashesLogged++;
+    const memory = details.memory ? ` (${details.memory.operation} at ${details.memory.address})` : '';
+    log(`CRASH ${details.type} at ${rel(details.address)}${memory}`);
+    try {
+      const frames = Thread.backtrace(details.context, Backtracer.FUZZY).slice(0, 16).map(rel);
+      log(`  called from ${frames.join(' < ')}`);
+      const c = details.context;
+      log(`  eax ${c.eax} ebx ${c.ebx} ecx ${c.ecx} edx ${c.edx} esi ${c.esi} edi ${c.edi} esp ${c.esp} ebp ${c.ebp}`);
+    } catch (e) {
+      log(`  (no backtrace: ${e.message})`);
+    }
+    Thread.sleep(1); // let the log reach the file before the game goes
+    return false;
+  });
+} catch (e) {
+  log(`cannot watch for crashes (${e.message})`);
+}
 
 // ---------------------------------------------------------------------------------------------------------------
 // Careful reads: only committed, unguarded memory is touched
@@ -179,7 +236,7 @@ function pointerAt(pointer) {
 // The name table (GNames): a TArray {data, count, max} of FNameEntry pointers in the module's data, entry 0 "None"
 // ---------------------------------------------------------------------------------------------------------------
 
-const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]{0,63}$/;
+const IDENTIFIER = /^[A-Za-z0-9_][A-Za-z0-9_-]{0,63}$/; // map names such as 2-Fisheries too
 
 function entryText(entry, offset, wide) {
   const at = entry.add(offset);
@@ -301,6 +358,8 @@ const DECLARED = {
     'AwardAchievement', 'PlayerPickedUpLog', 'WeaponUpgraded'],
 };
 
+const classByName = new Map(); // class name -> the class object, checked again on each use
+const learnedClasses = new Map(); // class address -> what learnAnyClass found
 const objects = { table: null, count: 0, nameOffset: null, classOffset: null, layout: null, propertyOffset: null,
   superOffset: undefined };
 
@@ -592,6 +651,8 @@ function describeManagers() {
 }
 
 function rescan() {
+  classByName.clear();
+  learnedClasses.clear();
   found = scanObjects(Object.keys(DECLARED));
   for (const className of Object.keys(DECLARED)) {
     const count = (found.instances.get(className) || []).length;
@@ -722,11 +783,18 @@ function findSuperOffset() {
   return null;
 }
 
+
 function findClass(className) {
+  const known = classByName.get(className);
+  if (known !== undefined && readable(known, 0x40) && nameOfObject(known) === className &&
+      classNameOf(known) === 'Class') {
+    return known;
+  }
   const total = u32(objects.table.add(4)) || objects.count;
   for (let index = 0; index < total; index++) {
     const object = objectAt(index);
     if (object !== null && nameOfObject(object) === className && classNameOf(object) === 'Class') {
+      classByName.set(className, object);
       return object;
     }
   }
@@ -747,6 +815,11 @@ function learnAnyClass(className) {
   if (cls === null) {
     return { error: `no class named ${className}` };
   }
+  const cached = learnedClasses.get(cls.toString());
+  if (cached !== undefined && cached.lineage[0] === className) {
+    return cached;
+  }
+  const key = cls.toString();
   const lineage = [];
   const properties = new Map();
   while (cls !== null && !cls.isNull() && lineage.length < 30) {
@@ -782,6 +855,7 @@ function learnAnyClass(className) {
   if (!layouts.has(className)) {
     layouts.set(className, properties);
   }
+  learnedClasses.set(key, { lineage, properties });
   return { lineage, properties };
 }
 
@@ -941,7 +1015,7 @@ function structOf(field) {
 }
 
 const KIND_SIZE = {
-  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 4, ObjectProperty: 4,
+  ByteProperty: 1, BoolProperty: 4, IntProperty: 4, FloatProperty: 4, NameProperty: 8, ObjectProperty: 4, // a name is {index, number}
   ClassProperty: 4, StrProperty: 12, ArrayProperty: 12,
 };
 
@@ -3575,6 +3649,1039 @@ function addWatched(wanted, update) {
 }
 
 // ---------------------------------------------------------------------------------------------------------------
+// Open Rapture: the bathysphere network and level changes (2026-10-14)
+// ---------------------------------------------------------------------------------------------------------------
+// Known from the last probe (safes_bathysphere log) and the map files: the level's BioshockBathyspheres object
+// (BathysphereManager) keeps Destinations {Title, MapName, StartLocationLabel} and UnlockedDestinations (indexes
+// into Destinations); a level's scripts unlock destinations with ActionUnlockBathysphereDestination as it starts,
+// and scripted level changes are ActionChangeLevel actions holding MapName and StartLocationLabel as strings.
+
+// The process heap: if the game's arrays live there, an array can be grown the way the game would grow it.
+const heapApi = (() => {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const fn = (name, ret, args) => new NativeFunction(kernel32.getExportByName(name), ret, args, 'stdcall');
+    const heap = fn('GetProcessHeap', 'pointer', [])();
+    return {
+      heap,
+      validate: fn('HeapValidate', 'int', ['pointer', 'uint', 'pointer']),
+      alloc: fn('HeapAlloc', 'pointer', ['pointer', 'uint', 'uint']),
+      realloc: fn('HeapReAlloc', 'pointer', ['pointer', 'uint', 'pointer', 'uint']),
+    };
+  } catch (e) {
+    log(`no process heap functions: ${e.message}`);
+    return null;
+  }
+})();
+
+function onProcessHeap(pointer) {
+  if (heapApi === null || pointer === null || pointer.isNull()) {
+    return false;
+  }
+  try {
+    return heapApi.validate(heapApi.heap, 0, pointer) !== 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+// An array property of an object: where it is, its {data, count, max}, and how its elements are laid out.
+function arrayOf(object, className, propertyName) {
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return { error: learned.error };
+  }
+  const property = learned.properties.get(propertyName);
+  if (property === undefined || property.kind !== 'ArrayProperty') {
+    return { error: `${className} has no array ${propertyName}` };
+  }
+  const at = object.add(property.offset);
+  const inner = innerOf(property.field);
+  const kind = inner === null ? null : classNameOf(inner);
+  const element = inner === null ? null : { kind, field: inner, mask: kind === 'BoolProperty' ? 1 : null };
+  const struct = kind === 'StructProperty' ? structOf(inner) : null;
+  return {
+    at, data: pointerAt(at), count: u32(at.add(4)), max: u32(at.add(8)), element,
+    size: element === null ? null : sizeOf(element), fields: struct === null ? [] : structFields(struct),
+  };
+}
+
+function arrayHead(array) {
+  return `data ${array.data}, count ${array.count}, max ${array.max}, ` +
+    `${array.size === null ? '?' : array.size} bytes each, ` +
+    `${array.data === null || array.data.isNull() ? 'no buffer' : (onProcessHeap(array.data) ? 'buffer on the process heap' : 'buffer NOT on the process heap')}`;
+}
+
+// The script functions a class declares itself (not the ones it inherits): name, parameters, and whether it is a
+// native (a C++ body at function+0xc0) or bytecode.
+function functionsOf(className) {
+  const cls = findClass(className);
+  if (cls === null) {
+    log(`  no class ${className} loaded`);
+    return;
+  }
+  const code = mod.enumerateRanges('r-x');
+  const inCode = (p) => p !== null && code.some((r) => p.compare(r.base) >= 0 && p.compare(r.base.add(r.size)) < 0);
+  let field = pointerAt(cls.add(objects.layout.childrenOffset));
+  const lines = [];
+  for (let n = 0; field !== null && !field.isNull() && n < 5000 && readable(field, 0xd0); n++) {
+    const kind = classNameOf(field);
+    if (kind === 'Function' || kind === 'State') {
+      const parameters = [];
+      let parameter = pointerAt(field.add(objects.layout.childrenOffset));
+      for (let k = 0; parameter !== null && !parameter.isNull() && k < 40 && readable(parameter, 0x80); k++) {
+        if (/Property$/.test(classNameOf(parameter) || '')) {
+          parameters.push(`${nameOfObject(parameter)} +${hex(u32(parameter.add(objects.propertyOffset)))} ` +
+            `${classNameOf(parameter)}`);
+        }
+        parameter = pointerAt(parameter.add(objects.layout.nextOffset));
+      }
+      const entry = pointerAt(field.add(0xc0));
+      const bytecode = u32(field.add(FUNCTION_SCRIPT + 4));
+      lines.push(`  ${kind === 'State' ? 'state ' : ''}${nameOfObject(field)}(${parameters.join(', ')})` +
+        `${inCode(entry) ? ` native ${rel(entry)}` : ''}${bytecode ? `, ${bytecode} bytes of script` : ''}`);
+    }
+    field = pointerAt(field.add(objects.layout.nextOffset));
+  }
+  log(`${className}: ${lines.length} functions and states of its own`);
+  lines.forEach((line) => log(line));
+}
+
+function bathyManagers() {
+  return matchingObjects('^BathysphereManager$').get('BathysphereManager') || [];
+}
+
+function destinationsOf(manager) {
+  const array = arrayOf(manager, 'BathysphereManager', 'Destinations');
+  if (array.error || array.data === null || array.count === null || array.size === null) {
+    return { array, list: [] };
+  }
+  const field = (name) => array.fields.find((f) => f.name === name);
+  const title = field('Title');
+  const map = field('MapName');
+  const label = field('StartLocationLabel');
+  const list = [];
+  for (let i = 0; i < Math.min(array.count, 64); i++) {
+    const at = array.data.add(i * array.size);
+    list.push({
+      at,
+      title: title === undefined ? '?' : stringAt(at.add(title.offset)),
+      map: map === undefined ? '?' : (nameOf(u32(at.add(map.offset))) || `#${u32(at.add(map.offset))}`),
+      label: label === undefined ? '?' : (nameOf(u32(at.add(label.offset))) || `#${u32(at.add(label.offset))}`),
+    });
+  }
+  return { array, list, fields: { title, map, label } };
+}
+
+function unlockedOf(manager) {
+  const array = arrayOf(manager, 'BathysphereManager', 'UnlockedDestinations');
+  const list = [];
+  if (!array.error && array.data !== null && !array.data.isNull() && array.count !== null) {
+    for (let i = 0; i < Math.min(array.count, 64); i++) {
+      list.push(array.data.add(i * 4).readS32());
+    }
+  }
+  return { array, list };
+}
+
+// bathy(): everything about the bathysphere network in this level, and the functions that could unlock a destination.
+globalThis.bathy = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const managers = bathyManagers();
+  log(`bathy: ${managers.length} BathysphereManager objects`);
+  for (const manager of managers) {
+    log(`${nameOfObject(manager)} at ${manager}:`);
+    ownValues(manager, '  ', 1);
+    const { array, list, fields } = destinationsOf(manager);
+    if (array.error) {
+      log(`  ${array.error}`);
+      continue;
+    }
+    log(`  Destinations: ${arrayHead(array)}; fields ` +
+      array.fields.map((f) => `${f.name} +${hex(f.offset)} ${f.kind}`).join(', '));
+    list.forEach((d, i) => log(`    [${i}] ${JSON.stringify(d.title)} ${d.map} at ${d.label}`));
+    if (fields.map !== undefined) {
+      log(`    raw: ${list.map((d) => bytesText(d.at, array.size)).join(' | ')}`);
+    }
+    const unlocked = unlockedOf(manager);
+    log(`  UnlockedDestinations: ${arrayHead(unlocked.array)}: [${unlocked.list.join(', ')}]`);
+  }
+  for (const className of ['BathysphereManager', 'ActionUnlockBathysphereDestination', 'ActionShowBathysphereUI',
+    'ActionEnableBathysphereModeForPlayer', 'BathysphereSwitch', 'ActionChangeLevel', 'Action']) {
+    functionsOf(className);
+  }
+  const switches = matchingObjects('BathysphereSwitch').get('BathysphereSwitch') || [];
+  switches.forEach((s, i) => {
+    log(`switch ${i}: ${nameOfObject(s)}`);
+    ownValues(s, '  ', 1);
+  });
+  return `${managers.length} managers, ${switches.length} switches`;
+};
+
+// bathySet([0, 1, 2, 3, 4, 5, 6, 7]): makes the bathysphere offer exactly these destinations (indexes of bathy()'s
+// list). Save first. Grows the array only if it lives on the process heap; otherwise uses the room it has.
+globalThis.bathySet = function (indexes) {
+  const manager = bathyManagers()[0];
+  if (manager === undefined) {
+    return 'no BathysphereManager in this level';
+  }
+  const { array } = unlockedOf(manager);
+  if (array.error) {
+    return array.error;
+  }
+  runOnGameThread(() => {
+    let { data } = array;
+    let max = array.max || 0;
+    if (indexes.length > max) {
+      if (data !== null && !data.isNull() && onProcessHeap(data)) {
+        data = heapApi.realloc(heapApi.heap, 0, data, indexes.length * 4);
+      } else if (data === null || data.isNull()) {
+        data = heapApi === null ? ptr(0) : heapApi.alloc(heapApi.heap, 0, indexes.length * 4);
+      } else {
+        log(`bathySet: the array has room for ${max} and its buffer is not on the process heap; ` +
+          `writing the first ${max} only`);
+        indexes = indexes.slice(0, max);
+        data = array.data;
+      }
+      if (data.isNull()) {
+        log('bathySet: could not get memory');
+        return;
+      }
+      max = Math.max(max, indexes.length);
+    }
+    indexes.forEach((index, i) => data.add(i * 4).writeS32(index));
+    array.at.writePointer(data);
+    array.at.add(4).writeU32(indexes.length);
+    array.at.add(8).writeU32(max);
+    log(`bathySet: UnlockedDestinations now [${unlockedOf(manager).list.join(', ')}] (${arrayHead(unlockedOf(manager).array)}). ` +
+      'Open the bathysphere menu.');
+  });
+  return 'queued for the game thread';
+};
+
+// bathyDest(3, '4-Recreation', 'SomeStartLabel'): points destination 3 at another map and arrival point (both must
+// be names the game already knows). Only names are written, so nothing is allocated.
+globalThis.bathyDest = function (i, mapName, label) {
+  const manager = bathyManagers()[0];
+  if (manager === undefined) {
+    return 'no BathysphereManager in this level';
+  }
+  const { list, fields } = destinationsOf(manager);
+  if (i < 0 || i >= list.length) {
+    return `pick i from 0 to ${list.length - 1}`;
+  }
+  const writes = [];
+  for (const [field, text] of [[fields.map, mapName], [fields.label, label]]) {
+    if (text === undefined || field === undefined) {
+      continue;
+    }
+    const index = indexOfName(text);
+    if (index < 0) {
+      return `"${text}" is not in the name table; pick a name the game knows`;
+    }
+    writes.push([list[i].at.add(field.offset), index]);
+  }
+  writes.forEach(([at, index]) => {
+    at.writeU32(index);
+    at.add(4).writeU32(0);
+  });
+  const after = destinationsOf(manager).list[i];
+  return `[${i}] now ${JSON.stringify(after.title)} ${after.map} at ${after.label}`;
+};
+
+// levels(): every scripted level change (ActionChangeLevel) loaded now, with its strings and the values its
+// resolveInfoList hands it when it runs.
+globalThis.levels = function () {
+  const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
+  const learned = learnAnyClass('ActionChangeLevel');
+  if (learned.error) {
+    return learned.error;
+  }
+  actions.forEach((action, n) => {
+    const outer = outerNameOf(action);
+    log(`${n}: ${nameOfObject(action)} in ${outer}`);
+    for (const name of ['MapName', 'StartLocationLabel']) {
+      const p = learned.properties.get(name);
+      if (p !== undefined) {
+        const at = action.add(p.offset);
+        log(`  ${name} +${hex(p.offset)} = ${JSON.stringify(stringAt(at))} (buffer ${pointerAt(at)}, ` +
+          `count ${u32(at.add(4))}, max ${u32(at.add(8))}, ${onProcessHeap(pointerAt(at)) ? '' : 'NOT '}on the process heap)`);
+      }
+    }
+    ownValues(action, '  ', 1);
+    const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
+    if (!rows.error && rows.data !== null && rows.size !== null) {
+      log(`  resolveInfoList: ${arrayHead(rows)}; fields ` +
+        rows.fields.map((f) => `${f.name} +${hex(f.offset)} ${f.kind}`).join(', '));
+      for (let i = 0; i < Math.min(rows.count || 0, 16); i++) {
+        log(`    ${valueText(rows.data.add(i * rows.size), rows.element)}`);
+      }
+    }
+  });
+  return `${actions.length} level changes`;
+};
+
+// route(0, '2-Fisheries', 'PlayerStart'): level change 0 of levels() loads that map at that PlayerStart instead.
+// Rewrites the strings (in their own buffers if they fit, else a new one from the process heap) and the
+// resolveInfoList rows that feed them, if those hold names. Save first, then trigger the level change.
+// Strings the game allocated that nothing reads while playing: the scripts' editor notes and log lines. route()
+// swaps a string it must lengthen with one of these (pointer, count and room travel together, so every buffer
+// keeps exactly one owner and the game frees it as usual).
+const DONOR_STRINGS = [['ActionScriptNote', 'Label'], ['ActionLog', 'Text'], ['ActionDisplayOnScreenDebugMessage', 'Text']];
+const borrowed = new Set();
+
+function borrowString(room) {
+  for (const [className, property] of DONOR_STRINGS) {
+    const learned = learnAnyClass(className);
+    const p = learned.error ? undefined : learned.properties.get(property);
+    if (p === undefined) {
+      continue;
+    }
+    for (const object of matchingObjects(`^${className}$`).get(className) || []) {
+      const at = object.add(p.offset);
+      const key = at.toString();
+      const data = pointerAt(at);
+      const max = u32(at.add(8)) || 0;
+      if (borrowed.has(key) || data === null || data.isNull() || max < room || max > 4096) {
+        continue;
+      }
+      borrowed.add(key);
+      return { at, owner: `${className} ${nameOfObject(object)}.${property}` };
+    }
+  }
+  return null;
+}
+
+function swapStrings(a, b) {
+  const first = a.readByteArray(12);
+  a.writeByteArray(b.readByteArray(12));
+  b.writeByteArray(first);
+}
+
+globalThis.route = function (n, mapName, label) {
+  const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
+  const action = actions[n];
+  if (action === undefined) {
+    return `pick n from 0 to ${actions.length - 1}`;
+  }
+  const learned = learnAnyClass('ActionChangeLevel');
+  const wanted = { MapName: mapName, StartLocationLabel: label };
+  for (const [name, text] of Object.entries(wanted)) {
+    const p = learned.properties.get(name);
+    if (text === undefined || p === undefined) {
+      continue;
+    }
+    const at = action.add(p.offset);
+    const capacity = u32(at.add(8)) || 0;
+    if (text.length + 1 > capacity) {
+      // Memory of our own crashes the game once the level change runs (round 3, 2026-10-14), so borrow a long
+      // enough buffer the game made itself: swap this string with an editor note nobody reads while playing.
+      const donor = borrowString(text.length + 1);
+      if (donor === null) {
+        log(`route: no string of the game's long enough for ${JSON.stringify(text)}; ${name} left alone`);
+        continue;
+      }
+      swapStrings(at, donor.at);
+      log(`route: ${name} now uses the buffer of ${donor.owner} (room for ${u32(at.add(8))})`);
+    }
+    writeInPlace(at, text);
+    log(`route: ${name} now ${JSON.stringify(stringAt(at))}`);
+  }
+  const rows = arrayOf(action, 'ActionChangeLevel', 'resolveInfoList');
+  if (!rows.error && rows.data !== null && rows.size !== null) {
+    const nameField = rows.fields.find((f) => f.name === 'PropertyName');
+    const valueField = rows.fields.find((f) => f.name === 'Variable');
+    for (let i = 0; i < (rows.count || 0) && nameField && valueField; i++) {
+      const row = rows.data.add(i * rows.size);
+      const property = nameOf(u32(row.add(nameField.offset)));
+      const text = wanted[property];
+      if (text === undefined) {
+        continue;
+      }
+      if (valueField.kind !== 'NameProperty') {
+        log(`route: row ${i} (${property}) holds a ${valueField.kind}, left alone`);
+        continue;
+      }
+      const index = indexOfName(text);
+      if (index < 0) {
+        log(`route: "${text}" is not in the name table, so row ${i} (${property}) is left alone`);
+        continue;
+      }
+      row.add(valueField.offset).writeU32(index);
+      row.add(valueField.offset + 4).writeU32(0);
+      log(`route: row ${i} (${property}) now ${nameOf(index)}`);
+    }
+  }
+  return 'trigger the level change now';
+};
+
+// dump('FactDatabase', 'FactStore'): every element of an array property of every object of a class.
+// facts() is dump('FactDatabase') over all its arrays: the story facts carried from level to level.
+globalThis.dump = function (className, propertyName) {
+  const list = matchingObjects(`^${className}$`).get(className) || [];
+  const learned = learnAnyClass(className);
+  if (learned.error) {
+    return learned.error;
+  }
+  const arrays = [...learned.properties.entries()].filter(([name, p]) =>
+    p.kind === 'ArrayProperty' && (propertyName === undefined || name === propertyName));
+  for (const object of list) {
+    log(`${nameOfObject(object)} (${className}) at ${object}:`);
+    ownValues(object, '  ', 1);
+    for (const [name] of arrays) {
+      const array = arrayOf(object, className, name);
+      if (array.error || array.data === null || array.size === null || !array.count) {
+        continue;
+      }
+      log(`  ${name}: ${array.count} entries`);
+      for (let i = 0; i < Math.min(array.count, 3000); i++) {
+        log(`    [${i}] ${valueText(array.data.add(i * array.size), array.element)}`);
+      }
+    }
+  }
+  return `${list.length} objects`;
+};
+
+globalThis.facts = function () {
+  return globalThis.dump('FactDatabase');
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Story variables (2026-10-15): the scripts' global_ variables (ActionVariableAssign lhs='global_transitionedFromRyan')
+// live somewhere the probe has not looked yet. Olympus Heights' opening checks one that Ryan's office sets.
+// ---------------------------------------------------------------------------------------------------------------
+
+function scanMemory(pattern, limit) {
+  const hits = [];
+  for (const range of Process.enumerateRanges('rw-')) {
+    if (hits.length >= limit) {
+      break;
+    }
+    try {
+      for (const hit of Memory.scanSync(range.base, range.size, pattern)) {
+        hits.push(hit.address);
+        if (hits.length >= limit) {
+          break;
+        }
+      }
+    } catch (e) {
+      // a range that went away while scanning
+    }
+  }
+  return hits;
+}
+
+function bytePattern(bytes) {
+  return bytes.map((b) => b.toString(16).padStart(2, '0')).join(' ');
+}
+
+function wordPattern(value) {
+  return bytePattern([value & 0xff, (value >>> 8) & 0xff, (value >>> 16) & 0xff, (value >>> 24) & 0xff]);
+}
+
+function textPattern(text) {
+  const bytes = [];
+  for (const ch of text) {
+    const code = ch.charCodeAt(0);
+    bytes.push(code & 0xff, code >>> 8);
+  }
+  return bytePattern(bytes);
+}
+
+// The object a pointer falls inside, as far as the table can tell: the nearest object at or below it.
+let objectStarts = null;
+function ownerOf(at) {
+  if (objectStarts === null) {
+    objectStarts = [];
+    const total = u32(objects.table.add(4)) || objects.count;
+    for (let index = 0; index < total; index++) {
+      const object = objectAt(index);
+      if (object !== null) {
+        objectStarts.push(object);
+      }
+    }
+    objectStarts.sort((a, b) => a.compare(b));
+  }
+  let lo = 0;
+  let hi = objectStarts.length - 1;
+  let best = null;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (objectStarts[mid].compare(at) <= 0) {
+      best = objectStarts[mid];
+      lo = mid + 1;
+    } else {
+      hi = mid - 1;
+    }
+  }
+  if (best === null || at.sub(best).compare(ptr(0x4000)) >= 0) {
+    return 'no object';
+  }
+  return `${nameOfObject(best)} (${classNameOf(best)}) +${hex(at.sub(best).toUInt32())}`;
+}
+
+function nearbyStrings(at) {
+  const out = [];
+  for (let off = -0x18; off <= 0x18; off += 4) {
+    const text = stringAt(at.add(off));
+    if (text) {
+      out.push(`${off < 0 ? '-' : '+'}${hex(Math.abs(off))} ${JSON.stringify(text.slice(0, 40))}`);
+    }
+  }
+  return out.join(', ');
+}
+
+globalThis.globals = function (name, deep) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const wanted = name || 'global_GatherersKilled';
+  log(`Story variables, looking for ${wanted} (probe ${PROBE_VERSION})`);
+  // 1. Functions and properties named like variables, with what they belong to.
+  const named = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total && named.length < 150; index++) {
+    const object = objectAt(index);
+    const kind = classNameOf(object);
+    const own = nameOfObject(object);
+    if (kind === null || own === null || !(kind === 'Function' || /Property$/.test(kind))) {
+      continue;
+    }
+    if (/variable|global|blackboard/i.test(own)) {
+      named.push(`  ${outerNameOf(object)}.${own} (${kind})`);
+    }
+  }
+  log(`${named.length} functions and properties named like variables:`);
+  named.forEach((line) => log(line));
+  // 2. The actions that set variables, their functions, and what one of them holds.
+  for (const className of ['Action', 'ActionVariableAssign', 'ActionVariableAssignIfNotExist', 'BooleanStatement']) {
+    functionsOf(className);
+  }
+  const assigns = matchingObjects('^ActionVariableAssign$').get('ActionVariableAssign') || [];
+  log(`${assigns.length} ActionVariableAssign in this level; the first three:`);
+  for (const action of assigns.slice(0, 3)) {
+    log(`  ${nameOfObject(action)} in ${outerNameOf(action)} at ${action}`);
+    ownValues(action, '    ', 1);
+  }
+  // 3. The variables themselves (2026-10-15): Script.findGlobalVariable(VariableName) keeps a local array
+  // AllGlobalVariables, so globals look like objects of a Variable class. Listed from the object table, with no
+  // memory search: globals(name, true) searched all memory and locked the game up on 2026-10-15.
+  learnAnyClass('Variable'); // learns where a class keeps the class it extends, if nothing has yet
+  const variableCache = new Map();
+  const counts = new Map();
+  const matches = [];
+  const samples = [];
+  const lower = wanted.toLowerCase();
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const cls = object === null ? null : classOf(object);
+    if (cls === null || cls.isNull() || classNameOf(object) === 'Class' || !extendsClass(cls, 'Variable', variableCache)) {
+      continue;
+    }
+    const className = classNameOf(object);
+    counts.set(className, (counts.get(className) || 0) + 1);
+    const own = nameOfObject(object) || '';
+    if (own.toLowerCase() === lower || own.toLowerCase().includes(lower)) {
+      matches.push(object);
+    } else if (samples.length < 3 && /^global_/i.test(own)) {
+      samples.push(object);
+    }
+  }
+  log(`objects of Variable classes: ${[...counts].map(([c, n]) => `${c} ${n}`).join(', ') || 'none'}`);
+  for (const object of matches.slice(0, 4)) {
+    log(`  ${wanted}: ${classNameOf(object)} ${nameOfObject(object)} at ${object} in ${outerNameOf(object)}:`);
+    allValues(object, '    ');
+  }
+  if (matches.length === 0) {
+    log(`  no Variable object is named ${wanted}; the first variables named global_:`);
+    for (const object of samples) {
+      log(`  ${classNameOf(object)} ${nameOfObject(object)} at ${object} in ${outerNameOf(object)}:`);
+      allValues(object, '    ');
+    }
+  }
+  // 4. Where globals may travel between levels.
+  for (const info of [...matchingObjects('^LevelInfo$').values()].flat().slice(0, 2)) {
+    const learned = learnAnyClass('LevelInfo');
+    const property = learned.error ? undefined : learned.properties.get('GlobalTravelContainer');
+    const target = property === undefined ? null : pointerAt(info.add(property.offset));
+    log(`  LevelInfo ${nameOfObject(info)}: GlobalTravelContainer = ${target === null ? '?' : objectText(target.toUInt32())}`);
+    if (target !== null && !target.isNull() && readable(target, 0x40) && classNameOf(target) !== null) {
+      ownValues(target, '    ', 0); // its own settings, below Actor
+    }
+  }
+  if (deep !== true) {
+    return 'done';
+  }
+  // 5. Only when asked: the variable's name wherever it is in memory (slow; locked the game up once).
+  const index = indexOfName(wanted);
+  log(`name index of ${wanted}: ${index}`);
+  if (index >= 0) {
+    const hits = scanMemory(`${wordPattern(index)} 00 00 00 00`, 40);
+    log(`${hits.length} places hold it as a name:`);
+    for (const at of hits) {
+      log(`  ${at} in ${ownerOf(at)}: ${hexWords(at, -0x10, 0x20)}` +
+        (nearbyStrings(at) ? `; strings ${nearbyStrings(at)}` : ''));
+    }
+  }
+  for (const text of [...new Set([wanted, wanted.toLowerCase()])]) {
+    const hits = scanMemory(textPattern(text), 20);
+    log(`${hits.length} places hold "${text}" as text:`);
+    for (const at of hits) {
+      const referrers = scanMemory(wordPattern(at.toUInt32()), 5);
+      log(`  ${at} (${JSON.stringify(at.readUtf16String(Math.min(64, text.length + 24)))})` +
+        `, pointed at from ${referrers.length ? '' : 'nowhere'}`);
+      for (const from of referrers) {
+        log(`    ${from} in ${ownerOf(from)}: ${hexWords(from, -0x10, 0x20)}` +
+          (nearbyStrings(from) ? `; strings ${nearbyStrings(from)}` : ''));
+      }
+    }
+  }
+  return 'done';
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// Research (2026-10-15): each research level reached on an enemy type could be a check. Where is progress kept?
+// ---------------------------------------------------------------------------------------------------------------
+
+const RESEARCH_NAMES = /research|photo|picture/i;
+let researchSeen = null; // `${object} ${property}` -> value text
+
+function researchValues() {
+  const owners = new Map(); // class name -> property names
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    const kind = classNameOf(object);
+    const own = nameOfObject(object);
+    if (kind === null || own === null || !/Property$/.test(kind) || !RESEARCH_NAMES.test(own)) {
+      continue;
+    }
+    const owner = outerNameOf(object);
+    if (!/^\w+$/.test(owner)) {
+      continue; // its class could not be told
+    }
+    if (!owners.has(owner)) {
+      owners.set(owner, new Set());
+    }
+    owners.get(owner).add(own);
+  }
+  const values = new Map();
+  const lines = [];
+  for (const [owner, names] of owners) {
+    const list = [...matchingObjects(`^${owner}$`).values()].flat();
+    lines.push(`${owner}: ${[...names].join(', ')} (${list.length} objects)`);
+    const learned = list.length ? learnAnyClass(owner) : null;
+    for (const object of list.slice(0, 6)) {
+      for (const name of names) {
+        const property = learned && !learned.error ? learned.properties.get(name) : undefined;
+        if (property === undefined) {
+          continue;
+        }
+        const text = valueText(object.add(property.offset), property);
+        values.set(`${object} ${owner}.${name}`, text);
+        lines.push(`  ${nameOfObject(object)} ${name} +${hex(property.offset)} = ${text}`);
+      }
+    }
+  }
+  return { values, lines };
+}
+
+globalThis.research = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  log(`Research progress (probe ${PROBE_VERSION})`);
+  for (const className of ['ResearchCamera', 'ActionGetResearchLevel', 'ResearchStation']) {
+    functionsOf(className);
+    globalThis.fields(className);
+  }
+  // The camera itself may keep the table of research subjects and their levels.
+  for (const camera of [...matchingObjects('^ResearchCamera$').values()].flat().slice(0, 2)) {
+    log(`  the settings of ResearchCamera ${nameOfObject(camera)}:`);
+    ownValues(camera, '    ', 1);
+  }
+  const { values, lines } = researchValues();
+  lines.forEach((line) => log(line));
+  researchSeen = values;
+  return `${values.size} values remembered; photograph an enemy, then researchDiff()`;
+};
+
+globalThis.researchDiff = function () {
+  if (researchSeen === null) {
+    return 'research() first';
+  }
+  const { values } = researchValues();
+  let changed = 0;
+  for (const [key, text] of values) {
+    const before = researchSeen.get(key);
+    if (before !== text) {
+      changed++;
+      log(`  ${key}: ${before === undefined ? '(new)' : before} -> ${text}`);
+    }
+  }
+  researchSeen = values;
+  return `${changed} changed`;
+};
+
+// The player's research, row by row (2026-10-15): ShockPlayer keeps ResearchTracks (one per subject: ResearchName,
+// CurrentScore, MaxScore; saved with the game) and the config table ResearchLevels (ResearchName, LevelNumber,
+// ScoreRequired, AwardItemClass: what each level gives). Read from the exported ShockPlayer.uc.
+globalThis.researchTable = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return 'no player';
+  }
+  const learned = learnAnyClass(classNameOf(player));
+  if (learned.error) {
+    return learned.error;
+  }
+  for (const name of ['ResearchTracks', 'ResearchLevels', 'ResearchTrackData', 'UnresearchedPhotos']) {
+    const property = learned.properties.get(name);
+    if (property === undefined) {
+      log(`${name}: not a property of ${classNameOf(player)}`);
+      continue;
+    }
+    const at = player.add(property.offset);
+    const data = u32(at);
+    const count = u32(at.add(4));
+    const inner = innerOf(property.field);
+    const element = inner === null ? null : { kind: classNameOf(inner), field: inner, mask: null };
+    const size = element === null ? null : sizeOf(element);
+    log(`${name} +${hex(property.offset)}: ${count} rows${size === null ? '' : ` of ${size} bytes`}`);
+    if (!data || !count || size === null || count > 1000) {
+      continue;
+    }
+    for (let i = 0; i < count; i++) {
+      log(`  ${i}: ${valueText(ptr(data).add(i * size), element)}`);
+    }
+  }
+  return 'done';
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// The script system's own functions (2026-10-15): a way to set a global_ variable through the game itself.
+// ---------------------------------------------------------------------------------------------------------------
+
+globalThis.scriptApi = function () {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const wanted = /^(Script|Action|ActionVariableAssign|ActionVariableAssignIfNotExist|ActionNonBlockingExecuteScript|ActionBlockingExecuteScript)$|Script.*(Manager|Data|Info)|Variable(Manager|Table|Store|s)$|Blackboard/i;
+  const seen = new Set();
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (classNameOf(object) !== 'Class') {
+      continue;
+    }
+    const name = nameOfObject(object);
+    if (name !== null && wanted.test(name) && !seen.has(name)) {
+      seen.add(name);
+    }
+  }
+  log(`script system classes: ${[...seen].join(', ') || 'none'}`);
+  for (const name of [...seen].slice(0, 12)) {
+    functionsOf(name);
+    globalThis.fields(name);
+  }
+  return `${seen.size} classes`;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
+// World items (2026-10-15): plasmid, tonic and weapon pickups lying in levels as checks. Can one be made to give
+// something else, the way a Garden line can?
+// ---------------------------------------------------------------------------------------------------------------
+
+let pickupList = [];
+const pickupSwaps = new Map(); // `${object} ${offset}` -> the class it held
+const itemCache = new Map();
+const actorCache = new Map();
+
+// The class-valued settings of an object, an item class first: that is what it gives.
+function classValued(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const out = [];
+  for (const [name, p] of learned.properties) {
+    if (p.kind !== 'ClassProperty' && p.kind !== 'ObjectProperty') {
+      continue;
+    }
+    const value = pointerAt(object.add(p.offset));
+    if (value !== null && !value.isNull() && readable(value, 0x40) && classNameOf(value) === 'Class') {
+      out.push({ name, p, value, item: extendsClass(value, 'Item', itemCache), holder: object });
+    }
+  }
+  return out.sort((a, b) => Number(b.item) - Number(a.item));
+}
+
+// The LootSlot object a pickup (Pickup.LootSlot) or a container (Container.LootSlots) holds: in game 2026-10-15
+// no class setting of an ActivePlasmidPickup itself is an item class, so what it gives is kept there.
+function lootSlotsOf(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const out = [];
+  for (const [name, p] of learned.properties) {
+    if (!/^LootSlots?$/.test(name)) {
+      continue;
+    }
+    const at = object.add(p.offset);
+    const words = p.kind === 'ArrayProperty' ? [] : [u32(at)];
+    if (p.kind === 'ArrayProperty') {
+      const data = u32(at);
+      const count = u32(at.add(4));
+      for (let i = 0; data && count && i < Math.min(count, 8); i++) {
+        words.push(u32(ptr(data).add(i * 4)));
+      }
+    }
+    for (const word of words) {
+      if (word && readable(ptr(word), 0x40) && classNameOf(ptr(word)) !== null) {
+        out.push(ptr(word));
+      }
+    }
+  }
+  return out;
+}
+
+// The objects an object holds in one of its ObjectProperty settings, by setting name.
+function heldObject(object, name) {
+  const learned = learnAnyClass(classNameOf(object));
+  const property = learned.error ? undefined : learned.properties.get(name);
+  if (property === undefined || property.kind !== 'ObjectProperty') {
+    return null;
+  }
+  const value = pointerAt(object.add(property.offset));
+  return value !== null && !value.isNull() && readable(value, 0x40) && classNameOf(value) !== null ? value : null;
+}
+
+// What an object gives: an item class among its own settings, else its LootSlot's, else the LootSlot's LootSpec
+// (a LootItemSpecification; in game 2026-10-15 a LootSlot held only LootSpec and Loot = None).
+function itemFieldsOf(object) {
+  const own = classValued(object).filter((c) => c.item);
+  if (own.length) {
+    return own;
+  }
+  const out = [];
+  for (const slot of lootSlotsOf(object)) {
+    out.push(...classValued(slot).filter((c) => c.item));
+    // LootSpec says what to roll; Loot is what was rolled (an ItemStack, made when the pickup is rolled: EverRolled).
+    // In game 2026-10-15 writing chips into LootSpec alone still gave Telekinesis, so both are looked at.
+    for (const name of ['LootSpec', 'Loot']) {
+      const held = heldObject(slot, name);
+      if (held !== null) {
+        out.push(...classValued(held).filter((c) => c.item));
+      }
+    }
+  }
+  return out;
+}
+
+function isActor(object) {
+  const cls = classOf(object);
+  return cls !== null && !cls.isNull() && extendsClass(cls, 'Actor', actorCache);
+}
+
+// Nearest first; things with no place in the level (components such as Container, class defaults) last.
+function byDistance(list, from) {
+  for (const entry of list) {
+    const { place } = entry;
+    entry.away = from === null || from.error || !isFinite(place.x) || !isFinite(place.y) || !isFinite(place.z) ?
+      Infinity : Math.hypot(place.x - from.x, place.y - from.y, place.z - from.z);
+  }
+  return list.sort((a, b) => a.away - b.away);
+}
+
+globalThis.pickups = function (pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  const list = [];
+  let parts = 0;
+  for (const [className, objectsOfClass] of matchingObjects(pattern || 'Pickup$')) {
+    for (const object of objectsOfClass) {
+      if (!isActor(object)) {
+        parts++; // a Container and the like: part of an actor, with no place of its own
+        continue;
+      }
+      list.push({ object, className, place: actorPlace(object) });
+    }
+  }
+  byDistance(list, from);
+  pickupList = list;
+  list.slice(0, 15).forEach(({ object, className, away, place }, n) => {
+    const held = classValued(object).map(({ name, p, value }) => `${name} +${hex(p.offset)} = ${nameOfObject(value)}`);
+    const gives = itemFieldsOf(object).map(({ name, p, value, holder }) =>
+      `${holder.equals(object) ? '' : `${nameOfObject(holder)}.`}${name} +${hex(p.offset)} = ${nameOfObject(value)}`);
+    log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}, ${away.toFixed(0)} away` +
+      `; gives: ${gives.join(', ') || 'no item class found'}` + (held.length ? `; classes: ${held.join(', ')}` : ''));
+  });
+  for (const { object, className } of list.slice(0, 2)) {
+    log(`  the settings of ${className} ${nameOfObject(object)}:`);
+    ownValues(object, '    ', 0);
+    for (const slot of lootSlotsOf(object)) {
+      log(`    its ${classNameOf(slot)} ${nameOfObject(slot)} at ${slot}, every setting:`);
+      allValues(slot, '      ');
+      for (const name of ['LootSpec', 'Loot']) {
+        const held = heldObject(slot, name);
+        if (held !== null) {
+          log(`    its ${name} ${classNameOf(held)} ${nameOfObject(held)} at ${held}, every setting:`);
+          allValues(held, '      ');
+          for (const item of itemObjectsOf(held)) {
+            log(`      it holds ${classNameOf(item)} ${nameOfObject(item)} at ${item}, every setting:`);
+            allValues(item, '        ');
+          }
+        }
+      }
+    }
+  }
+  return `${list.length} found${list.length > 15 ? ' (the nearest 15 shown)' : ''}` +
+    (parts ? `; ${parts} more are parts of other actors, see nearby()` : '');
+};
+
+// Objects an object holds (directly or in an array) whose class is an Item: the items an ItemStack carries.
+function itemObjectsOf(object) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    return [];
+  }
+  const words = [];
+  for (const [, p] of learned.properties) {
+    const at = object.add(p.offset);
+    if (p.kind === 'ObjectProperty') {
+      words.push(u32(at));
+    } else if (p.kind === 'ArrayProperty') {
+      const data = u32(at);
+      const count = u32(at.add(4));
+      for (let i = 0; data && count && count < 50 && i < count; i++) {
+        words.push(u32(ptr(data).add(i * 4)));
+      }
+    }
+  }
+  return words.filter((w) => w && readable(ptr(w), 0x40) && classNameOf(ptr(w)) !== null &&
+    classNameOf(ptr(w)) !== 'Class' && extendsClass(classOf(ptr(w)), 'Item', itemCache)).map((w) => ptr(w)).slice(0, 4);
+}
+
+// Every property of an object below Object, with its value (for small objects such as a LootSlot).
+function allValues(object, indent) {
+  const learned = learnAnyClass(classNameOf(object));
+  if (learned.error) {
+    log(`${indent}${learned.error}`);
+    return;
+  }
+  const sorted = [...learned.properties.entries()].filter(([, p]) => p.owner !== 'Object')
+    .sort((a, b) => a[1].offset - b[1].offset);
+  for (const [name, p] of sorted.slice(0, 60)) {
+    log(`${indent}${name} (${p.owner}) +${hex(p.offset)} = ${valueText(object.add(p.offset), p)}`);
+  }
+}
+
+globalThis.pickupItem = function (n, className) {
+  const entry = pickupList[n];
+  if (entry === undefined) {
+    return 'pickups() first, then pick one of its numbers';
+  }
+  const gives = itemFieldsOf(entry.object);
+  if (gives.length === 0) {
+    // 2026-10-15: the first class setting was CollisionDamageClass, and writing chips there crashed the game.
+    return 'found no setting holding an item class, so nothing was changed; send the pickups() lines';
+  }
+  let wanted = null;
+  if (className !== undefined) {
+    wanted = findClass(className);
+    if (wanted === null) {
+      return `no class named ${className} is loaded`;
+    }
+    if (!extendsClass(wanted, 'Item', itemCache)) {
+      return `${className} is not an item class`;
+    }
+  }
+  let changed = 0;
+  for (const { name, p, holder } of gives) { // every item-class setting: LootSpec's and the rolled ItemStack's
+    const at = holder.add(p.offset);
+    const key = `${holder} ${p.offset}`;
+    let value = wanted;
+    if (wanted === null) {
+      if (!pickupSwaps.has(key)) {
+        continue;
+      }
+      value = ptr(pickupSwaps.get(key));
+      pickupSwaps.delete(key);
+    } else if (!pickupSwaps.has(key)) {
+      pickupSwaps.set(key, u32(at));
+    }
+    const before = nameOfObject(pointerAt(at));
+    at.writePointer(value);
+    changed++;
+    log(`pickup ${n} (${entry.className} ${nameOfObject(entry.object)}): ` +
+      `${holder.equals(entry.object) ? '' : `${classNameOf(holder)} ${nameOfObject(holder)}.`}${name} ${before} -> ` +
+      `${nameOfObject(value)}`);
+  }
+  if (wanted === null) {
+    return changed ? 'put back' : 'that pickup was not swapped';
+  }
+  return "pick it up: what do you get, and does the game say so?";
+};
+
+// What is near the player (2026-10-15): to name the safe by the Telekinesis plasmid in Medical, which no
+// SecurityCrate_Safe check caught. Every actor within the distance, nearest first, with its class and the classes
+// above it, whether it can be opened (bIsOpened) and what it gives. nearby(300) for a smaller circle.
+globalThis.nearby = function (distance = 600, pattern) {
+  if (objects.table === null) {
+    return 'no object table';
+  }
+  const actor = learnAnyClass('Actor');
+  if (actor.error) {
+    return actor.error;
+  }
+  const player = thePlayer();
+  const from = player === null ? null : actorPlace(player);
+  if (from === null || from.error) {
+    return 'no player: load a save first';
+  }
+  log(`the player is at ${placeText(from)}`);
+  const regex = pattern ? new RegExp(pattern, 'i') : null;
+  const list = [];
+  const total = u32(objects.table.add(4)) || objects.count;
+  for (let index = 0; index < total; index++) {
+    const object = objectAt(index);
+    if (object === null || object.equals(player) || !isActor(object)) {
+      continue;
+    }
+    const className = classNameOf(object);
+    if (className === null || (regex !== null && !regex.test(className))) {
+      continue;
+    }
+    list.push({ object, className, place: actorPlace(object) });
+  }
+  const near = byDistance(list, from).filter((entry) => entry.away <= distance);
+  near.slice(0, 40).forEach(({ object, className, away, place }, n) => {
+    const learned = learnAnyClass(className);
+    const lineage = learned.error ? [] : learned.lineage.slice(1, 6);
+    const opened = learned.error ? undefined : learned.properties.get('bIsOpened');
+    const gives = itemFieldsOf(object).map(({ value }) => nameOfObject(value));
+    log(`  ${n}: ${className} ${nameOfObject(object)} at ${placeText(place)}, ${away.toFixed(0)} away` +
+      ` (${lineage.join(' < ')})` +
+      (opened === undefined ? '' : `, bIsOpened ${valueText(object.add(opened.offset), opened)}`) +
+      (gives.length ? `, gives ${gives.join(', ')}` : ''));
+  });
+  return `${near.length} actors within ${distance}${near.length > 40 ? ' (the nearest 40 shown)' : ''}`;
+};
+
+// ---------------------------------------------------------------------------------------------------------------
 // The prompt
 // ---------------------------------------------------------------------------------------------------------------
 
@@ -3613,6 +4720,18 @@ globalThis.stop = function () {
   stopSampling();
   return 'hook removed';
 };
+
+// Each batch step starts with a marker line, so builds/read_batch_logs.py can tell the steps apart in probe_log.txt.
+for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem',
+  'nearby']) {
+  const step = globalThis[name];
+  if (typeof step === 'function') {
+    globalThis[name] = function (...args) {
+      log(`=== step ${name}(${args.map((a) => JSON.stringify(a)).join(', ')}) ===`);
+      return step.apply(this, args);
+    };
+  }
+}
 
 if (candidates.length > 0) {
   startSampling();

@@ -162,8 +162,9 @@ def text(value):
 
 # Actors that could become checks of their own (design section 5): plasmid and tonic pickups, weapons (a weapon's
 # pickup class names it with its first ammo, "ShotgunAnd00BuckPickup", or alone, "PistolPickup"), the Research Camera,
-# and safes.
-SAFES = ("SecurityCrate_Safe", "Lockbox")
+# and safes. A safe set into a wall is a SecurityCrate_WallSafe (Medical Pavilion, by the Telekinesis plasmid; found
+# with the probe 2026-10-15); any other SecurityCrate kind is listed too, so the survey shows it.
+SAFES = ("SecurityCrate_Safe", "SecurityCrate_WallSafe", "Lockbox")
 # The wrench is left out: a script hands it over (WrenchPickupItem), and section 5 keeps no ID for it.
 WEAPONS = ("Pistol", "MachineGun", "Shotgun", "GrenadeLauncher", "ChemicalThrower", "Crossbow", "ResearchCamera")
 PLAIN_WEAPON_PICKUPS = tuple(f"{weapon}Pickup" for weapon in WEAPONS)
@@ -179,7 +180,7 @@ def weapon_of_pickup(cls):
 
 
 def is_world_item(cls):
-    return cls.endswith("PlasmidPickup") or is_weapon_pickup(cls) or cls in SAFES
+    return cls.endswith("PlasmidPickup") or is_weapon_pickup(cls) or cls in SAFES or cls.startswith("SecurityCrate")
 
 
 def position(value):

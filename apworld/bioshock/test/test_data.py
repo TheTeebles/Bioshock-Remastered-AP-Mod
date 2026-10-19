@@ -37,6 +37,9 @@ class TestGameData(unittest.TestCase):
             LocationCategory.LEVEL_COMPLETION: 12,
             LocationCategory.STORY: 28,
             LocationCategory.GATHERERS_GARDEN: 273,
+            LocationCategory.WORLD_ITEM: 38,
+            LocationCategory.SAFE: 41,
+            LocationCategory.RESEARCH: 55,
         }))
         names = [location.name for location in LOCATION_TABLE]
         ids = [location.id for location in LOCATION_TABLE]
@@ -120,6 +123,7 @@ class TestGameData(unittest.TestCase):
         self.assertEqual(missable, {
             "Welcome to Rapture - Audio Diary: New Year's Eve Alone",
             "Welcome to Rapture - Audio Diary: Hole in Bathroom Wall",
+            "Welcome to Rapture - Pickup: Electro Bolt",
         })
 
     def test_item_table(self) -> None:

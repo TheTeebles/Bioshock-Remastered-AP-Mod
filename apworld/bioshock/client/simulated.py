@@ -13,15 +13,18 @@ from collections import Counter
 from typing import Any
 
 from ..data import (
-    AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, POWER_TO_THE_PEOPLE_PER_LEVEL,
-    STORY_MILESTONES, WELCOME_TO_RAPTURE,
+    AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE, POWER_TO_THE_PEOPLE_PER_LEVEL,
+    RESEARCH_LEVELS, RESEARCH_SUBJECTS, STORY_MILESTONES, WELCOME_TO_RAPTURE, WORLD_SPOTS, SpotKind,
 )
-from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied
+from .game_data import MAP_LEVEL, QUEST_MILESTONES, WEAPON_CLASS
+from .travel import CLOSING_QUESTS
+from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied, TravelRedirected
 
 _GIVE_ITEM = re.compile(r"^GiveItem (\d+) ([A-Za-z_][\w.]*)$")
 _GIVE_WEAPON = re.compile(r"^GiveWeapon ([A-Za-z_][\w.]*)$")
 _WEAPON_UPGRADE = re.compile(r"^AddWeaponStatUpgrade ([A-Za-z]+) ([A-Za-z]+)$")
 _SUMMON = re.compile(r"^summon ([A-Za-z_][\w.]*)$")
+_WEAPON_CLASS = {name: game_class.rsplit(".", 1)[-1] for name, game_class in WEAPON_CLASS.items()}
 
 
 def resolve_level(text: str) -> str:
@@ -59,6 +62,13 @@ class SimulatedGame:
         self.garden_lines: dict[str, list[dict[str, Any]]] = {}  # level -> what its Gardens sell, as the client said
         self.movies: dict[str, Any] | None = None  # the folder and files the client said to hand the game instead
         self.garden_bought: dict[str, set[int]] = {}  # level -> Garden lines bought (from 1)
+        self.quests: set[str] = set()  # the game's quests completed, by name
+        self.travel_rules: dict[str, Any] | None = None  # Open Rapture: where the bathysphere goes, as the client said
+        self.pickups_taken: dict[str, set[str]] = {}  # map -> plasmid and tonic pickups taken there (actor names)
+        self.containers_opened: dict[str, set[str]] = {}  # map -> safes opened there
+        self.empty_pickups: dict[str, Any] | None = None  # the pickups the client said should give the placeholder
+        self.research: dict[str, int] = {}  # research subject (the game's name) -> level reached
+        self.research_awards_emptied = False  # research gives the placeholder, as the client asks with research checks
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -97,6 +107,10 @@ class SimulatedGame:
             weapons=frozenset(self.held_weapons) if self.reports_weapons else None,
             weapons_pending=self.weapons_pending,
             garden_bought={level: frozenset(lines) for level, lines in self.garden_bought.items()},
+            quests=frozenset(self.quests),
+            pickups_taken={name: frozenset(actors) for name, actors in self.pickups_taken.items()},
+            containers_opened={name: frozenset(actors) for name, actors in self.containers_opened.items()},
+            research=dict(self.research),
         )
 
     def poll_events(self) -> list[AgentEvent]:
@@ -116,6 +130,22 @@ class SimulatedGame:
         if action.startswith("garden_lines "):  # also a setting: what the Gardens of a level sell
             offer = json.loads(action.partition(" ")[2])
             self.garden_lines[offer["level"]] = offer["lines"]
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("travel_rules "):  # a setting too: where the bathysphere and level changes may go
+            rules = json.loads(action.partition(" ")[2])
+            self.travel_rules = None if rules.get("off") else rules  # off: back to the game's own
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("empty_pickups ") and "empty_pickups" not in self.unsupported_actions:
+            self.empty_pickups = json.loads(action.partition(" ")[2])  # a setting as well
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("empty_pickups "):
+            self._events.append(ActionResult(command_id, False, "the simulated game does not support it"))
+            return
+        if action == "empty_research_awards" and action not in self.unsupported_actions:  # a setting as well
+            self.research_awards_emptied = True
             self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is
@@ -172,6 +202,30 @@ class SimulatedGame:
             raise ValueError(f"Unknown level: {level}")
         self.level = level
 
+    def bathysphere_stops(self) -> list[str]:
+        """The levels the bathysphere offers: all of them, unless the client has said otherwise (a line pointed
+        elsewhere offers where it goes)."""
+        if self.travel_rules is None:
+            return list(LEVEL_NAMES)
+        return [MAP_LEVEL[stop.get("to", stop["map"])] for stop in self.travel_rules["stops"]]
+
+    def ride(self, level: str) -> None:
+        """Take the bathysphere to a level, as its menu allows."""
+        if level not in self.bathysphere_stops():
+            raise ValueError(f"The bathysphere does not go to {level}.")
+        self.travel(level)
+
+    def cross(self, level: str) -> str:
+        """Take the story's own way into a level, which the client may have sent elsewhere. Returns where it led."""
+        wanted = next(map_name for map_name, name in MAP_LEVEL.items() if name == level)
+        for redirect in (self.travel_rules or {}).get("redirects", ()):
+            if redirect["to"] == wanted and MAP_LEVEL.get(redirect["from"]) == self.level:
+                self.travel(MAP_LEVEL[redirect["map"]])
+                self._events.append(TravelRedirected(wanted, redirect["map"]))
+                return self.level
+        self.travel(level)
+        return level
+
     def collect_diary(self, number: int) -> str:
         if not 1 <= number <= len(AUDIO_DIARIES):
             raise ValueError(f"Audio diaries are numbered 1 to {len(AUDIO_DIARIES)}.")
@@ -204,6 +258,53 @@ class SimulatedGame:
         self.garden_bought.setdefault(self.level, set()).add(line)
         return f"{offer[line]['name']} for {offer[line]['price']} ADAM"
 
+    def take_here(self, text: str) -> str:
+        """take_from_world for the one pickup, weapon or safe of this level whose name contains `text`."""
+        wanted = text.strip().lower()
+        ids = {spot.id for spot in WORLD_SPOTS if spot.level == self.level}
+        names = [location.name for location in LOCATION_TABLE if location.id in ids]
+        matches = [name for name in names if name.lower() == wanted or name.lower().endswith(f": {wanted}")
+                   or name.lower().endswith(f" - {wanted}")] or [name for name in names if wanted in name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"'{text.strip()}' is not one pickup, weapon or safe of {self.level}"
+                             + (f". There are: {', '.join(names)}" if names else ": it has none."))
+        return f"{self.take_from_world(matches[0])} ({matches[0]})"
+
+    def take_from_world(self, location_name: str) -> str:
+        """Take the pickup, open the safe, or pick up the weapon that is this location. Returns what the
+        player got (a pickup the client has emptied gives a bag of chips)."""
+        location_id = next((location.id for location in LOCATION_TABLE if location.name == location_name), None)
+        spot = next((spot for spot in WORLD_SPOTS if spot.id == location_id), None)
+        if spot is None:
+            raise ValueError(f"{location_name} is no pickup, weapon or safe.")
+        if spot.kind == SpotKind.WEAPON:
+            self.held_weapons.add(_WEAPON_CLASS[spot.vanilla])
+            self.reports_weapons = True  # the weapon check comes from the held weapons the agent reports
+            return spot.vanilla
+        if spot.kind == SpotKind.SAFE:
+            self.containers_opened.setdefault(spot.map, set()).add(spot.actor)
+            return f"the {spot.kind}'s contents"
+        self.pickups_taken.setdefault(spot.map, set()).add(spot.actor)
+        emptied = (self.empty_pickups or {}).get("maps", {}).get(spot.map, ())
+        return self.empty_pickups["placeholder"] if spot.actor in emptied else spot.vanilla
+
+    def photograph(self, text: str) -> str:
+        """Research the subject whose name contains `text` one level further. Returns what happened."""
+        wanted = text.strip().lower()
+        matches = [subject for subject in RESEARCH_SUBJECTS if wanted in subject.name.lower()]
+        if len(matches) != 1:
+            raise ValueError(f"'{text.strip()}' is not one research subject. Subjects: "
+                             + ", ".join(subject.name for subject in RESEARCH_SUBJECTS))
+        subject = matches[0]
+        level = self.research.get(subject.key, 0) + 1
+        if level > RESEARCH_LEVELS:
+            raise ValueError(f"{subject.name} is researched to the end.")
+        self.research[subject.key] = level
+        award = dict(subject.awards).get(level)
+        if award is not None:
+            award = "a bag of chips" if self.research_awards_emptied else award
+        return f"{subject.name} research level {level}" + (f", which gives {award}" if award else "")
+
     def reach_milestone(self, level: str | None = None) -> str:
         """Do the next story milestone of a level. Returns what it was."""
         level = level or self.level
@@ -211,6 +312,11 @@ class SimulatedGame:
         for milestone in in_level:
             if milestone.key not in self.milestones:
                 self.milestones.add(milestone.key)
+                # The game completes quests, which is what the client reads: the milestone's own, and once the
+                # level's last milestone is done, the quest that closes its story (Open Rapture's Level Complete).
+                self.quests |= {quest for quest, key in QUEST_MILESTONES.items() if key == milestone.key}
+                if all(other.key in self.milestones for other in in_level):
+                    self.quests |= CLOSING_QUESTS.get(level, frozenset())
                 return milestone.title
         raise ValueError(f"{level} has no more story milestones ({len(in_level)} in total).")
 

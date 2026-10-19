@@ -24,6 +24,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 GAME_NAME = "BioShock"
+WORLD_VERSION = "0.1.44"  # the apworld's version, also in archipelago.json; the client says which it is
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -88,6 +89,29 @@ ACCESS_ITEMS: tuple[str, ...] = (
     APOLLO_SQUARE_ACCESS,
     POINT_PROMETHEUS_ACCESS,
 )
+
+# The game's seven chapters (the number its map names start with). Open Rapture gates travel by chapter: the
+# levels of a chapter depend on each other's story, so they open together. Chapter 1 always comes first; 2 to 4 can
+# be played in any order; 5 (Ryan) needs 2 to 4 behind it, and 6 and 7 follow it in order.
+class Chapter(NamedTuple):
+    number: int
+    levels: tuple[str, ...]
+    access_item: str | None  # the item that opens the chapter in Open Rapture
+
+
+CHAPTERS: tuple[Chapter, ...] = (
+    Chapter(1, (WELCOME_TO_RAPTURE, MEDICAL_PAVILION), None),
+    Chapter(2, (NEPTUNES_BOUNTY, SMUGGLERS_HIDEOUT), NEPTUNES_BOUNTY_ACCESS),
+    Chapter(3, (ARCADIA, FARMERS_MARKET), ARCADIA_ACCESS),
+    Chapter(4, (FORT_FROLIC,), FORT_FROLIC_ACCESS),
+    Chapter(5, (HEPHAESTUS, RAPTURE_CENTRAL_CONTROL), HEPHAESTUS_ACCESS),
+    Chapter(6, (OLYMPUS_HEIGHTS, APOLLO_SQUARE), OLYMPUS_HEIGHTS_ACCESS),
+    Chapter(7, (POINT_PROMETHEUS, PROVING_GROUNDS), POINT_PROMETHEUS_ACCESS),
+)
+CHAPTER_OF_LEVEL: dict[str, Chapter] = {level: chapter for chapter in CHAPTERS for level in chapter.levels}
+FREE_CHAPTERS: tuple[int, ...] = (2, 3, 4)  # the chapters before Ryan, in any order
+CHAPTER_ACCESS_ITEMS: tuple[str, ...] = tuple(chapter.access_item for chapter in CHAPTERS if chapter.access_item)
+HUB = "Bathysphere"  # the region the bathysphere network is, once Medical Pavilion is behind the player
 
 # The goal: the last phase of the Frank Fontaine fight at the end of Proving Grounds.
 GOAL_LOCATION = "Defeat Frank Fontaine"
@@ -428,6 +452,195 @@ def story_location_name(milestone: StoryMilestone) -> str:
     return f"{milestone.level} - Story: {milestone.title}"
 
 
+# --------------------------------------------------------------------------------------------------------------------
+# Things lying in the levels: plasmid and tonic pickups, weapons and safes
+# --------------------------------------------------------------------------------------------------------------------
+
+class SpotKind:
+    PLASMID = "plasmid"  # an ActivePlasmidPickup: the check is taking it
+    TONIC = "tonic"  # a Physical, Engineering or Combat (Weapons) PlasmidPickup: the same
+    WEAPON = "weapon"  # the check is holding the weapon for the first time, wherever it came from
+    SAFE = "safe"  # a SecurityCrate_Safe or _WallSafe: the check is opening it (its contents stay as they are)
+
+
+class WorldSpot(NamedTuple):
+    id: int
+    kind: str  # a SpotKind
+    level: str
+    map: str  # the map file it lies in, the way the client's normalize_map spells it
+    actor: str | None  # its actor's name in that map (None for weapons)
+    vanilla: str | None  # the plasmid, tonic or weapon it gives (None for safes)
+
+
+# Read from the map files with client-poc/map_reader/world_items.py on 2026-10-14
+# (notes/logs/map_survey_2026-10-14.json).
+# Weapons are listed once, at the level where the maps first place one. The Pistol and the Shotgun are given by
+# scripts earlier (Welcome to Rapture and Medical Pavilion), which only means their check may come in early and wait
+# for its level's access item, like any check found before its level is unlocked.
+WORLD_SPOTS: tuple[WorldSpot, ...] = (
+    WorldSpot(6001, SpotKind.PLASMID, "Welcome to Rapture", "1-welcome", "ActivePlasmidPickup1", "Electro Bolt"),
+    WorldSpot(6002, SpotKind.PLASMID, "Medical Pavilion", "1-medical", "ActivePlasmidPickup0", "Telekinesis"),
+    WorldSpot(6003, SpotKind.PLASMID, "Medical Pavilion", "1-medical", "ActivePlasmidPickup2", "Incinerate!"),
+    WorldSpot(6004, SpotKind.PLASMID, "Neptune's Bounty", "2-fisheries", "ActivePlasmidPickup0", "Security Bullseye"),
+    WorldSpot(6011, SpotKind.TONIC, "Medical Pavilion", "1-medical", "EngineeringPlasmidPickup0", "Security Expert"),
+    WorldSpot(6012, SpotKind.TONIC, "Medical Pavilion", "1-medical", "PhysicalPlasmidPickup0", "Hacker's Delight"),
+    WorldSpot(6013, SpotKind.TONIC, "Medical Pavilion", "1-medical", "WeaponsPlasmidPickup1", "Wrench Jockey"),
+    WorldSpot(6014, SpotKind.TONIC, "Medical Pavilion", "1-medical", "WeaponsPlasmidPickup5", "Static Discharge"),
+    WorldSpot(6015, SpotKind.TONIC, "Medical Pavilion", "1-medical", "EngineeringPlasmidPickup2", "Speedy Hacker"),
+    WorldSpot(6016, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "EngineeringPlasmidPickup1", "Focused Hacker"),
+    WorldSpot(6017, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "PhysicalPlasmidPickup0", "Medical Expert"),
+    WorldSpot(6018, SpotKind.TONIC, "Neptune's Bounty", "2-fisheries", "EngineeringPlasmidPickup0", "Shorten Alarms"),
+    WorldSpot(6019, SpotKind.TONIC, "Arcadia", "3-arcadia", "EngineeringPlasmidPickup1", "Hacking Expert"),
+    WorldSpot(6020, SpotKind.TONIC, "Farmer's Market", "3-market", "PhysicalPlasmidPickup0", "EVE Link 2"),
+    WorldSpot(6021, SpotKind.TONIC, "Farmer's Market", "3-market", "WeaponsPlasmidPickup4", "Photographer's Eye"),
+    WorldSpot(6022, SpotKind.TONIC, "Fort Frolic", "4-recreation", "WeaponsPlasmidPickup2", "Electric Flesh"),
+    WorldSpot(6023, SpotKind.TONIC, "Fort Frolic", "4-recreation", "PhysicalPlasmidPickup2", "Extra Nutrition 2"),
+    WorldSpot(6024, SpotKind.TONIC, "Fort Frolic", "4-recreation", "PhysicalPlasmidPickup1", "Medical Expert 2"),
+    WorldSpot(6025, SpotKind.TONIC, "Fort Frolic", "4-recreation", "EngineeringPlasmidPickup0", "Alarm Expert"),
+    WorldSpot(6026, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "WeaponsPlasmidPickup3", "Frozen Field 2"),
+    WorldSpot(6027, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "EngineeringPlasmidPickup0", "Shorten Alarms 2"),
+    WorldSpot(6028, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "PhysicalPlasmidPickup0", "Security Evasion 2"),
+    WorldSpot(6029, SpotKind.TONIC, "Hephaestus", "5-hephaestus", "WeaponsPlasmidPickup0", "Damage Research"),
+    WorldSpot(6030, SpotKind.TONIC, "Olympus Heights", "6-resi", "EngineeringPlasmidPickup0", "Clever Inventor"),
+    WorldSpot(6031, SpotKind.TONIC, "Olympus Heights", "6-resi", "WeaponsPlasmidPickup1", "Electric Flesh 2"),
+    WorldSpot(6032, SpotKind.TONIC, "Apollo Square", "6-slums", "EngineeringPlasmidPickup0", "Focused Hacker 2"),
+    WorldSpot(6033, SpotKind.TONIC, "Apollo Square", "6-slums", "PhysicalPlasmidPickup0", "Medical Expert 3"),
+    WorldSpot(6034, SpotKind.TONIC, "Point Prometheus", "7-science", "EngineeringPlasmidPickup3", "Safecracker 2"),
+    WorldSpot(6035, SpotKind.TONIC, "Point Prometheus", "7-science", "WeaponsPlasmidPickup0", "Damage Research 2"),
+    WorldSpot(6036, SpotKind.TONIC, "Point Prometheus", "7-science", "PhysicalPlasmidPickup0", "Hacker's Delight 3"),
+    WorldSpot(6037, SpotKind.TONIC, "Point Prometheus", "7-science", "EngineeringPlasmidPickup2", "Alarm Expert 2"),
+    WorldSpot(6051, SpotKind.WEAPON, "Medical Pavilion", "1-medical", None, "Machine Gun"),
+    WorldSpot(6052, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Shotgun"),
+    WorldSpot(6053, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Research Camera"),
+    WorldSpot(6054, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Pistol"),
+    WorldSpot(6055, SpotKind.WEAPON, "Neptune's Bounty", "2-fisheries", None, "Grenade Launcher"),
+    WorldSpot(6056, SpotKind.WEAPON, "Arcadia", "3-arcadia", None, "Chemical Thrower"),
+    WorldSpot(6057, SpotKind.WEAPON, "Hephaestus", "5-hephaestus", None, "Crossbow"),
+    WorldSpot(6101, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe0", None),
+    WorldSpot(6102, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_Safe3", None),
+    WorldSpot(6103, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe2", None),
+    WorldSpot(6105, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe1", None),
+    WorldSpot(6106, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe3", None),
+    WorldSpot(6107, SpotKind.SAFE, "Neptune's Bounty", "2-fisheries", "SecurityCrate_Safe0", None),
+    WorldSpot(6108, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe3", None),
+    WorldSpot(6111, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe2", None),
+    WorldSpot(6117, SpotKind.SAFE, "Arcadia", "3-arcadia", "SecurityCrate_Safe0", None),
+    WorldSpot(6118, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe3", None),
+    WorldSpot(6123, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe1", None),
+    WorldSpot(6129, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe2", None),
+    WorldSpot(6131, SpotKind.SAFE, "Farmer's Market", "3-market", "SecurityCrate_Safe0", None),
+    WorldSpot(6132, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe1", None),
+    WorldSpot(6133, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe2", None),
+    WorldSpot(6134, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe0", None),
+    WorldSpot(6135, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe6", None),
+    WorldSpot(6136, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_Safe3", None),
+    WorldSpot(6137, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe3", None),
+    WorldSpot(6138, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe1", None),
+    WorldSpot(6139, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe0", None),
+    WorldSpot(6140, SpotKind.SAFE, "Hephaestus", "5-hephaestus", "SecurityCrate_Safe2", None),
+    WorldSpot(6148, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe3", None),
+    WorldSpot(6149, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe0", None),
+    WorldSpot(6150, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe4", None),
+    WorldSpot(6151, SpotKind.SAFE, "Olympus Heights", "6-resi", "SecurityCrate_Safe1", None),
+    WorldSpot(6154, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe1", None),
+    WorldSpot(6155, SpotKind.SAFE, "Apollo Square", "6-slums", "SecurityCrate_Safe0", None),
+    WorldSpot(6157, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe2", None),
+    WorldSpot(6158, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe1", None),
+    WorldSpot(6159, SpotKind.SAFE, "Point Prometheus", "7-science", "SecurityCrate_Safe0", None),
+    WorldSpot(6164, SpotKind.SAFE, "Proving Grounds", "7-gauntlet", "SecurityCrate_Safe2", None),
+    # Safes set into walls (SecurityCrate_WallSafe), found with the probe on 2026-10-15 by the Telekinesis plasmid and
+    # read from the map files the same day (notes/logs/map_survey_2026-10-15.json). After the others, so their IDs
+    # and names (each level's safes counted on from its first ones) stay as they were.
+    WorldSpot(6165, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe1", None),
+    WorldSpot(6166, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe3", None),
+    WorldSpot(6167, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe0", None),
+    WorldSpot(6168, SpotKind.SAFE, "Medical Pavilion", "1-medical", "SecurityCrate_WallSafe2", None),
+    WorldSpot(6169, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe5", None),
+    WorldSpot(6170, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe4", None),
+    WorldSpot(6171, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe3", None),
+    WorldSpot(6172, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe1", None),
+    WorldSpot(6173, SpotKind.SAFE, "Fort Frolic", "4-recreation", "SecurityCrate_WallSafe0", None),
+)
+
+# Plasmids the story needs (Electro Bolt opens the way out of Welcome to Rapture, Incinerate! melts the ice in the
+# Medical Pavilion). Their pickups stay checks, but always give their own plasmid as well.
+KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!"})
+
+# Telekinesis throws the grenades that clear the debris in front of Surgery, where Steinman has the key to the
+# bathysphere. With the pickups shuffled (Teebs, 2026-10-15) it is a progression item: everything past the debris,
+# and every level after Medical Pavilion, needs it.
+TELEKINESIS = "Telekinesis"
+SURGERY = "Medical Pavilion: Surgery"  # the region past the debris
+
+# The Medical Pavilion checks that logic puts past the debris. The map files give the world items' positions (wall
+# safe 5 lies east of the Telekinesis pickup, toward Surgery; a save of Teebs's, 2026-10-18, held the Machine Gun and
+# had opened safe 6 before taking Telekinesis, so those two are before it); diaries, Little Sisters and the level's
+# end have none, so they are all put past it to be safe. A check put here that is really before the
+# debris only makes logic ask for Telekinesis a little early; the other way round could lock a seed.
+PAST_THE_DEBRIS: frozenset[str] = frozenset({
+    *(f"{MEDICAL_PAVILION} - Audio Diary: {diary.title}" for diary in AUDIO_DIARIES if diary.level == MEDICAL_PAVILION),
+    f"{MEDICAL_PAVILION} - Little Sister 1", f"{MEDICAL_PAVILION} - Little Sister 2",
+    f"{MEDICAL_PAVILION} - Level Complete",
+    f"{MEDICAL_PAVILION} - Story: Clear the Way to Surgery", f"{MEDICAL_PAVILION} - Story: Defeat Dr. Steinman",
+    f"{MEDICAL_PAVILION} - Safe 5",
+})
+
+
+def world_spot_location_name(spot: WorldSpot, number: int = 0) -> str:
+    """number: the spot's place among the level's safes, from 1."""
+    if spot.kind == SpotKind.WEAPON:
+        return f"{spot.level} - Weapon: {spot.vanilla}"
+    if spot.kind == SpotKind.SAFE:
+        return f"{spot.level} - {spot.kind.capitalize()} {number}"
+    return f"{spot.level} - Pickup: {spot.vanilla}"
+
+
+def shuffled_world_pickups() -> list[WorldSpot]:
+    """The plasmid and tonic pickups whose item goes into the multiworld when World Item Checks is 'shuffled'."""
+    return [spot for spot in WORLD_SPOTS
+            if spot.kind in (SpotKind.PLASMID, SpotKind.TONIC) and spot.vanilla not in KEPT_WORLD_PICKUPS]
+
+
+# --------------------------------------------------------------------------------------------------------------------
+# Research: photographing enemies with the Research Camera
+# --------------------------------------------------------------------------------------------------------------------
+
+class ResearchSubject(NamedTuple):
+    key: str  # the game's ResearchName
+    name: str  # as the game shows it
+    level: str  # a level where it is always found, to photograph it there
+    awards: tuple[tuple[int, str], ...]  # (research level, the tonic it gives) in vanilla
+
+
+RESEARCH_LEVELS = 5  # NUM_RESEARCH_LEVELS
+# ShockPlayer's ResearchTrackData and ResearchLevels, from the exported ShockPlayer.uc (uploaded 2026-10-15). The
+# levels are where each subject is surely found: Neptune's Bounty, where the camera lies and Atlas has you photograph
+# Spider Splicers; Nitro and Houdini Splicers only from Hephaestus, to be safe.
+RESEARCH_SUBJECTS: tuple[ResearchSubject, ...] = (
+    ResearchSubject("MeleeThug", "Thuggish Splicer", NEPTUNES_BOUNTY, ((2, "SportBoost"), (4, "SportBoost 2"))),
+    ResearchSubject("RangedAggressor", "Leadhead Splicer", NEPTUNES_BOUNTY,
+                    ((2, "Scrounger"), (4, "Static Discharge 2"))),
+    ResearchSubject("Grenadier", "Nitro Splicer", HEPHAESTUS, ()),
+    ResearchSubject("CeilingCrawler", "Spider Splicer", NEPTUNES_BOUNTY, ((4, "Extra Nutrition 3"),)),
+    ResearchSubject("Assassin", "Houdini Splicer", HEPHAESTUS, ((2, "Natural Camouflage"),)),
+    ResearchSubject("Bouncer", "Bouncer", NEPTUNES_BOUNTY, ((2, "Wrench Jockey 2"),)),
+    ResearchSubject("Rosie", "Rosie", NEPTUNES_BOUNTY, ((2, "Photographer's Eye 2"),)),
+    ResearchSubject("SecurityBot", "Security Bot", NEPTUNES_BOUNTY, ((2, "Security Expert 2"),)),
+    ResearchSubject("Gatherer", "Little Sister", NEPTUNES_BOUNTY, ()),
+    ResearchSubject("Turret", "Turret", NEPTUNES_BOUNTY, ()),
+    ResearchSubject("SecurityCamera", "Security Camera", NEPTUNES_BOUNTY, ()),
+)
+RESEARCH_AWARDS: tuple[str, ...] = tuple(tonic for subject in RESEARCH_SUBJECTS for _, tonic in subject.awards)
+
+
+def research_location_id(subject_index: int, level: int) -> int:
+    return 9000 + 10 * subject_index + level
+
+
+def research_location_name(subject: ResearchSubject, level: int) -> str:
+    return f"Research: {subject.name} {level}"
+
+
 class LocationData(NamedTuple):
     name: str
     id: int
@@ -443,8 +656,12 @@ class LocationCategory:
     LEVEL_COMPLETION = "Level Completion"
     STORY = "Story"
     GATHERERS_GARDEN = "Gatherer's Garden"
+    WORLD_ITEM = "World Items"
+    SAFE = "Safes"
+    RESEARCH = "Research"
 
-    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN)
+    ALL = (AUDIO_DIARY, LITTLE_SISTER, POWER_TO_THE_PEOPLE, LEVEL_COMPLETION, STORY, GATHERERS_GARDEN, WORLD_ITEM,
+           SAFE, RESEARCH)
 
 
 def _build_location_table() -> tuple[LocationData, ...]:
@@ -473,7 +690,14 @@ def _build_location_table() -> tuple[LocationData, ...]:
         table.append(LocationData(level_completion_location_name(level), 5001 + LEVEL_NAMES.index(level), level,
                                   LocationCategory.LEVEL_COMPLETION, False))
 
-    # 6000-6999 is kept for world items and containers.
+    numbers: dict[tuple[str, str], int] = {}
+    for spot in WORLD_SPOTS:
+        number = numbers[spot.level, spot.kind] = numbers.get((spot.level, spot.kind), 0) + 1
+        category = LocationCategory.SAFE if spot.kind == SpotKind.SAFE else \
+            LocationCategory.WORLD_ITEM
+        table.append(LocationData(world_spot_location_name(spot, number), spot.id, spot.level, category,
+                                  not LEVEL_BY_NAME[spot.level].revisitable))
+
     for milestone in STORY_MILESTONES:
         table.append(LocationData(story_location_name(milestone), 7000 + milestone.number, milestone.level,
                                   LocationCategory.STORY, False))
@@ -484,6 +708,11 @@ def _build_location_table() -> tuple[LocationData, ...]:
             table.append(LocationData(gatherers_garden_location_name(level, vanilla_item),
                                       8000 + GATHERERS_GARDEN_LINES_PER_LEVEL * LEVEL_NAMES.index(level) + line,
                                       level, LocationCategory.GATHERERS_GARDEN, False))
+
+    for index, subject in enumerate(RESEARCH_SUBJECTS):
+        for level in range(1, RESEARCH_LEVELS + 1):
+            table.append(LocationData(research_location_name(subject, level), research_location_id(index, level),
+                                      subject.level, LocationCategory.RESEARCH, False))
 
     return tuple(table)
 

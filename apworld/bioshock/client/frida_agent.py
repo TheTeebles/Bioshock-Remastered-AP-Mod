@@ -25,10 +25,13 @@ import time
 from collections.abc import Iterable, Mapping, Sequence
 from typing import Any
 
-from .game_data import delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, stations_of
+from .game_data import (
+    actors_of, delivers_in, diaries_of, gardens_of, milestones_of, normalize_map, pickups_here_of, quests_of,
+    research_of, stations_of,
+)
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
-    LittleSisterResolved, PlayerDied,
+    LittleSisterResolved, PlayerDied, TravelRedirected,
 )
 
 PROCESS_NAME = "BioshockHD.exe"
@@ -111,7 +114,7 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
     map_name = normalize_map(raw.get("map"))
     ready = bool(raw.get("execAvailable")) and bool(raw.get("hookInstalled")) \
         and raw.get("engineReady") is not False and loading is not True and in_game is not False \
-        and raw.get("playerReady") is not False and delivers_in(map_name)
+        and raw.get("playerReady") is not False and raw.get("holdItems") is not True and delivers_in(map_name)
     # The level number is only passed on from an agent that cannot name the map. An agent that can names it
     # whenever the player is in a level, and when it does not (a menu, a pause, a loading screen) the number
     # is not to be trusted either: after loading a save it can be anything, another level's value included.
@@ -128,6 +131,11 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         weapons=weapons_of(raw.get("weaponsHeld")),
         weapons_pending=raw.get("weaponsPending") is True,
         garden_bought=gardens_of(raw.get("gardenBought")),
+        quests=quests_of(raw.get("completedQuests")),
+        pickups_taken=actors_of(raw.get("pickupsTaken")),
+        pickups_here=pickups_here_of(raw.get("pickupsHere")),
+        containers_opened=actors_of(raw.get("containersOpened")),
+        research=research_of(raw.get("researchLevels")),
     )
 
 
@@ -168,6 +176,8 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
         return PlayerDied()
     if kind == "little_sister":
         return LittleSisterResolved(normalize_map(payload.get("map")))
+    if kind == "travel_redirected":
+        return TravelRedirected(normalize_map(payload.get("to")), normalize_map(payload.get("landed")))
     if kind == "exec_disabled":
         return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
     return None

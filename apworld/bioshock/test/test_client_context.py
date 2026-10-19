@@ -21,7 +21,7 @@ from ..client import context as context_module
 from ..client.context import BioShockContext
 from ..client.core import SUPPORTED_SLOT_DATA_VERSION
 from ..client.frida_agent import FridaAgent
-from ..client.protocol import AgentError, CommandStarted, GameState
+from ..client.protocol import AgentError, CommandStarted, GameState, SendChecks
 from ..client.simulated import SimulatedGame
 from ..data import LEVELS, LOCATION_TABLE
 from ..items import ITEM_NAME_TO_ID
@@ -407,6 +407,15 @@ class TestContext(ContextTestBase):
                 self.assertEqual(self.ctx.prepare_movies(), str(root / "cache"))
             self.assertTrue((root / "cache" / flash_movies.LIBRARY).read_bytes().startswith(b"FWS"))
             self.assertIn(b"APIcons.swf", (root / "cache" / flash_movies.MENU).read_bytes())
+
+    async def test_each_batch_of_checks_is_one_log_line(self) -> None:
+        await self.connect()
+        ids = [location.id for location in LOCATION_TABLE[:10]]
+        with self.assertLogs("Client", level="INFO") as logs:
+            await self.ctx.perform([SendChecks(tuple(ids))])
+        line = next(line for line in logs.output if "Sent 10 check(s)" in line)
+        self.assertIn(LOCATION_TABLE[0].name, line)
+        self.assertIn("and 2 more", line)
 
     async def test_commands(self) -> None:
         await self.connect()

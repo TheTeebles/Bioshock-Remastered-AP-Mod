@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-14.13';
+const AGENT_VERSION = '2026-10-15.15';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -577,6 +577,8 @@ function readState() {
     playerPath,
     // True while the level the player is in is ticking and the player has a controller and a body there.
     playerReady: playerLevel !== undefined,
+    // True for a moment after a research level, while the research screen opens: items wait.
+    holdItems: Date.now() < research.holdUntil,
     map: playerLevel === undefined ? null : playerLevel.map,
     levels: levels.map(
       (seen) => `${seen.map === null ? '?' : seen.map}: ${seen.actors} actors, room for ${seen.capacity}`),
@@ -601,6 +603,24 @@ function readState() {
       [...gardens.bought].map(([map, lines]) => [map, [...lines].sort((a, b) => a - b)])),
     gardenLines: gardens.config === null ? 0 : gardens.config.lines.size,
     gardenTrouble: gardens.trouble,
+    // Open Rapture: the bathysphere destinations offered now (indexes), the level changes pointed at the hub, and
+    // what went wrong, if anything.
+    travelOffered: travel.offered,
+    travelRedirects: travel.originals.size,
+    travelTrouble: travel.trouble,
+    // Plasmid and tonic pickups seen taken, by map; the ones lying in the player's map ({ map, names }, null until a
+    // pass has listed them); safes seen open, by map; and how many pickups give the placeholder.
+    pickupsTaken: Object.fromEntries([...world.taken].map(([map, names]) => [map, [...names].sort()])),
+    pickupsHere: world.here,
+    containersOpened: Object.fromEntries([...world.opened].map(([map, names]) => [map, [...names].sort()])),
+    pickupsEmptied: world.emptied.size,
+    worldTrouble: world.trouble,
+    // Each research subject's level ({ ThuggishSplicer: 2 }, by the game's names), the game's table of research
+    // levels and what each gives (once read), and what went wrong.
+    researchLevels: research.levels,
+    researchTable: research.table,
+    researchTrouble: research.trouble,
+    researchAwardsEmptied: research.emptied,
     // Whether the Garden's menu now open is the client's copy, which can show the AP icon.
     apIcon: movies.served.has(AP_ICON_MENU),
     sisterTrouble,
@@ -695,6 +715,8 @@ const engineExec = execInfo === null ? null : new NativeFunction(
   base.add(execInfo.engineExecRva), 'int', ['pointer', 'pointer', 'pointer'], EXEC_CALL);
 
 // Returns the FExec `this` pointer, null while the engine is still starting up, or throws on a build mismatch.
+let engineMatched = false; // the engine was seen with the expected vtable at least once
+
 function engineExecThis() {
   const engine = base.add(execInfo.enginePtrRva).readPointer();
   if (engine.isNull()) {
@@ -703,8 +725,11 @@ function engineExecThis() {
   const vtable = engine.readPointer();
   const expected = base.add(execInfo.engineVtableRva);
   if (!vtable.equals(expected)) {
-    throw new Error(`UGameEngine vtable is ${vtable}, expected ${expected}: this is a different build`);
+    // An engine that matched before and no longer does is being torn down: the game is quitting (seen 2026-10-15).
+    throw new Error(engineMatched ? 'the game is shutting down' :
+      `UGameEngine vtable is ${vtable}, expected ${expected}: this is a different build`);
   }
+  engineMatched = true;
   return engine.add(execInfo.execThisOffset);
 }
 
@@ -1256,6 +1281,19 @@ function nameOfObject(object) {
   return object === null || object.isNull() ? null : nameOf(carefulS32(object.add(objectModel.objectName)));
 }
 
+// An actor's own name as the map files spell it: the name and its number ("SecurityCrate_WallSafe" with number 3
+// is "SecurityCrate_WallSafe2"). The engine keeps the number right after the name's index, 0 for none and the suffix
+// plus one otherwise, as the .bsm files do. In game 2026-10-15: without the number, every wall safe in Medical was
+// "SecurityCrate_WallSafe" and none matched the map's names.
+function actorNameOf(object) {
+  const name = nameOfObject(object);
+  const number = name === null ? null : carefulS32(object.add(objectModel.objectName + 4));
+  if (number === null || number < 0 || number > 0x100000) {
+    return null;
+  }
+  return number === 0 ? name : `${name}${number - 1}`;
+}
+
 function classOf(object) {
   return carefulPtr(object.add(objectModel.objectClass));
 }
@@ -1425,6 +1463,8 @@ const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = {
   next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
+  bathyspheres: [], changes: [], pickups: [], containers: [],
+  level: null, unsure: false, // the level object a pass started in, and whether a load came during the pass
 };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
@@ -1451,6 +1491,16 @@ function kindOf(cls) {
         kind = 'weapon';
       } else if (lineage.includes('GrowthStation')) {
         kind = 'garden';
+      } else if (lineage.includes('BathysphereManager')) {
+        kind = 'bathysphere';
+      } else if (lineage.includes('ActionChangeLevel')) {
+        kind = 'changelevel';
+      } else if (lineage.includes('ActionScriptNote') || lineage.includes('ActionLog')) {
+        kind = 'note';
+      } else if (lineage.some((c) => typeof c === 'string' && c.endsWith('PlasmidPickup'))) {
+        kind = 'pickup';
+      } else if (lineage.includes('SecurityCrate_Safe') || lineage.includes('SecurityCrate_WallSafe')) {
+        kind = 'container';
       }
     }
     if (classKinds.size > 20000) {
@@ -1466,12 +1516,22 @@ function classOfObject(object) {
   return cls === null || cls.isNull() ? null : cls;
 }
 
-function watchObjects(map, now) {
+function watchObjects(map, now, level) {
   if (objectModel === null || virtualQuery === null) {
     return;
   }
   if (map !== scan.map) {
+    noteTravel(scan.map, map);
     scan.map = map; // a new map, or a save loaded: start the pass again
+    scan.bathyspheres = [];
+    scan.changes = [];
+    scan.notes = [];
+    travel.managers = [];
+    travel.changes = [];
+    travel.notes = [];
+    travel.borrowed = new Set();
+    travel.unlockAsked = new Set();
+    travel.lines = new Map();
     scan.next = 0;
     scan.quests = [];
     scan.stations = [];
@@ -1484,6 +1544,16 @@ function watchObjects(map, now) {
     weapons.reported = '';
     scan.gardens = [];
     gardens.list = [];
+    scan.pickups = [];
+    scan.containers = [];
+    world.level = null;
+    world.pickups = [];
+    world.containers = [];
+    world.here = null;
+    world.seen = new Set();
+    world.lastListed = null;
+    world.missing = new Set();
+    world.emptied = new Set();
     scan.classes = new Map();
     gardens.classes = new Map(); // classes can be loaded somewhere else in another level
     gardens.defaultsOf.clear();
@@ -1492,6 +1562,22 @@ function watchObjects(map, now) {
   const count = carefulS32(base.add(objectModel.objects + 4));
   if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
     return;
+  }
+  const levelKey = level === null || level === undefined ? null : level.toString();
+  if (scan.next === 0) {
+    scan.level = levelKey;
+    scan.unsure = false;
+  }
+  if (levelKey !== scan.level || readPath(build.loading, (p) => p.readS32())) {
+    scan.unsure = true; // a save loaded during the pass: its list of pickups mixes two levels
+  }
+  if (world.level !== null && levelKey !== world.level) {
+    world.pickups = []; // the last level's objects: they may be freed, and their memory used by others
+    world.containers = [];
+  }
+  if (levelKey !== travel.level) {
+    travel.level = levelKey; // a save loaded, even in the same map: the travel objects are the last level's
+    forgetTravelObjects();
   }
   const end = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
   for (let i = scan.next; i < end; i++) {
@@ -1510,6 +1596,16 @@ function watchObjects(map, now) {
       scan.weapons.push(object);
     } else if (kind === 'garden') {
       scan.gardens.push(object);
+    } else if (kind === 'bathysphere') {
+      scan.bathyspheres.push(object);
+    } else if (kind === 'changelevel') {
+      scan.changes.push(object);
+    } else if (kind === 'note') {
+      scan.notes.push(object);
+    } else if (kind === 'pickup') {
+      scan.pickups.push(object);
+    } else if (kind === 'container') {
+      scan.containers.push(object);
     } else if (kind === 'class') {
       const name = nameOfObject(object);
       if (scan.placeholder === null && name === GARDEN_PLACEHOLDER) {
@@ -1531,6 +1627,20 @@ function watchObjects(map, now) {
     scan.weapons = [];
     gardens.list = scan.gardens;
     scan.gardens = [];
+    // A pass a save load cut into lists objects of two levels: wait for the next one.
+    travel.managers = scan.unsure ? [] : scan.bathyspheres;
+    scan.bathyspheres = [];
+    travel.changes = scan.unsure ? [] : scan.changes;
+    scan.changes = [];
+    travel.notes = scan.unsure ? [] : scan.notes;
+    scan.notes = [];
+    try {
+      noteWorldThings(map, level, scan.pickups, scan.containers, scan.unsure);
+    } catch (e) {
+      worldTrouble(e.message);
+    }
+    scan.pickups = [];
+    scan.containers = [];
     if (scan.placeholder !== null) {
       gardens.placeholder = scan.placeholder;
       scan.placeholder = null;
@@ -1560,6 +1670,16 @@ function watchObjects(map, now) {
       gardens.trouble = e.message;
       log(`problem with the Gatherer's Gardens: ${e.message}`);
     }
+  }
+  try {
+    keepTravel(map);
+  } catch (e) {
+    travelTrouble(e.message);
+  }
+  try {
+    readWorldThings(map, level);
+  } catch (e) {
+    worldTrouble(e.message);
   }
   if (quests.flag === null) {
     return;
@@ -1609,6 +1729,429 @@ function readStations(map) {
     stations.used.set(map, used);
     log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
   }
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Plasmids and tonics lying in the level, and safes: World Item Checks and Safe Checks
+// ---------------------------------------------------------------------------------------------------------------
+
+// A plasmid or tonic lying in a level is an actor whose class ends in PlasmidPickup (ActivePlasmidPickup, and the
+// Physical, Engineering and Weapons kinds). Taking one deletes it, the way taking a diary deletes its LogPickup
+// (bDeleteMe, seen 2026-10-08). Only actors the player's level lists count, so nothing left over from the last level
+// does. After each pass over the objects the agent compares the names of the pickups lying in the level with the
+// last passes: a name that two passes in a row miss is a pickup taken. Names, not addresses, because loading a save
+// makes every object anew; the level object changing (a save loaded, say) starts the comparison again. The agent also reports
+// the names lying in the player's map: the client counts the ones the map file places and that are missing as taken
+// before the agent was watching. Not tried in game yet.
+// A safe is a SecurityCrate_Safe or a SecurityCrate_WallSafe (set into a wall, as by Medical's Telekinesis plasmid;
+// found 2026-10-15). Both are AnimatedContainers, whose bIsOpened turns true when they are opened and stays true in
+// a save (confirmed 2026-10-14). Lockboxes are out of scope (Teebs, 2026-10-15).
+// With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
+// of their item: the item class in the pickup's LootSlot is swapped, as the probe's pickupItem() did in game
+// (2026-10-15: Telekinesis gave chips).
+const world = {
+  level: null, // the level object the lists below are about
+  pickups: [], // { object, name } lying in the level at the last pass
+  containers: [], // safes found by the last pass
+  taken: new Map(), // map -> names of the pickups seen taken there
+  seen: new Set(), // names of the pickups seen lying in this level object
+  missing: new Set(), // names seen before and missing at the last pass: taken if the next pass misses them too
+  lastListed: null, // the names the last pass found lying, joined
+  here: null, // { map, names }: the pickups lying in the player's map, once a pass has listed them all
+  opened: new Map(), // map -> names of the safes seen open there
+  deleteFlags: new Map(), // class address -> where bDeleteMe is
+  openFlags: new Map(), // class address -> where bIsOpened is
+  lootOffsets: new Map(), // `${class} ${property}` -> its offset, or null: where a pickup's item is
+  empty: null, // { placeholder, maps }: what the client asked for
+  emptied: new Set(), // names of the pickups made to give the placeholder in this level
+  trouble: null,
+};
+
+function worldTrouble(text) {
+  if (world.trouble === null) {
+    world.trouble = text;
+    log(`world items: ${text}`);
+  }
+}
+
+// The first of the wanted flags the class has (a name, or names in order of preference).
+function flagOf(cache, cls, wanted) {
+  const key = cls.toString();
+  if (!cache.has(key)) {
+    const names = Array.isArray(wanted) ? wanted : [wanted];
+    let flag = null;
+    for (const name of names) {
+      flag = findBoolProperty(cls, name);
+      if (flag !== null) {
+        break;
+      }
+    }
+    if (flag === null) {
+      const text = `objects of class ${nameOfObject(cls)} have no ${names.join(' or ')}`;
+      log(`world items: ${text}; their flags: ${boolNamesOf(cls).join(', ') || 'none'}`); // once per class
+      if (world.trouble === null) {
+        world.trouble = text;
+      }
+    }
+    cache.set(key, flag);
+  }
+  return cache.get(key);
+}
+
+// Every flag a class has, with the class that declares it, for the log when the wanted one is missing.
+function boolNamesOf(cls) {
+  const out = [];
+  for (const owner of lineageOf(cls)) {
+    const ownerName = nameOfObject(owner);
+    if (ownerName === 'Object' || ownerName === 'Actor') {
+      continue; // the engine's own flags, the same on every actor
+    }
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000 && out.length < 60; n++) {
+      if (nameOfObject(classOf(field)) === 'BoolProperty') {
+        out.push(`${nameOfObject(field)} (${ownerName})`);
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  return out;
+}
+
+// What says a safe has been opened: bIsOpened (AnimatedContainer), seen in game 2026-10-14. Lockboxes have none and
+// are out of scope (Teebs, 2026-10-15).
+const OPEN_FLAGS = ['bIsOpened'];
+
+function flagSet(object, flag) {
+  const word = flag === null ? null : carefulS32(object.add(flag.offset));
+  return word !== null && ((word >>> 0) & flag.mask) !== 0;
+}
+
+function addTo(byMap, map, name) {
+  if (!byMap.has(map)) {
+    byMap.set(map, new Set());
+  }
+  const names = byMap.get(map);
+  if (names.has(name)) {
+    return false;
+  }
+  names.add(name);
+  return true;
+}
+
+// After a pass over the objects: the pickups and containers it found, among the actors of the player's level. A
+// pickup counts as taken only when two passes in a row miss it, and the names lying are reported only when two
+// passes agree, so a pass that a save load cut into (unsure) or half saw takes nothing away.
+function noteWorldThings(map, level, pickups, containers, unsure) {
+  if (unsure || level === null) {
+    world.pickups = [];
+    world.containers = [];
+    world.here = null;
+    world.missing = new Set();
+    world.lastListed = null;
+    return;
+  }
+  const { addresses } = actorsOf(level);
+  const inLevel = (object) => addresses.has(object.toUInt32());
+  const key = level.toString();
+  const lying = [];
+  let unnamed = false;
+  for (const object of pickups) {
+    const cls = classOfObject(object);
+    const name = actorNameOf(object);
+    if (!inLevel(object) || cls === null || flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
+      continue;
+    }
+    if (name === null) {
+      unnamed = true;
+    } else {
+      lying.push({ object, name });
+    }
+  }
+  const names = new Set(lying.map((p) => p.name));
+  const listed = [...names].sort();
+  if (world.level !== key) {
+    world.level = key;
+    world.emptied = new Set();
+    world.seen = new Set();
+    world.missing = new Set();
+    world.lastListed = null;
+  } else if (map !== null && !unnamed) {
+    const missing = new Set();
+    for (const name of world.seen) {
+      if (names.has(name)) {
+        continue;
+      }
+      if (!world.missing.has(name)) {
+        missing.add(name); // the next pass decides
+      } else if (addTo(world.taken, map, name)) {
+        log(`${name} taken in ${map}`);
+      }
+    }
+    world.missing = missing;
+  }
+  names.forEach((name) => world.seen.add(name));
+  world.pickups = lying;
+  // A list with a name the agent could not read would make that pickup look taken.
+  const listing = unnamed || map === null ? null : listed.join('|');
+  world.here = listing !== null && listing === world.lastListed ? { map, names: listed } : null;
+  world.lastListed = listing;
+  world.containers = containers.filter(inLevel);
+}
+
+function readWorldThings(map, level) {
+  if (map === null) {
+    return;
+  }
+  for (const container of world.containers) {
+    const cls = classOfObject(container);
+    if (cls === null || kindOf(cls) !== 'container') {
+      continue; // gone since the scan
+    }
+    const name = actorNameOf(container);
+    if (name !== null && flagSet(container, flagOf(world.openFlags, cls, OPEN_FLAGS)) &&
+      addTo(world.opened, map, name)) {
+      log(`${name} open in ${map}`);
+    }
+  }
+  emptyPickups(map, level);
+}
+
+// Where a pickup keeps the class of what it gives: the class property whose value is a class that extends Item.
+// Where a pickup's item is (in game 2026-10-15, probe .8): Pickup.LootSlot is a LootSlot object, whose LootSpec (a
+// LootItemSpecification) says what to roll (ItemClass +0x4c) and whose Loot is the ItemStack already rolled from it
+// (ItemClass +0x50; None until the pickup has rolled). Taking the pickup gives the ItemStack's class: writing only
+// LootSpec still gave Telekinesis, writing both gave chips. The offsets are looked up by name, once per class.
+function offsetIn(cls, wanted, kind) {
+  const key = `${cls} ${wanted}`;
+  if (!world.lootOffsets.has(key)) {
+    const found = findProperty(cls, wanted, kind);
+    world.lootOffsets.set(key, found === null || found.offset < 0x30 ? null : found.offset);
+  }
+  return world.lootOffsets.get(key);
+}
+
+// The object held at an ObjectProperty, if it is one of the wanted class (or extends it).
+function heldOfClass(object, cls, property, wantedClass) {
+  const offset = offsetIn(cls, property, 'ObjectProperty');
+  const held = offset === null ? null : carefulPtr(object.add(offset));
+  if (held === null || held.isNull()) {
+    return null;
+  }
+  const heldClass = classOfObject(held);
+  return heldClass !== null && lineageOf(heldClass).some((c) => nameOfObject(c) === wantedClass) ?
+    { object: held, cls: heldClass } : null;
+}
+
+// The addresses holding the item class a pickup gives: its LootSpec's and, once rolled, its ItemStack's. Only
+// addresses whose value is an item class now (or the placeholder already) are returned.
+function itemSlotsOf(object, cls) {
+  const slot = heldOfClass(object, cls, 'LootSlot', 'LootSlot');
+  if (slot === null) {
+    worldTrouble(`could not find the LootSlot of a ${nameOfObject(cls)}`);
+    return [];
+  }
+  const out = [];
+  for (const [property, wantedClass] of [['LootSpec', 'LootItemSpecification'], ['Loot', 'ItemStack']]) {
+    const held = heldOfClass(slot.object, slot.cls, property, wantedClass);
+    const offset = held === null ? null : offsetIn(held.cls, 'ItemClass', 'ClassProperty');
+    const value = offset === null ? null : carefulPtr(held.object.add(offset));
+    if (value !== null && !value.isNull() && nameOfObject(classOf(value)) === 'Class' &&
+      lineageOf(value).some((c) => nameOfObject(c) === 'Item')) {
+      out.push({ at: held.object.add(offset), value, from: property });
+    }
+  }
+  if (out.length === 0) {
+    worldTrouble(`could not find what a ${nameOfObject(cls)} gives`);
+  }
+  return out;
+}
+
+function emptyPickups(map, level) {
+  if (world.empty === null || level === null || level === undefined || world.level !== level.toString()) {
+    return;
+  }
+  const wanted = world.empty.maps[normalizeMap(map)];
+  const placeholder = gardens.placeholder;
+  if (!Array.isArray(wanted) || wanted.length === 0) {
+    return;
+  }
+  if (placeholder === null) {
+    return; // not found yet: the next pass may find it
+  }
+  for (const { object, name } of world.pickups) {
+    if (!wanted.includes(name)) {
+      continue;
+    }
+    const cls = classOfObject(object);
+    // Still the pickup the pass found? A save loaded since frees it, and its memory may hold something else now.
+    if (cls === null || kindOf(cls) !== 'pickup' || actorNameOf(object) !== name ||
+      flagSet(object, flagOf(world.deleteFlags, cls, 'bDeleteMe'))) {
+      continue;
+    }
+    // LootSpec and, once the pickup has rolled, its ItemStack. Each pass looks again, so a stack rolled after the
+    // first swap is swapped too.
+    const slots = itemSlotsOf(object, cls).filter(({ value }) => !same(value, placeholder));
+    if (slots.length === 0) {
+      continue; // nothing to swap, or done already (a save keeps the swap too)
+    }
+    if (!actorsOf(level).addresses.has(object.toUInt32())) {
+      continue;
+    }
+    for (const { at } of slots) {
+      at.writePointer(placeholder);
+    }
+    if (!world.emptied.has(name)) {
+      world.emptied.add(name);
+      log(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(slots[0].value)}`);
+    }
+  }
+}
+
+function setEmptyPickups(config) {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the pickups';
+  }
+  if (config === null || typeof config !== 'object' || typeof config.maps !== 'object') {
+    return 'no pickups named';
+  }
+  if (config.placeholder !== GARDEN_PLACEHOLDER) {
+    return `the agent only knows how to give ${GARDEN_PLACEHOLDER} instead`;
+  }
+  world.empty = { placeholder: config.placeholder, maps: config.maps };
+  world.emptied = new Set();
+  return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Research: how far the player has researched each subject (groundwork for research checks)
+// ---------------------------------------------------------------------------------------------------------------
+
+// From the exported ShockPlayer.uc: the player keeps ResearchTracks, one row per subject ({ResearchName,
+// CurrentScore, ...}, saved with the game), and the config table ResearchLevels ({ResearchName, LevelNumber,
+// ScoreRequired, AwardItemClass, ...}). A subject's level is the highest LevelNumber of its rows whose
+// ScoreRequired its CurrentScore has reached (GetResearchLevelForScore), and reaching a level gives that row's
+// AwardItemClass. The agent reports every subject's level and, once, the table itself. Not tried in game yet.
+const RESEARCH_INTERVAL_MS = 1000;
+// With research checks the client asks for the awards to be emptied: each level's AwardItemClass becomes the
+// placeholder (a bag of chips), as the Garden lines and shuffled pickups do, and the multiworld hands them out.
+const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null, empty: false, emptied: 0,
+  watched: false, holdUntil: 0 };
+
+// After a research level, items wait this long. In game 2026-10-15, a tonic given just as the research screen for
+// Security Camera 1 opened left both on screen and the game took no more input. Commands wait while the game is
+// paused, so if the screen pauses the game (not checked yet), only the moment before it opens needs covering.
+const RESEARCH_HOLD_MS = 6000;
+
+function researchTrouble(text) {
+  if (research.trouble === null) {
+    research.trouble = text;
+    log(`research cannot be watched: ${text}`);
+  }
+}
+
+function researchLayout(pawn) {
+  if (research.layout !== undefined) {
+    return research.layout;
+  }
+  const cls = classOfObject(pawn);
+  if (cls === null) {
+    return null; // asked again on the next read
+  }
+  research.layout = null;
+  const tracks = cls === null ? null : findProperty(cls, 'ResearchTracks', 'ArrayProperty');
+  const levels = cls === null ? null : findProperty(cls, 'ResearchLevels', 'ArrayProperty');
+  const track = tracks === null ? null : structOfArray(tracks.field);
+  const level = levels === null ? null : structOfArray(levels.field);
+  const has = (row, names) => row !== null && names.every((name) => name in row.fields);
+  if (!has(track, ['ResearchName', 'CurrentScore']) ||
+    !has(level, ['ResearchName', 'LevelNumber', 'ScoreRequired', 'AwardItemClass'])) {
+    researchTrouble('the player has no ResearchTracks and ResearchLevels as expected');
+    return null;
+  }
+  research.layout = { tracks: tracks.offset, track, levels: levels.offset, level };
+  log(`research: ResearchTracks at +0x${tracks.offset.toString(16)} (${track.size} bytes each), ResearchLevels at ` +
+    `+0x${levels.offset.toString(16)} (${level.size} bytes each)`);
+  return research.layout;
+}
+
+// The rows of an array of structs: [address of each row], or null when it cannot be read.
+function rowsOf(at, size) {
+  const data = carefulPtr(at);
+  const count = carefulS32(at.add(4));
+  if (data === null || count === null || count < 0 || count > 2000) {
+    return null;
+  }
+  return data.isNull() ? [] : Array.from({ length: count }, (_, i) => data.add(i * size));
+}
+
+function readResearch(pawn, now) {
+  if (now - research.readAt < RESEARCH_INTERVAL_MS) {
+    return;
+  }
+  research.readAt = now;
+  const layout = researchLayout(pawn);
+  if (layout === null) {
+    return;
+  }
+  const { level, track } = layout;
+  const levelRows = rowsOf(pawn.add(layout.levels), level.size);
+  const trackRows = rowsOf(pawn.add(layout.tracks), track.size);
+  if (levelRows === null || trackRows === null) {
+    return;
+  }
+  const table = levelRows.map((row) => ({
+    name: nameOf(carefulS32(row.add(level.fields.ResearchName))),
+    level: carefulS32(row.add(level.fields.LevelNumber)),
+    score: carefulS32(row.add(level.fields.ScoreRequired)),
+    award: nameOfObject(carefulPtr(row.add(level.fields.AwardItemClass))),
+  }));
+  if (research.table === null && table.length > 0) {
+    research.table = table;
+    log(`research: ${trackRows.length} subjects, ${table.length} levels`);
+    table.forEach((entry) => log(`research level: ${entry.name} ${entry.level} at ${entry.score} points` +
+      (entry.award === null || entry.award === 'None' ? '' : `, gives ${entry.award}`)));
+  }
+  const levels = {};
+  for (const row of trackRows) {
+    const name = nameOf(carefulS32(row.add(track.fields.ResearchName)));
+    const score = carefulS32(row.add(track.fields.CurrentScore));
+    if (name === null || score === null) {
+      continue;
+    }
+    levels[name] = table.reduce((best, entry) => (entry.name === name && entry.level !== null &&
+      entry.score !== null && score >= entry.score ? Math.max(best, entry.level) : best), 0);
+    if (levels[name] > (research.levels[name] || 0)) {
+      log(`research: ${name} at level ${levels[name]}`);
+      if (research.watched) {
+        research.holdUntil = Date.now() + RESEARCH_HOLD_MS; // the research screen is about to open
+      }
+    }
+  }
+  research.levels = levels;
+  research.watched = true;
+  if (research.empty && gardens.placeholder !== null) {
+    for (const row of levelRows) {
+      const at = row.add(level.fields.AwardItemClass);
+      const award = carefulPtr(at);
+      // Only an item class is swapped: a field read wrong would hold something else, and that is left alone.
+      if (award !== null && !award.isNull() && !same(award, gardens.placeholder) &&
+        nameOfObject(classOf(award)) === 'Class' && lineageOf(award).some((c) => nameOfObject(c) === 'Item')) {
+        at.writePointer(gardens.placeholder);
+        research.emptied++;
+        const subject = nameOf(carefulS32(row.add(level.fields.ResearchName)));
+        log(`research: ${subject} level ${carefulS32(row.add(level.fields.LevelNumber))} now gives ` +
+          `${GARDEN_PLACEHOLDER} instead of ${nameOfObject(award)}`);
+      }
+    }
+  }
+}
+
+function setEmptyResearchAwards() {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the research table';
+  }
+  research.empty = true;
+  return null;
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2135,6 +2678,768 @@ function redirectMovies(config) {
   movies.files = files;
   log(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
   return null;
+}
+
+// ---------------------------------------------------------------------------------------------------------------
+// Open Rapture: where the bathysphere goes, and scripted level changes into a locked chapter
+// ---------------------------------------------------------------------------------------------------------------
+
+// With level_access: open_rapture the client sends travel_rules whenever they change:
+//   { stops: [{map, arrival}], redirects: [{from, to, map, arrival}] }
+// Each level has a BathysphereManager (BioshockBathyspheres) with Destinations [{Title, MapName, StartLocationLabel}]
+// and UnlockedDestinations (indexes into Destinations), which the menu offers; the level's own scripts unlock
+// destinations as it starts (probe and map files, 2026-10-14). The agent keeps UnlockedDestinations to the client's
+// stops and their arrival points, a few times a second, so whatever the scripts add is taken back out. A scripted
+// level change is an ActionChangeLevel holding MapName and StartLocationLabel as strings, also handed to it by its
+// resolveInfoList rows when it runs; a crossing into a locked chapter is pointed at the client's hub instead.
+// Memory: an array or string grows only if the game keeps its buffer on the process heap (HeapValidate), so the
+// game can free or grow it later; otherwise the agent keeps to the room the buffer has, and says what it could not do.
+const travel = {
+  rules: null, // the client's rules, with name indexes resolved
+  managers: [],
+  changes: [],
+  layout: undefined, // where the fields are; null once they could not be found
+  originals: new Map(), // level change address -> { map, label } it had before it was redirected
+  armed: [], // redirects set up in the level being played: [{ from, to, map }]
+  trouble: null,
+  told: new Set(), // troubles already logged
+  offered: null, // the destinations offered the last time they were looked at
+  notes: [], // the level's script notes and log lines: strings the game made that nothing reads while playing
+  borrowed: new Set(), // their strings already swapped into a level change
+  noteFields: new Map(), // class -> offset of its string
+  unlockAsked: new Set(), // manager:destination the game was asked to unlock, so it is asked once
+  lines: new Map(), // manager:destination -> the bathysphere line as the level made it (see lineOf)
+  flagsSet: new Set(), // `name=value` story flags already set in this level
+  flagTriedAt: 0, // when a story flag was last looked for
+  level: null, // the level object the lists above are about
+};
+
+// The level object changed (another map, or a save loaded in the same one): its travel objects are gone.
+function forgetTravelObjects() {
+  travel.managers = [];
+  travel.flagsSet = new Set(); // a save loaded may not have them: looked at again in each level
+  travel.flagTriedAt = 0;
+  travel.changes = [];
+  travel.notes = [];
+  travel.borrowed = new Set();
+  travel.unlockAsked = new Set();
+  travel.lines = new Map();
+  travel.originals.clear();
+}
+
+const heapApi = (() => {
+  try {
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const fn = (name, ret, args) => new NativeFunction(kernel32.getExportByName(name), ret, args, 'stdcall');
+    return {
+      heap: fn('GetProcessHeap', 'pointer', [])(),
+      validate: fn('HeapValidate', 'int', ['pointer', 'uint', 'pointer']),
+      alloc: fn('HeapAlloc', 'pointer', ['pointer', 'uint', 'uint']),
+      realloc: fn('HeapReAlloc', 'pointer', ['pointer', 'uint', 'pointer', 'uint']),
+    };
+  } catch (e) {
+    return null;
+  }
+})();
+
+function onProcessHeap(pointer) {
+  if (heapApi === null || pointer === null || pointer.isNull()) {
+    return false;
+  }
+  try {
+    return heapApi.validate(heapApi.heap, 0, pointer) !== 0;
+  } catch (e) {
+    return false;
+  }
+}
+
+function travelTrouble(text) {
+  travel.trouble = text;
+  if (!travel.told.has(text)) {
+    travel.told.add(text);
+    log(`Open Rapture: ${text}`);
+  }
+}
+
+// The index of a name in the game's name table, by its text in any case; -1 if the game has no such name.
+function indexOfName(wanted) {
+  if (objectModel === null) {
+    return -1;
+  }
+  const count = carefulS32(base.add(objectModel.names + 4));
+  const lower = wanted.toLowerCase();
+  for (let index = 0; count !== null && index < count; index++) {
+    const text = nameOf(index);
+    if (text !== null && text.toLowerCase() === lower) {
+      return index;
+    }
+  }
+  return -1;
+}
+
+const KIND_BYTES = { StrProperty: 12, NameProperty: 8, ArrayProperty: 12 };
+
+// The fields of the struct an array property holds: { name: offset }, and the size of one element.
+function structOfArray(arrayField) {
+  const name = nameOfObject(arrayField);
+  const inner = linkedTo(arrayField, (t) => nameOfObject(classOf(t)) === 'StructProperty' && nameOfObject(t) === name);
+  const struct = inner === null ? null :
+    linkedTo(inner, (t) => /^(Script)?Struct$/.test(nameOfObject(classOf(t)) || ''));
+  if (struct === null) {
+    return null;
+  }
+  const fields = {};
+  let size = 0;
+  let field = carefulPtr(struct.add(objectModel.structChildren));
+  for (let n = 0; field !== null && !field.isNull() && n < 100; n++) {
+    const offset = carefulS32(field.add(objectModel.propertyOffset));
+    if (offset !== null && offset >= 0 && offset < 0x100) {
+      fields[nameOfObject(field)] = offset;
+      size = Math.max(size, offset + (KIND_BYTES[nameOfObject(classOf(field))] || 4));
+    }
+    field = carefulPtr(field.add(objectModel.fieldNext));
+  }
+  return { fields, size: (size + 3) & ~3 };
+}
+
+function travelLayout() {
+  if (travel.layout !== undefined) {
+    return travel.layout;
+  }
+  const manager = travel.managers[0];
+  const change = travel.changes[0];
+  if (manager === undefined) {
+    return null; // not known yet: asked again once a level with a bathysphere has been scanned
+  }
+  travel.layout = null;
+  const cls = classOfObject(manager);
+  const destinations = findProperty(cls, 'Destinations', 'ArrayProperty');
+  const unlocked = findProperty(cls, 'UnlockedDestinations', 'ArrayProperty');
+  const entry = destinations === null ? null : structOfArray(destinations.field);
+  if (unlocked === null || entry === null || !('MapName' in entry.fields) || !('StartLocationLabel' in entry.fields)) {
+    travelTrouble('could not find the bathysphere destinations (BathysphereManager.Destinations)');
+    return null;
+  }
+  const layout = { destinations: destinations.offset, unlocked: unlocked.offset, entry, change: null };
+  const changeClass = change === undefined ? null : classOfObject(change);
+  if (changeClass !== null) {
+    const map = findProperty(changeClass, 'MapName', 'StrProperty');
+    const label = findProperty(changeClass, 'StartLocationLabel', 'StrProperty');
+    const rows = findProperty(changeClass, 'resolveInfoList', 'ArrayProperty');
+    const row = rows === null ? null : structOfArray(rows.field);
+    if (map !== null && label !== null) {
+      layout.change = { map: map.offset, label: label.offset, rows: rows === null ? null : rows.offset, row };
+    }
+  }
+  travel.layout = layout;
+  log(`Open Rapture: Destinations at +0x${destinations.offset.toString(16)} (${entry.size} bytes each), ` +
+    `UnlockedDestinations at +0x${unlocked.offset.toString(16)}` +
+    (layout.change === null ? '; no level change seen yet' : `, a level change's MapName at +0x${layout.change.map.toString(16)}`));
+  return layout;
+}
+
+// A level change's layout may only be learned once one has been scanned, after the bathysphere's.
+function changeLayout() {
+  const layout = travelLayout();
+  if (layout !== null && layout.change === null && travel.changes.length > 0) {
+    travel.layout = undefined;
+    return travelLayout();
+  }
+  return layout;
+}
+
+function nameAt(at) {
+  const text = nameOf(carefulS32(at));
+  return text === null ? null : text.toLowerCase();
+}
+
+// A string the game made, with room for `room` characters (terminator included), that nothing reads while playing:
+// a script note's Label or a log line's Text. Strings given memory of our own crash the game once the level change
+// runs (in-game test 2026-10-14), so a name that does not fit swaps buffers with one of these instead: pointer,
+// count and room travel together, every buffer keeps exactly one owner, and the game frees both as usual.
+function borrowString(room) {
+  for (const note of travel.notes) {
+    const cls = classOfObject(note);
+    if (cls === null || kindOf(cls) !== 'note') {
+      continue;
+    }
+    const key = cls.toString();
+    if (!travel.noteFields.has(key)) {
+      const field = findProperty(cls, 'Label', 'StrProperty') || findProperty(cls, 'Text', 'StrProperty');
+      travel.noteFields.set(key, field === null ? null : field.offset);
+    }
+    const offset = travel.noteFields.get(key);
+    if (offset === null) {
+      continue;
+    }
+    const at = note.add(offset);
+    const data = carefulPtr(at);
+    const max = carefulS32(at.add(8));
+    if (travel.borrowed.has(at.toString()) || data === null || data.isNull() || max === null || max < room ||
+        max > 4096 || !readableRange(data, max * 2)) {
+      continue;
+    }
+    return at;
+  }
+  return null;
+}
+
+function swapStrings(a, b) {
+  const first = [a.readPointer(), a.add(4).readU32(), a.add(8).readU32()];
+  a.writePointer(b.readPointer());
+  a.add(4).writeU32(b.add(4).readU32());
+  a.add(8).writeU32(b.add(8).readU32());
+  b.writePointer(first[0]);
+  b.add(4).writeU32(first[1]);
+  b.add(8).writeU32(first[2]);
+}
+
+// Makes room for `text` in the engine string at `at`: in place, or by borrowing a game string. Returns a function
+// that undoes the borrowing (a no-op when nothing was borrowed), or null when there is no room to be had.
+function makeRoom(at, text) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8));
+  if (data === null || data.isNull() || max === null) {
+    return null;
+  }
+  if (text.length + 1 <= max) {
+    return () => {};
+  }
+  const donor = borrowString(text.length + 1);
+  if (donor === null) {
+    return null;
+  }
+  swapStrings(at, donor);
+  travel.borrowed.add(donor.toString());
+  return () => {
+    swapStrings(at, donor);
+    travel.borrowed.delete(donor.toString());
+  };
+}
+
+// Writes an engine string in its own buffer, which must have room (see makeRoom).
+function writeString(at, text) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8));
+  if (data === null || data.isNull() || max === null || text.length + 1 > max) {
+    return false;
+  }
+  data.writeUtf16String(text);
+  at.add(4).writeU32(text.length + 1);
+  return true;
+}
+
+// Sets an int array {data, count, max} to these values, in its own buffer. False when they do not fit: an array
+// given memory of our own crashed the game on the next bathysphere ride (in-game test 2026-10-15), so growing is
+// left to the game (see unlockByGame).
+function writeIntArray(at, values) {
+  const data = carefulPtr(at);
+  const max = carefulS32(at.add(8)) || 0;
+  if (data === null || data.isNull() || values.length > max) {
+    return false;
+  }
+  values.forEach((value, i) => data.add(i * 4).writeS32(value));
+  at.add(4).writeU32(values.length);
+  return true;
+}
+
+const UNLOCK_DESTINATION_PARMS = 0x10; // MapName (name, 8 bytes), then the locals i and InsertIndex
+
+// Has the game itself unlock a destination (BathysphereManager.UnlockDestination, the script function the levels'
+// ActionUnlockBathysphereDestination runs), so the game grows UnlockedDestinations in its own memory. Game thread.
+// Returns false while no call of the game's has been seen to copy, or when it cannot be done.
+function unlockByGame(manager, destination, entry) {
+  const trouble = scriptCallsTrouble();
+  if (trouble !== null) {
+    travelTrouble(`could not unlock a bathysphere destination: ${trouble}`);
+    return false;
+  }
+  if (!readyToCallScript()) {
+    return false;
+  }
+  const fn = findFunction(manager, 'UnlockDestination');
+  if (fn === null) {
+    travelTrouble('could not unlock a bathysphere destination: BathysphereManager has no UnlockDestination');
+    return false;
+  }
+  const parms = Memory.alloc(UNLOCK_DESTINATION_PARMS);
+  const name = destination.add(entry.fields.MapName);
+  parms.writeS32(carefulS32(name) || 0);
+  parms.add(4).writeS32(carefulS32(name.add(4)) || 0);
+  for (let at = 8; at < UNLOCK_DESTINATION_PARMS; at += 4) {
+    parms.add(at).writeS32(0);
+  }
+  callScript(manager, fn, parms);
+  return true;
+}
+
+// A bathysphere line as the level made it: { map, name (its MapName's two words), title, to, undoTitle }. Stops are
+// matched by this, so a line pointed elsewhere (see pointLine) is still found by the station it was.
+function lineOf(manager, i, destination, entry) {
+  const key = `${manager}:${i}`;
+  const nameAddress = destination.add(entry.fields.MapName);
+  const now = nameAt(nameAddress);
+  let line = travel.lines.get(key);
+  if (line !== undefined && now !== line.map && now !== line.to) {
+    line = undefined; // not what was written there: a new object at the same address
+  }
+  if (line === undefined) {
+    const was = STANDS_IN[now];
+    line = was !== undefined && indexOfName(was.file) >= 0
+      ? { map: was.file.toLowerCase(), name: [indexOfName(was.file), 0], title: was.title, to: now, undoTitle: null }
+      : { map: now, name: [carefulS32(nameAddress) || 0, carefulS32(nameAddress.add(4)) || 0],
+        title: 'Title' in entry.fields ? stringAt(destination.add(entry.fields.Title)) : null, to: null, undoTitle: null };
+    travel.lines.set(key, line);
+  }
+  return line;
+}
+
+// Levels a line can be pointed at that no station of their own leads to, and the line that stands in for them. A save
+// made while a line was pointed elsewhere keeps it that way, so a line found going there is known for what it was.
+const STANDS_IN = { '6-resi': { file: '6-Slums', title: 'Apollo Square' } };
+
+// Points a line at the level a stop stands in for (stop.to, with its menu text stop.title), or with stop null puts
+// it back as the level made it. The map's name is 8 bytes, so it is rewritten in place; the title in place when it
+// fits, else in a script note's string (see makeRoom). False when the line cannot go where it should.
+function pointLine(destination, entry, line, stop) {
+  const want = stop === null ? null : stop.to;
+  if (line.to === want) {
+    return true;
+  }
+  const nameAddress = destination.add(entry.fields.MapName);
+  const titleAt = 'Title' in entry.fields ? destination.add(entry.fields.Title) : null;
+  if (want === null) {
+    nameAddress.writeS32(line.name[0]);
+    nameAddress.add(4).writeS32(line.name[1]);
+    if (line.undoTitle !== null) {
+      line.undoTitle();
+      line.undoTitle = null;
+    }
+    if (titleAt !== null && line.title !== null) {
+      writeString(titleAt, line.title);
+    }
+    log(`Open Rapture: the bathysphere line to ${line.map} goes there again`);
+    line.to = null;
+    return true;
+  }
+  if (stop.toIndex < 0) {
+    travelTrouble(`could not point the bathysphere line to ${line.map} at ${want}: the game has no such name yet`);
+    return false;
+  }
+  if (line.to !== null) {
+    pointLine(destination, entry, line, null);
+  }
+  nameAddress.writeS32(stop.toIndex);
+  nameAddress.add(4).writeS32(0);
+  line.to = want;
+  if (titleAt !== null && stop.title) {
+    const undo = makeRoom(titleAt, stop.title);
+    if (undo !== null && writeString(titleAt, stop.title)) {
+      line.undoTitle = undo;
+    } else {
+      log(`Open Rapture: the bathysphere line to ${want} keeps its title (no room for "${stop.title}")`);
+    }
+  }
+  log(`Open Rapture: the bathysphere line to ${line.map} now goes to ${want}` + (stop.title ? ` as "${stop.title}"` : ''));
+  return true;
+}
+
+function keepBathysphere(manager, layout, rules) {
+  const at = manager.add(layout.destinations);
+  const data = carefulPtr(at);
+  const count = carefulS32(at.add(4));
+  const { entry } = layout;
+  if (data === null || data.isNull() || count === null || count < 1 || count > 32 ||
+      !readableRange(data, count * entry.size)) {
+    return;
+  }
+  if (rules.off) { // not Open Rapture (any more): lines pointed elsewhere go back where the level made them go
+    for (let i = 0; i < count; i++) {
+      const destination = data.add(i * entry.size);
+      pointLine(destination, entry, lineOf(manager, i, destination, entry), null);
+    }
+    return;
+  }
+  const wanted = [];
+  for (let i = 0; i < count; i++) {
+    const destination = data.add(i * entry.size);
+    const line = lineOf(manager, i, destination, entry);
+    const map = line.map;
+    const stop = rules.stops.find((s) => s.map === map);
+    if (!pointLine(destination, entry, line, stop !== undefined && stop.to ? stop : null) || stop === undefined) {
+      continue; // not offered, or a stand-in line that could not be pointed where it stands in for
+    }
+    wanted.push(i);
+    const labelAt = destination.add(entry.fields.StartLocationLabel);
+    if (stop.arrivalIndex >= 0 && carefulS32(labelAt) !== stop.arrivalIndex) {
+      labelAt.writeS32(stop.arrivalIndex);
+      labelAt.add(4).writeS32(0);
+      log(`Open Rapture: the bathysphere to ${map} now arrives at ${stop.arrival}`);
+    }
+  }
+  const unlockedAt = manager.add(layout.unlocked);
+  const unlockedData = carefulPtr(unlockedAt);
+  const unlockedCount = carefulS32(unlockedAt.add(4)) || 0;
+  const current = [];
+  for (let i = 0; unlockedData !== null && !unlockedData.isNull() && i < Math.min(unlockedCount, 32); i++) {
+    current.push(unlockedData.add(i * 4).readS32());
+  }
+  travel.offered = current;
+  // Once the game has added a destination it was asked for, it may be asked again if it drops it (a save loaded).
+  current.forEach((i) => travel.unlockAsked.delete(`${manager}:${i}`));
+  if (current.join(',') === wanted.join(',')) {
+    return;
+  }
+  if (writeIntArray(unlockedAt, wanted)) {
+    travel.offered = wanted;
+    log(`Open Rapture: the bathysphere offers destinations [${wanted.join(', ')}] (was [${current.join(', ')}])`);
+    return;
+  }
+  // No room: drop what must go (in place), then have the game add the rest one at a time, in its own memory.
+  const kept = current.filter((i) => wanted.includes(i));
+  if (kept.length < current.length) {
+    writeIntArray(unlockedAt, kept);
+  }
+  const missing = wanted.find((i) => !kept.includes(i));
+  const key = `${manager}:${missing}`;
+  if (travel.unlockAsked.has(key)) {
+    travelTrouble(`the game did not unlock bathysphere destination ${missing} when asked`);
+    return;
+  }
+  if (unlockByGame(manager, data.add(missing * entry.size), entry)) {
+    travel.unlockAsked.add(key);
+    log(`Open Rapture: asked the game to unlock bathysphere destination ${missing}`);
+  }
+}
+
+// The resolveInfoList rows of a level change that hand it MapName and StartLocationLabel: [{ at, property }].
+function changeRows(change, layout) {
+  const rows = layout.rows === null ? null : carefulPtr(change.add(layout.rows));
+  const count = layout.rows === null ? 0 : (carefulS32(change.add(layout.rows + 4)) || 0);
+  const row = layout.row;
+  const found = [];
+  if (rows === null || rows.isNull() || row === null || !('PropertyName' in row.fields) || !('Variable' in row.fields) ||
+      count < 1 || count > 16 || !readableRange(rows, count * row.size)) {
+    return found;
+  }
+  for (let i = 0; i < count; i++) {
+    const at = rows.add(i * row.size);
+    const property = nameAt(at.add(row.fields.PropertyName));
+    if (property === 'mapname' || property === 'startlocationlabel') {
+      found.push({ at: at.add(row.fields.Variable), property });
+    }
+  }
+  return found;
+}
+
+// Points a level change at a map and arrival point: its strings, and the rows that would hand it the old ones.
+// `values` maps 'mapname'/'startlocationlabel' to the name index each row gets.
+function pointChange(change, layout, map, label, values) {
+  const undoMap = makeRoom(change.add(layout.map), map);
+  const undoLabel = undoMap === null ? null : makeRoom(change.add(layout.label), label);
+  if (undoLabel === null) {
+    if (undoMap !== null) {
+      undoMap();
+    }
+    return false;
+  }
+  if (!writeString(change.add(layout.map), map) || !writeString(change.add(layout.label), label)) {
+    return false;
+  }
+  for (const { at, property } of changeRows(change, layout)) {
+    const index = values[property];
+    if (index !== undefined && index >= 0) {
+      at.writeS32(index);
+      at.add(4).writeS32(0);
+    }
+  }
+  return true;
+}
+
+function keepLevelChanges(map, layout, rules) {
+  travel.armed = [];
+  for (const change of travel.changes) {
+    const cls = classOfObject(change);
+    if (cls === null || kindOf(cls) !== 'changelevel') {
+      continue; // gone since the scan
+    }
+    const key = change.toString();
+    let original = travel.originals.get(key);
+    const current = normalizeMap(stringAt(change.add(layout.map)));
+    if (original !== undefined && current !== original.now) {
+      travel.originals.delete(key); // not what was written there: a new object (a save loaded) at the same address
+      original = undefined;
+    }
+    const target = original === undefined ? current : normalizeMap(original.map);
+    if (target === null) {
+      continue;
+    }
+    if (original === undefined && restoreSaved(change, layout, map, current, rules)) {
+      continue;
+    }
+    const redirect = rules.redirects.find((r) => r.from === map && r.to === target);
+    if (redirect !== undefined) {
+      if (original !== undefined) {
+        travel.armed.push({ ...redirect, used: original.now });
+        continue; // already pointed elsewhere
+      }
+      const saved = { map: stringAt(change.add(layout.map)), label: stringAt(change.add(layout.label)) || '', rows: {} };
+      for (const { at, property } of changeRows(change, layout)) {
+        saved.rows[property] = carefulS32(at);
+      }
+      // The hub first; where its names do not fit, the client's fallback, which always does.
+      const goal = [redirect, redirect.fallback].find((g) => g && pointChange(change, layout, g.mapName, g.arrival,
+        { mapname: g.mapIndex, startlocationlabel: g.arrivalIndex }));
+      if (goal !== undefined) {
+        saved.now = goal.map;
+        travel.originals.set(key, saved);
+        travel.armed.push({ ...redirect, used: goal.map });
+        log(`Open Rapture: the way from ${map} to ${target} now leads to ${goal.map} (${goal.arrival})`);
+      } else {
+        travelTrouble(`could not point the level change to ${target} elsewhere (its strings have no room)`);
+      }
+    } else if (original !== undefined) { // its chapter has opened since: put it back
+      if (pointChange(change, layout, original.map, original.label, original.rows)) {
+        travel.originals.delete(key);
+        log(`Open Rapture: the way from ${map} to ${target} is open again`);
+      }
+    }
+  }
+}
+
+// A crossing redirected to the hub is level state, so a save keeps it redirected. Once its chapter is open, the
+// client names it in `restores`: a level change in its map that leads exactly to the hub's map and arrival is put
+// back where the story sends it. (Never the fallback's goal: those maps have level changes of their own that lead
+// there.) True when this change was one.
+function restoreSaved(change, layout, map, current, rules) {
+  const restore = rules.restores.find((r) => r.from === map && r.hub === current);
+  if (restore === undefined || stringAt(change.add(layout.label)) !== restore.hubArrival) {
+    return false;
+  }
+  if (pointChange(change, layout, restore.mapName, restore.arrival,
+    { mapname: restore.mapIndex, startlocationlabel: restore.arrivalIndex })) {
+    log(`Open Rapture: the way from ${map} that a save kept pointed at ${current} leads to ${restore.to} again`);
+  } else {
+    travelTrouble(`could not point the level change a save kept at ${current} back to ${restore.to}`);
+  }
+  return true;
+}
+
+// Every few ticks, with the scan's lists of bathysphere managers and level changes for the map being played.
+function keepTravel(map) {
+  const rules = travel.rules;
+  if (rules === null || objectModel === null) {
+    return;
+  }
+  if (rules.namesFor !== map) {
+    rules.namesFor = map;
+    resolveNames(rules);
+  }
+  for (const flag of rules.off ? [] : rules.flags) {
+    if (!travel.flagsSet.has(`${flag.name}=${flag.value}`)) {
+      const trouble = setStoryFlag(flag.name, flag.value);
+      if (trouble === undefined) {
+        continue; // not yet: the next pass tries again
+      }
+      if (trouble === null) {
+        travel.flagsSet.add(`${flag.name}=${flag.value}`);
+        log(`Open Rapture: story flag ${flag.name} = ${flag.value}`);
+      } else {
+        travelTrouble(`could not set story flag ${flag.name}: ${trouble}`);
+      }
+    }
+  }
+  const layout = changeLayout();
+  if (layout === null) {
+    return;
+  }
+  for (const manager of travel.managers) {
+    const cls = classOfObject(manager);
+    if (cls !== null && kindOf(cls) === 'bathysphere') {
+      keepBathysphere(manager, layout, rules);
+    }
+  }
+  if (layout.change !== null) {
+    keepLevelChanges(normalizeMap(map), layout.change, rules);
+  }
+}
+
+// The level being played changed: if it went where an armed redirect leads, from where it starts, it was taken.
+function noteTravel(from, to) {
+  const before = normalizeMap(from);
+  const after = normalizeMap(to);
+  const taken = travel.armed.find((r) => r.from === before && r.used === after && after !== before);
+  if (taken !== undefined) {
+    send({ type: 'travel_redirected', from: before, to: taken.to, landed: after });
+  }
+  travel.armed = [];
+  travel.originals.clear(); // the level's objects are gone; a new level has its own
+}
+
+function setTravelRules(config) {
+  if (objectModel === null || virtualQuery === null) {
+    return 'this build gives the agent no way to find the bathysphere';
+  }
+  const named = (text) => (typeof text === 'string' && text ? indexOfName(text) : -1);
+  const goal = (g) => (g ? { map: String(g.map).toLowerCase(), mapName: mapFileName(g.map), arrival: g.arrival,
+    mapIndex: named(mapFileName(g.map)), arrivalIndex: named(g.arrival) } : null);
+  const rules = {
+    stops: (config.stops || []).map((s) => ({ map: String(s.map).toLowerCase(), arrival: s.arrival,
+      arrivalIndex: named(s.arrival),
+      ...(s.to ? { to: String(s.to).toLowerCase(), toIndex: named(mapFileName(s.to)), title: s.title || null } : {}) })),
+    redirects: (config.redirects || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
+      ...goal(r), fallback: goal(r.fallback) })),
+    flags: Object.entries(config.flags || {}).map(([name, value]) => ({ name: String(name), value: String(value) })),
+    restores: (config.restores || []).map((r) => ({ from: String(r.from).toLowerCase(), to: String(r.to).toLowerCase(),
+      mapName: mapFileName(r.to), mapIndex: named(mapFileName(r.to)),
+      arrival: r.arrival, arrivalIndex: named(r.arrival),
+      hub: String(r.hub).toLowerCase(), hubArrival: r.hubArrival })),
+    off: config.off === true, // the slot is not Open Rapture: undo what earlier rules changed, and change nothing
+  };
+  const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
+    ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];
+  if (unknown.length > 0) {
+    log(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are ` +
+      'until a level that has them is loaded');
+  }
+  travel.rules = rules;
+  travel.trouble = null;
+  return null;
+}
+
+// Sets one of the scripts' global_ variables (the story flags their ActionVariableAssign actions keep, such as
+// global_transitionedFromRyan). Null when done, else why not. Where the game keeps them is not known yet: the probe's
+// globals() and scriptApi() look for it (builds/OPEN-RAPTURE-TESTS.md), and this is filled in from what they find.
+// Story flags are the scripts' global_ variables: objects of class VariableBool (or VariableFloat, VariableName...)
+// named global_X, with Value at +0x40 (probe, 2026-10-15). The ones made in a level are carried to the next in
+// LevelInfo.GlobalTravelContainer.TravelObjects. A flag set in an earlier chapter (Ryan's global_transitionedFromRyan,
+// set on the way to Olympus Heights) does not exist when that chapter was skipped, so the agent has the game make it
+// the way the levels' ActionVariableAssignIfNotExist does (traced 2026-10-15): Script.newGlobalVariable(VariableName,
+// variableType), which also adds it to the travel container; then it writes the value. Game thread.
+// Returns null when the flag holds the value, undefined to try again later, or what went wrong.
+const NEW_GLOBAL_PARMS = 0x40; // VariableName, variableType, ReturnValue and locals, zeroed
+const STORY_FLAG_RETRY_MS = 2000; // a walk over every object: not on every pass
+function setStoryFlag(name, value) {
+  const now = Date.now();
+  if (now - travel.flagTriedAt < STORY_FLAG_RETRY_MS) {
+    return undefined;
+  }
+  travel.flagTriedAt = now;
+  const table = carefulPtr(base.add(objectModel.objects));
+  const count = carefulS32(base.add(objectModel.objects + 4));
+  if (table === null || table.isNull() || count === null || count < 1 || count > 4000000) {
+    return undefined;
+  }
+  let variable = null;
+  let script = null;
+  let boolClass = null;
+  for (let i = 0; i < count; i++) {
+    const object = carefulPtr(table.add(i * 4));
+    const cls = object === null || object.isNull() ? null : classOfObject(object);
+    if (cls === null) {
+      continue;
+    }
+    const own = nameOfObject(object);
+    const kind = nameOfObject(cls);
+    if (own === name && kind !== null && kind.startsWith('Variable')) {
+      variable = object;
+    } else if (kind === 'Script' && script === null) {
+      script = object;
+    } else if (kind === 'Class' && own === 'VariableBool') {
+      boolClass = object;
+    }
+  }
+  if (variable === null) {
+    if (script === null || boolClass === null) {
+      return undefined; // a level without scripts loaded yet
+    }
+    const trouble = scriptCallsTrouble();
+    if (trouble !== null) {
+      return trouble;
+    }
+    if (!readyToCallScript()) {
+      return undefined;
+    }
+    const nameIndex = indexOfName(name);
+    const fn = findFunction(script, 'newGlobalVariable');
+    const nameParam = fn === null ? null : findProperty(fn, 'VariableName', 'NameProperty');
+    const typeParam = fn === null ? null : findProperty(fn, 'variableType', 'ClassProperty');
+    const result = fn === null ? null : findProperty(fn, 'ReturnValue', 'ObjectProperty');
+    if (fn === null || nameParam === null || typeParam === null || result === null ||
+        Math.max(nameParam.offset + 8, typeParam.offset + 4, result.offset + 4) > NEW_GLOBAL_PARMS) {
+      return 'Script.newGlobalVariable is not what the agent expects';
+    }
+    if (nameIndex < 0) {
+      // The name only exists once a level that uses it is loaded (Hephaestus, or Olympus Heights itself): the
+      // agent sets the flag there, in the first moments of the level.
+      return undefined;
+    }
+    const parms = Memory.alloc(NEW_GLOBAL_PARMS);
+    for (let at = 0; at < NEW_GLOBAL_PARMS; at += 4) {
+      parms.add(at).writeS32(0);
+    }
+    parms.add(nameParam.offset).writeS32(nameIndex);
+    parms.add(typeParam.offset).writePointer(boolClass);
+    callScript(script, fn, parms);
+    variable = carefulPtr(parms.add(result.offset));
+    if (variable === null || variable.isNull()) {
+      return 'the game made no variable';
+    }
+    log(`Open Rapture: the game made story flag ${name}`);
+  }
+  const cls = classOfObject(variable);
+  const flag = cls === null ? null : findBoolProperty(cls, 'Value');
+  const number = cls === null || flag !== null ? null : findProperty(cls, 'Value', 'FloatProperty');
+  const truthy = value !== '0' && value !== 0 && value !== 'false' && value !== false;
+  if (flag !== null) {
+    const word = carefulU32(variable.add(flag.offset));
+    if (word === null) {
+      return 'its value cannot be read';
+    }
+    variable.add(flag.offset).writeU32(truthy ? (word | flag.mask) >>> 0 : (word & ~flag.mask) >>> 0);
+    return null;
+  }
+  if (number !== null) {
+    variable.add(number.offset).writeFloat(Number(value) || 0);
+    return null;
+  }
+  return `${name} is a ${cls === null ? 'variable' : nameOfObject(cls)} the agent cannot write`;
+}
+
+// Names the game did not have when the rules came (a level's PlayerStarts exist only once a level that has them has
+// been loaded, as Olympus Heights' PlayerStart_First in the client test of 2026-10-15) are looked up again on each
+// new level.
+function resolveNames(rules) {
+  for (const stop of rules.stops) {
+    if (stop.arrival && stop.arrivalIndex < 0) {
+      stop.arrivalIndex = indexOfName(stop.arrival);
+      if (stop.arrivalIndex >= 0) {
+        log(`Open Rapture: the game knows ${stop.arrival} now; the bathysphere to ${stop.to || stop.map} arrives there`);
+      }
+    }
+    if (stop.to && stop.toIndex < 0) {
+      stop.toIndex = indexOfName(mapFileName(stop.to));
+    }
+  }
+  for (const r of rules.redirects) {
+    for (const goal of [r, r.fallback]) {
+      if (goal && goal.arrivalIndex < 0 && goal.arrival) {
+        goal.arrivalIndex = indexOfName(goal.arrival);
+      }
+      if (goal && goal.mapIndex < 0) {
+        goal.mapIndex = indexOfName(goal.mapName);
+      }
+    }
+  }
+}
+
+// The map file's own spelling, which the game keeps in its strings ("2-Fisheries"); the client sends lower case.
+const MAP_FILES = ['1-Welcome', '1-Medical', '2-Fisheries', '2-SubBay', '3-Arcadia', '3-Market', '4-Recreation',
+  '5-Hephaestus', '5-Ryan', '6-Resi', '6-Slums', '7-Science', '7-Gauntlet', '7-BossFight'];
+
+function mapFileName(map) {
+  const lower = String(map).toLowerCase();
+  return MAP_FILES.find((name) => name.toLowerCase() === lower) || String(map);
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2676,6 +3981,11 @@ function watchPlayer(level, info, map, now) {
   carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
   readWeapons(body.pawn);
+  try {
+    readResearch(body.pawn, now);
+  } catch (e) {
+    researchTrouble(e.message);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -2697,7 +4007,7 @@ function onLevelTick(level) {
       const seen = levelsSeen.get(level.toString());
       if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
         watchSisters(level, seen.map, now);
-        watchObjects(seen.map, now);
+        watchObjects(seen.map, now, level);
         watchPlayer(level, info, seen.map, now);
         finishTouchedStation(now);
       }
@@ -2819,8 +4129,9 @@ rpc.exports = {
   },
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
-  // 'redirect_movies {json}' (Flash movies from the client's folder) at once. The traps 'eve_drain' and
-  // 'pickpocket' are answered like 'kill', once carried out.
+  // 'redirect_movies {json}' (Flash movies from the client's folder) and 'travel_rules {json}' (Open Rapture: where
+  // the bathysphere and level changes go) and 'empty_pickups {json}' (pickups that give the placeholder) at once.
+  // The traps 'eve_drain' and 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
       kills.push({ id, at: Date.now() });
@@ -2834,7 +4145,8 @@ rpc.exports = {
       }
       return;
     }
-    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies]]) {
+    for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies],
+      ['travel_rules', setTravelRules], ['empty_pickups', setEmptyPickups]]) {
       if (typeof name === 'string' && name.startsWith(`${action} `)) {
         let trouble;
         try {
@@ -2847,10 +4159,10 @@ rpc.exports = {
         return;
       }
     }
-    if (name === 'touch_stations') {
+    if (name === 'touch_stations' || name === 'empty_research_awards') {
       let trouble;
       try {
-        trouble = enableTouch();
+        trouble = name === 'touch_stations' ? enableTouch() : setEmptyResearchAwards();
       } catch (e) {
         trouble = e.message;
       }

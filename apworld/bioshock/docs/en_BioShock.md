@@ -16,6 +16,15 @@ With the default **Level Access** setting, every level after Medical Pavilion ha
 access item. Anything you already collected there is sent the moment the access item arrives, so you never need to go
 back for it.
 
+**Open Rapture** (Level Access: `open_rapture`, not playable yet) goes further: access items open travel itself, one
+per chapter. After Medical Pavilion, the bathysphere takes you to Neptune's Bounty, Arcadia or Fort Frolic in any
+order, as soon as you hold that chapter's access item. Hephaestus opens once you hold its item and the three before it,
+and Olympus Heights and Point Prometheus follow in story order, each behind its own item. Each one appears in the
+bathysphere menu as soon as its item arrives. Olympus Heights has no station of its own, so it appears on Apollo
+Square's line until you have been there once. A way into a chapter you
+can't enter yet (the submarine out of Smuggler's Hideout, the way out of Ryan's office) takes you back to Medical
+Pavilion's bathysphere instead.
+
 ## What counts as a check?
 
 These can hold anything, including the items you and other players need:
@@ -42,7 +51,25 @@ otherwise. Your own items show their own icon (a weapon upgrade shows its weapon
 Archipelago icon. Buying a line sends its
 check and gives you a bag of chips instead of the gene.
 
-Welcome to Rapture can never be revisited, so its two audio diaries only hold filler whatever you choose.
+World Item Checks and Safe Checks (both off by default, and not tried in the game yet) make what lies in the levels
+checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
+of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
+as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead and their items go into the
+multiworld, except Electro Bolt and Incinerate!, which the story needs. Telekinesis is shuffled too, as a
+progression item: you need it to clear the debris in front of Surgery, so logic puts everything past it, and every
+level after Medical Pavilion, behind Telekinesis. Safe Checks makes opening each of the 41
+safes a check; their contents stay as they are.
+
+Research Checks (off by default, not tried in the game yet) make researching enemies with the Research Camera
+checks. Each of the 11 subjects (Thuggish, Leadhead, Nitro, Spider and Houdini Splicers, Bouncers, Rosies, Little
+Sisters, Security Bots, Turrets and Security Cameras) has 5 research levels. First Level makes the first level of
+each a check (11, one photo each); All makes every level a check (55). Levels 2 to 5 take many photos, so they never
+hold anything needed to progress. With research checks on, the 9 tonics research gives (SportBoost 1 and 2,
+Scrounger, Static Discharge 2, Extra Nutrition 3, Natural Camouflage, Wrench Jockey 2, Photographer's Eye 2 and
+Security Expert 2) come from the multiworld, and research gives a bag of chips instead.
+
+Welcome to Rapture can never be revisited, so its two audio diaries and its Electro Bolt only hold filler whatever
+you choose.
 
 The Remastered Director's Commentary film reels are not checks. A reel unlocks its film for the whole PC rather than
 the save, so a reel found in an earlier playthrough would not be there to pick up.
@@ -65,12 +92,14 @@ that are left out can still be bought, invented or researched in the game as usu
 Traps take the place of filler, so they turn up where filler does. With audio diary checks switched off your own pool
 has little or no filler, and then little or nothing becomes a trap.
 
-Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are for now. The game hands
-those out itself, so shuffling them has to wait until the client can suppress vanilla pickups.
+Plasmids, tonics and weapons that you pick up at a fixed spot in the world stay where they are unless World Item
+Checks is set to Shuffled. Then the plasmids and tonics lying in the levels (all but Electro Bolt and Incinerate!)
+are items in the multiworld, and all of them are always in the pool. Weapons always stay where they are.
 
 You start with the Research Camera (the `start_with_research_camera` option, on by default), so you can research
 enemies from the start. Some later ones, such as spider splicers, are hard to hurt without it. The camera in Neptune's
-Bounty is still there and gives film.
+Bounty is still there and gives film. With the option off and Open Rapture, Fort Frolic's checks also need
+Neptune's Bounty Access in logic: Cohen opens most of Fort Frolic only for photographs.
 
 ## What is the goal?
 

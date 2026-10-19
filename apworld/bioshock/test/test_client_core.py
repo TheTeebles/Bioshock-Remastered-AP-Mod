@@ -7,7 +7,10 @@ from ..client import game_data
 from ..client.core import REFUSED, UNKNOWN, BridgeCore
 from ..client.protocol import CommandResult, CommandStarted, ScoutedItem
 from ..client.simulated import SimulatedGame
-from ..data import GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, ItemKind
+from ..data import (
+    GATHERERS_GARDEN_FIRST_APPEARANCES, ITEM_TABLE, MEDICAL_PAVILION, NEPTUNES_BOUNTY, PLASMIDS, TONICS, WORLD_VERSION,
+    ItemKind,
+)
 from .client_harness import IDENTITY, Harness, item, loc, not_known_yet, play_level
 
 
@@ -82,9 +85,11 @@ class TestItemDelivery(unittest.TestCase):
 
     def test_progressive_plasmid_copies_climb_levels(self) -> None:
         self.assertEqual(game_data.plasmid_levels("Progressive Electro Bolt"), ("Electro Bolt 2", "Electro Bolt 3"))
+        # Electro Bolt's pickup gives itself even when the pickups are shuffled: the story needs it.
         self.assertEqual(game_data.plasmid_levels("Progressive Electro Bolt", world_items_shuffled=True),
-                         ("Electro Bolt", "Electro Bolt 2", "Electro Bolt 3"))
+                         ("Electro Bolt 2", "Electro Bolt 3"))
         self.assertEqual(game_data.plasmid_levels("Telekinesis"), ("Telekinesis",))
+        self.assertEqual(game_data.plasmid_levels("Telekinesis", world_items_shuffled=True), ("Telekinesis",))
 
         h = Harness().connect().attach()
         h.receive("Progressive Winter Blast", "Health Upgrade", "Progressive Winter Blast", "Progressive Electro Bolt")
@@ -1421,3 +1426,42 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual(len(lines), 5)
         self.assertEqual([entry["line"] for entry in lines], [1, 2, 3, 4, 5])
         self.assertEqual(set(h.game.garden_lines), {MEDICAL_PAVILION}, "only the level the player is in")
+
+
+class TestVersions(unittest.TestCase):
+    def test_says_which_apworld_it_is(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_version"] = WORLD_VERSION
+        h.connect().attach()
+        h.step(1)
+        self.assertFalse(h.warnings())
+
+    def test_warns_when_the_seed_was_made_with_another(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_version"] = "0.1.0"
+        h.connect().attach()
+        h.step(1)
+        self.assertTrue(any("made with 0.1.0" in text for text in h.warnings()), h.warnings())
+
+
+class TestSlotChange(unittest.TestCase):
+    def test_settings_the_last_slot_left_in_the_game_are_named(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_item_checks"] = 2
+        h.connect().attach()
+        h.step(4)
+        self.assertIsNotNone(h.game.empty_pickups)
+        h.slot_data["world_item_checks"] = 0
+        h.connect(("another seed", 0, 1))
+        h.step(1)
+        self.assertTrue(any("Restart BioShock" in text and "give chips" in text for text in h.warnings()),
+                        h.warnings())
+
+    def test_the_same_settings_need_no_restart(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_item_checks"] = 2
+        h.connect().attach()
+        h.step(4)
+        h.connect(("another seed", 0, 1))
+        h.step(1)
+        self.assertFalse(any("Restart BioShock" in text for text in h.warnings()), h.warnings())
