@@ -1,8 +1,9 @@
 # BioShock Remastered Randomizer Setup Guide
 
-> **Early development.** Seeds generate, the client talks to Archipelago, puts items into the real game on the Steam
-> version, and notices every kind of check there. No whole seed has been played through in the real game yet.
-> "What to expect from the real game today" below says exactly where things stand.
+> **First release (0.2.0).** Seeds generate, the client puts items into the real game on the Steam version, and
+> every kind of check has been seen working there. No whole seed has been played start to finish yet, so expect
+> rough edges, and please report what you find. "What to expect from the real game today" below says exactly where
+> things stand.
 
 ## Quick start
 
@@ -18,7 +19,8 @@ Each step is explained below.
 ## Required Software
 
 - [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases/latest) 0.6.7 or newer
-- The `bioshock.apworld` file, installed by double-clicking it or copying it into Archipelago's `custom_worlds` folder
+- The `bioshock.apworld` file from the [Releases page](https://github.com/TheTeebles/Bioshock-Remastered-AP-Mod/releases),
+  installed by double-clicking it or copying it into Archipelago's `custom_worlds` folder
 - BioShock Remastered for PC, the Steam version, on Windows
 - For the real game: Python with the Frida package (see "Python and Frida")
 
@@ -84,7 +86,7 @@ If the game was started as administrator, Archipelago has to be started as admin
   - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. Works in the
     real game.
   - *Audio diaries:* all 122, noticed when you pick one up. Works in the real game. A diary picked up
-    while the client was not watching is not noticed once a save has been loaded since.
+    while the client was not connected is sent the next time a save is loaded, read from Jack's journal.
   - *Power to the People stations:* each station used counts as the next station of that level. Works in the real
     game. The client asks the game to skip the station's upgrade menu (Steam), so using one only sends its check
     and closes it.
@@ -94,14 +96,16 @@ If the game was started as administrator, Archipelago has to be started as admin
     out. After loading a save the lines show as Potato Chips for a moment until the client renames them again.
     The Archipelago icon shows from the first save or level you load after the client connects to the game. For it,
     the client keeps a copy of the Garden's menu in Archipelago's cache folder and the game is handed that copy when
-    it opens the menu. Nothing in the game's folder is changed.
-  - *World items and safes (World Item Checks and Safe Checks, Steam):* built but not tried in the real game yet.
-    The client watches the plasmid and tonic pickups lying in the level you are in, the safes and lockboxes (open
-    ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give a bag of
-    chips instead of their item.
-  - *Research (Research Checks, Steam):* built but not tried in the real game yet. The client reads how far each
-    enemy is researched from the player's research tables, and with research checks on it makes research give a
-    bag of chips instead of its tonics.
+    it opens the menu. Nothing in the game's folder is changed. Tried in the real game at Neptune's Bounty; the
+    other levels' Gardens are read from the same map files but have not been tried there yet.
+  - *World items and safes (World Item Checks and Safe Checks, Steam):* work in the real game. The client watches
+    the plasmid and tonic pickups lying in the level you are in, the wall safes (open ones stay open in a save) and
+    the weapons you hold. With the pickups shuffled it makes them give a bag of chips instead of their item;
+    Electro Bolt and Incinerate! still give themselves, because the story needs them, and Telekinesis arrives from
+    the multiworld.
+  - *Research (Research Checks, Steam):* works in the real game. The client reads how far each enemy is researched
+    from the player's research tables, and with research checks on it makes research give a bag of chips instead
+    of its tonics.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.
@@ -131,7 +135,7 @@ Type `/simulate` in the client. It now behaves as if BioShock were running, and 
 - `/sim story` does the next story objective in the level you are in
 - `/sim sister` and `/sim station` do the next one of those in the level you are in
 - `/sim buy 3` buys line 3 of the Gatherer's Garden in the level you are in
-- `/sim take telekinesis` or `/sim take safe 1` takes a pickup or weapon, or opens a safe or lockbox, of the level
+- `/sim take telekinesis` or `/sim take safe 1` takes a pickup or weapon, or opens a safe, of the level
   you are in (World Item Checks and Safe Checks)
 - `/sim photo thuggish` researches an enemy one level further (Research Checks)
 - `/sim diary 42` picks up an audio diary (1 to 122, in story order)
@@ -150,7 +154,7 @@ game would not get those items afterwards without `/resync`.
 
 - **Held checks.** With Level Access on, a level's checks are only sent once you have its access item. The client
   remembers what you found and sends it the moment the item arrives. `/bioshock` lists what is waiting.
-- **Open Rapture** (Level Access: `open_rapture`, not playable yet). Keep the client connected whenever you ride a
+- **Open Rapture** (Level Access: `open_rapture`, experimental). Keep the client connected whenever you ride a
   bathysphere: the client tells the game which stops to offer, and without it the menu only shows what the story has
   opened so far. Leaving Medical Pavilion, pull the bathysphere switch there and pick any chapter you hold the access
   item for. A chapter item that arrives while you are in a level shows up the next time you pull a bathysphere switch,
@@ -181,3 +185,12 @@ game would not get those items afterwards without `/resync`.
   If the client crashes or is killed in the instant between giving an item and recording it, that one item is given
   again next time. Progress made while the client is disconnected from Archipelago is only kept while it stays open.
 - **One client per slot.** Two BioShock clients on the same slot would both give you every item.
+
+## Known issues
+
+- **Open Rapture: the first bathysphere menu in a level can show the vanilla list.** Close the menu and pull the
+  switch again; from then on it shows the stops the seed allows.
+- **The dollars counter does not flash** when the Pickpocket trap takes your money. The amount is right.
+- **Untried in the real game:** the Gatherer's Gardens after Neptune's Bounty, sending the goal when Fontaine is
+  defeated, and a whole seed played start to finish.
+- **Steam only.** The GOG and Epic versions are not supported.
