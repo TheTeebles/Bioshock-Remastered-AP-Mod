@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.8';
+const AGENT_VERSION = '2026-10-19.9';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1506,12 +1506,17 @@ const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick at most
 // 7 (Teebs, 2026-10-19). A pass over the table then takes a second or two instead of a few frames.
 const OBJECT_SCAN_BUDGET_MS = 2;
 const OBJECT_SCAN_BATCH = 200; // objects between looks at the clock
+// After a whole pass the scan rests, unless a level or save loads. Even capped, scanning without a break was the
+// agent's biggest cost in game (Teebs, 2026-10-19: 66 of 116 ms a second). What it finds mostly comes with the level;
+// diaries are read from the player's journal, and quest flags, stations and Gardens are still read every 500 ms.
+const OBJECT_SCAN_REST_MS = 1500;
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = {
   next: 0, quests: [], stations: [], weapons: [], gardens: [], placeholder: null, classes: new Map(), map: null,
   bathyspheres: [], changes: [], pickups: [], containers: [],
   level: null, unsure: false, // the level object a pass started in, and whether a load came during the pass
+  restUntil: 0,
 };
 const stations = { list: [], counters: new Map(), used: new Map() }; // used: map -> stations used there
 const logClassesSeen = new Set(); // classes of diaries and radio messages received while the agent was watching
@@ -1570,6 +1575,7 @@ function watchObjects(map, now, level) {
   if (map !== scan.map) {
     noteTravel(scan.map, map);
     scan.map = map; // a new map, or a save loaded: start the pass again
+    scan.restUntil = 0;
     scan.bathyspheres = [];
     scan.changes = [];
     scan.notes = [];
@@ -1627,9 +1633,11 @@ function watchObjects(map, now, level) {
       noteBounce(map);
     }
     travel.level = levelKey; // a save loaded, even in the same map: the travel objects are the last level's
+    scan.restUntil = 0;
     forgetTravelObjects();
   }
-  const last = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
+  const resting = scan.next === 0 && now < scan.restUntil;
+  const last = resting ? scan.next : Math.min(count, scan.next + OBJECT_SCAN_SLICE);
   const started = Date.now();
   let end = scan.next;
   for (let i = scan.next; i < last; i++) {
@@ -1674,6 +1682,7 @@ function watchObjects(map, now, level) {
   scan.next = end;
   if (end >= count) { // a pass is complete
     scan.next = 0;
+    scan.restUntil = now + OBJECT_SCAN_REST_MS;
     quests.list = scan.quests;
     scan.quests = [];
     stations.list = scan.stations;
@@ -4217,7 +4226,7 @@ const WATCH_INTERVAL_MS = 33; // 30 times a second; with the object scan's budge
 let lastWatchAt = 0;
 
 // How much of the game thread's time the hook takes, for state() (milliseconds per second, over the last second).
-const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null, parts: {}, lastParts: {} };
+const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null, parts: {}, lastParts: {}, roundThisTick: 0 };
 // A round of watching costs what it costs; the next one waits so that watching takes at most about a tenth of the
 // game's time. In game 2026-10-19 (Teebs, 0.1.49) the hook took 989 ms of each second with rounds every 33 ms.
 const WATCH_SHARE = 0.1;
@@ -4247,15 +4256,22 @@ const clock = (() => {
   }
 })() || (() => Date.now());
 
-function noteLoad(startedAt, now) {
-  load.spent += clock() - startedAt;
+// The hook runs hundreds of times a second, and reading the clock costs about as much as a call that has nothing
+// to do, so only one call in LOAD_SAMPLE is timed for "other"; the watch rounds are timed whenever they run.
+const LOAD_SAMPLE = 8;
+
+function noteLoad(startedAt, now, sampled) {
+  if (sampled) {
+    load.spent += Math.max(clock() - startedAt - load.roundThisTick, 0) * LOAD_SAMPLE;
+  }
+  load.roundThisTick = 0;
   load.ticks += 1;
   if (now - load.from >= 1000) {
-    load.last = load.spent * 1000 / Math.max(now - load.from, 1);
-    load.lastTicks = load.ticks;
     const elapsed = Math.max(now - load.from, 1);
     const timedParts = Object.values(load.parts).reduce((sum, spent) => sum + spent, 0);
-    load.lastParts = Object.fromEntries([...Object.entries(load.parts), ['other', load.spent - timedParts]]
+    load.last = (load.spent + timedParts) * 1000 / elapsed;
+    load.lastTicks = load.ticks;
+    load.lastParts = Object.fromEntries([...Object.entries(load.parts), ['other', load.spent]]
       .map(([part, spent]) => [part, Math.round(Math.max(spent, 0) * 10000 / elapsed) / 10]));
     load.parts = {};
     load.from = now;
@@ -4265,7 +4281,8 @@ function noteLoad(startedAt, now) {
 }
 
 function onLevelTick(level) {
-  const startedAt = clock();
+  const sampled = load.ticks % LOAD_SAMPLE === 0;
+  const startedAt = sampled ? clock() : 0;
   const now = Date.now();
   try {
     if (firstTickAt === 0) {
@@ -4287,6 +4304,7 @@ function onLevelTick(level) {
         timed('player', () => watchPlayer(level, info, seen.map, now));
         timed('stations', () => finishTouchedStation(now));
         watchCost = clock() - roundStarted;
+        load.roundThisTick = watchCost;
       }
     } else if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
       playerPath = 'unavailable';
@@ -4304,7 +4322,7 @@ function onLevelTick(level) {
       log(`problem inside the game-thread hook: ${e.message}`);
     }
   }
-  noteLoad(startedAt, now);
+  noteLoad(startedAt, now, sampled);
 }
 
 const deltaFunction = findDeltaFunction();

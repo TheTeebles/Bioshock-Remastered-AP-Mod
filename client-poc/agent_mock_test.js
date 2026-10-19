@@ -16,6 +16,8 @@ const assert = require('assert');
 const agentPath = process.argv[2] || 'agent.js';
 const source = fs.readFileSync(agentPath, 'utf8');
 
+// Frames (100 ms) for the object scan's rest between passes, so that a change mid-level is seen.
+const REST = 16;
 const BASE = 0x400000;
 const STEAM_SIZE = 23556096;
 const EPIC_SIZE = 23552000;
@@ -1625,10 +1627,19 @@ const tests = {
   'state() lists the diaries received while it watches': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     model.quest('QuarantineKey', true);
-    r.load(); r.frames(3);
+    r.load(); r.frames(3 + REST);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
     model.diary('vo_ducky_fleespang');
+    r.frames(3 + REST);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+  },
+  'the object scan rests between passes': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    r.load(); r.frames(3);
+    model.diary('vo_ducky_fleespang');
     r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]', 'resting');
+    r.frames(REST);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
   },
   'state() lists the diaries in the player\'s journal, received before the agent came too': () => {
@@ -1758,11 +1769,11 @@ const tests = {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     r.load();
     assert.strictEqual(r.context.rpc.exports.state().weaponsPending, true, 'not looked yet');
-    r.frames(2);
+    r.frames(2 + REST);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], [], 'no weapon anywhere: none held');
     assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked');
     model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
-    r.frames(3);
+    r.frames(3 + REST);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
   },
   'after a level change the weapons are looked at again before upgrades go in': () => {
@@ -2146,14 +2157,14 @@ const tests = {
     const enrage = model.itemClass('BerserkRage', 30); model.itemClass('SlowFlow', 20);
     const { lines } = model.garden(4);
     r.poke(lines[3], enrage); r.poke(lines[3] + 0xC, 20); // line 4 sells Enrage at twice its value
-    r.load(); r.frames(2);
+    r.load(); r.frames(2 + REST);
     gardenLines(r, 1, [
       { line: 1, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
       { line: 2, name: 'Speedy Hacker', description: '', price: 80, class: 'SlowFlow', known: false },
       { line: 3, name: 'Clever Inventor', description: '', price: 80, class: 'EfficientCrafter', known: false },
       { line: 4, name: 'Hookshot', description: '', price: 20 },
     ]);
-    r.frames(8);
+    r.frames(8 + REST);
     assert.strictEqual(r.memory.get(lines[0] + 0xC), 150, 'Enrage: 30 x 2 = 60 ADAM, as the Garden sells it here');
     assert.strictEqual(r.memory.get(lines[1] + 0xC), 50, 'Speedy Hacker is not sold here: its value, 20 ADAM');
     assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, 'a class that is not loaded: the client\'s price');
@@ -2167,7 +2178,7 @@ const tests = {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const enrage = model.itemClass('BerserkRage', 30); const thrower = model.itemClass('ChemicalThrower', 0);
     const { lines } = model.garden(4);
-    r.load(); r.frames(2);
+    r.load(); r.frames(2 + REST);
     assert.strictEqual(state(r).exe, 'E:\\Game\\Build\\Final\\BioshockHD.exe', 'for the client to find the menu');
     const redirect = (id, offer) => r.context.rpc.exports.action(id, `redirect_movies ${JSON.stringify(offer)}`);
     redirect(1, { folder: 'C:\\cache\\FlashMovies\\', files: ['craftingStationPC.swf', 'APIcons.swf'] });
@@ -2178,7 +2189,7 @@ const tests = {
       { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
       { line: 3, name: 'Chemical Thrower Range', description: '', price: 80, icon: 'ChemicalThrower' },
       { line: 4, name: 'Pistol Clip Size', description: '', price: 80, icon: 'Pistol' }]);
-    r.frames(8);
+    r.frames(8 + REST);
     const nameOf = (at) => r.memory.get(at + 0x28);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.chips), 'the menu open now is the game\'s own');
     assert.strictEqual(state(r).apIcon, false);
@@ -2188,7 +2199,7 @@ const tests = {
     assert.strictEqual(r.openFile(`${game}PlasmiNow.swf`), `${game}PlasmiNow.swf`, 'other movies are the game\'s');
     assert.strictEqual(r.openFile('E:\\Saves\\craftingStationPC.swf'), 'E:\\Saves\\craftingStationPC.swf');
     assert.strictEqual(state(r).apIcon, true);
-    r.frames(8);
+    r.frames(8 + REST);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.item), 'someone else\'s item: named Item, for the AP icon');
     assert.strictEqual(nameOf(r.memory.get(lines[1])), nameOf(enrage), 'our own item keeps its real icon');
     assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(thrower), 'a weapon upgrade shows its weapon');
@@ -2347,11 +2358,11 @@ const tests = {
     const telekinesis = model.itemClass('Telekinesis', 10);
     const taken = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup0', telekinesis);
     model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', model.itemClass('WrenchJockey', 10));
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere),
       '{"map":"1-medical","names":["ActivePlasmidPickup0","WeaponsPlasmidPickup1"]}');
-    r.poke(taken + 0xCC, 0x2); r.frames(10); // bDeleteMe: the player took it
+    r.poke(taken + 0xCC, 0x2); r.frames(10 + 2 * REST); // bDeleteMe: the player took it
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["ActivePlasmidPickup0"]}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["WeaponsPlasmidPickup1"]}');
     assert.ok(r.logged('ActivePlasmidPickup0 taken in 1-medical'));
@@ -2359,28 +2370,28 @@ const tests = {
   'a pickup the level no longer lists counts as taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const taken = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
-    r.removeActor(game.level, taken); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
+    r.removeActor(game.level, taken); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["PhysicalPlasmidPickup0"]}');
   },
   'loading a save makes new pickups with the same names, which are not taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const medic = model.itemClass('Medic', 10);
     const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + REST);
     r.removeActor(game.level, first); r.poke(first + 0x30, 0); // the save's level has its own copy
-    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10);
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10 + REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },
   'pickups of another level object are not compared with the last one': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const gone = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + REST);
     r.removeActor(game.level, gone);
     r.levels.splice(1, 1); // the level is unloaded, and the same map is made anew (a save loaded)
     const again = r.level('1-medical', { extra: 6, capacity: 1030 }); r.player(again, { viewport: game.player });
-    r.frames(30);
+    r.frames(30 + REST);
     assert.strictEqual(state(r).playerReady, true);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":[]}');
@@ -2388,10 +2399,10 @@ const tests = {
   'a pickup missed by one pass only is not taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const flicker = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
-    r.removeActor(game.level, flicker); r.frames(1);
+    r.load(); r.frames(10 + 2 * REST);
+    r.removeActor(game.level, flicker); r.frames(1 + REST);
     assert.strictEqual(state(r).pickupsHere, null, 'two passes disagree: no list');
-    r.addActor(game.level, flicker); r.frames(10);
+    r.addActor(game.level, flicker); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },
@@ -2399,12 +2410,12 @@ const tests = {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const medic = model.itemClass('Medic', 10);
     const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
     r.memory.set(BASE + 0x1356680, 1); // a save loading
-    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10);
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10 + 2 * REST);
     assert.strictEqual(state(r).pickupsHere, null);
     model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.memory.set(BASE + 0x1356680, 0); r.frames(10);
+    r.memory.set(BASE + 0x1356680, 0); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },
