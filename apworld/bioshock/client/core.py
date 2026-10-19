@@ -171,6 +171,8 @@ class BridgeCore:
         `item_ids` is whatever the server has already sent on this connection; later updates go to `on_items`.
         """
         if identity != self.identity:
+            if self.identity is not None and self.agent_attached:
+                self._warn_of_settings_left_behind(slot_data)
             self._forget_slot()
             self.identity = identity
             # Only for a slot we were not on before: /deathlink then holds for the rest of the session.
@@ -433,6 +435,20 @@ class BridgeCore:
             "goal": self.goal_reached,
             "collected": sorted(self.collected),
         }
+
+    def _warn_of_settings_left_behind(self, slot_data: Mapping[str, Any]) -> None:
+        """A new slot while the game still runs what the last one asked of it. The agent can't take those back
+        (a pickup it emptied stays emptied), so the player is told to restart the game."""
+        left = []
+        if self._touch_command_id is not None and not slot_data.get("station_touch", False):
+            left.append("Power to the People stations open no menu")
+        if self._pickups_command_id is not None and slot_data.get("world_item_checks", 0) != 2:
+            left.append("the plasmids and tonics lying in the levels give chips")
+        if self._research_command_id is not None and not slot_data.get("research_checks", 0):
+            left.append("research gives chips")
+        if left:
+            self._notice("This slot does not want what the last one set up in the game: " + "; ".join(left)
+                         + ". Restart BioShock before playing this slot.", warning=True)
 
     def _forget_slot(self) -> None:
         self.items = []

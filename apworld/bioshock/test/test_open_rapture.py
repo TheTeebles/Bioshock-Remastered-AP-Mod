@@ -127,6 +127,15 @@ class TestOpenRaptureGenerates(PoolTestBase):
             self.generate_for_real(stations_only)
         self.assertIn("open from the start", str(raised.exception))
 
+    def test_a_later_chapter_item_alone_is_no_start(self) -> None:
+        # Stations only and Hephaestus Access to start with: Hephaestus still needs chapters 2 to 4 first.
+        stations_only = {"level_access": "open_rapture", "story_checks": False, "little_sister_checks": False,
+                         "level_completion_checks": False, "audio_diary_checks": "off",
+                         "start_inventory": {"Hephaestus Access": 1}}
+        with self.assertRaises(OptionError) as raised:
+            self.generate_for_real(stations_only)
+        self.assertIn("open from the start", str(raised.exception))
+
 
 class TestOpenRaptureOptionSweep(PoolTestBase):
     """Many seeds over random mixes of the other options: each one either generates and is beatable, or is refused

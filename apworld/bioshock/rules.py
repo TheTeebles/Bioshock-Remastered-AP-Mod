@@ -15,6 +15,20 @@ if TYPE_CHECKING:
     from .world import BioShockWorld
 
 
+def items_to_reach_chapter(world: BioShockWorld, number: int) -> frozenset[str]:
+    """Open Rapture: every item the way into a chapter needs, the chapters before it on the way included (the rules
+    below; chapter 1 needs none)."""
+    access = {chapter.number: chapter.access_item for chapter in CHAPTERS}
+    if number in FREE_CHAPTERS:
+        camera_chapter = 4 if not world.options.start_with_research_camera else None
+        return frozenset({access[number], NEPTUNES_BOUNTY_ACCESS} if number == camera_chapter else {access[number]})
+    if number == 5:
+        return frozenset({access[5], *(access[free] for free in FREE_CHAPTERS)})
+    if number in (6, 7):
+        return items_to_reach_chapter(world, number - 1) | {access[number]}
+    return frozenset()
+
+
 def set_all_rules(world: BioShockWorld) -> None:
     if world_pickups_shuffled(world):  # Telekinesis comes from the multiworld, and the debris needs it
         world.set_rule(world.get_entrance(DEBRIS_ENTRANCE), Has(TELEKINESIS))

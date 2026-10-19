@@ -6,7 +6,10 @@ from worlds.AutoWorld import World
 
 from . import items, locations, regions, rules
 from . import options as bioshock_options
-from .data import GAME_NAME, LEVELS, WORLD_VERSION, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE, LocationData
+from .data import (
+    CHAPTER_OF_LEVEL, GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE,
+    WORLD_VERSION, LocationData,
+)
 from .web_world import BioShockWebWorld
 
 RESEARCH_CAMERA = "Research Camera"
@@ -98,6 +101,10 @@ class BioShockWorld(World):
         if items.world_pickups_shuffled(self) and TELEKINESIS not in start_items:  # the debris before Surgery
             open_checks = [location for location in open_checks if location.name not in PAST_THE_DEBRIS
                            and location.level in (WELCOME_TO_RAPTURE, MEDICAL_PAVILION)]
+        if self.options.level_access == bioshock_options.LevelAccess.option_open_rapture:
+            # A chapter's own item is not enough: chapter 5 needs 2 to 4 first, and so on (rules.py).
+            return [location for location in open_checks if rules.items_to_reach_chapter(
+                self, CHAPTER_OF_LEVEL[location.level].number) <= start_items]
         return [location for location in open_checks
                 if items.access_item_of(self, location.level) in (None, *start_items)]
 

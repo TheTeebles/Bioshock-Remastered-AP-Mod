@@ -1442,3 +1442,26 @@ class TestVersions(unittest.TestCase):
         h.connect().attach()
         h.step(1)
         self.assertTrue(any("made with 0.1.0" in text for text in h.warnings()), h.warnings())
+
+
+class TestSlotChange(unittest.TestCase):
+    def test_settings_the_last_slot_left_in_the_game_are_named(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_item_checks"] = 2
+        h.connect().attach()
+        h.step(4)
+        self.assertIsNotNone(h.game.empty_pickups)
+        h.slot_data["world_item_checks"] = 0
+        h.connect(("another seed", 0, 1))
+        h.step(1)
+        self.assertTrue(any("Restart BioShock" in text and "give chips" in text for text in h.warnings()),
+                        h.warnings())
+
+    def test_the_same_settings_need_no_restart(self) -> None:
+        h = Harness(access_items=False)
+        h.slot_data["world_item_checks"] = 2
+        h.connect().attach()
+        h.step(4)
+        h.connect(("another seed", 0, 1))
+        h.step(1)
+        self.assertFalse(any("Restart BioShock" in text for text in h.warnings()), h.warnings())

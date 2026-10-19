@@ -204,6 +204,13 @@ class TestClient(unittest.TestCase):
         h.step(4)
         self.assertTrue(any("still give themselves" in text for text in h.warnings()), h.warnings())
 
+    def test_sim_take_a_weapon_sends_its_check(self) -> None:
+        h = self.harness()
+        h.step(4)
+        h.game.take_from_world("Medical Pavilion - Weapon: Machine Gun")
+        h.step(4)
+        self.assertIn(loc("Medical Pavilion - Weapon: Machine Gun"), h.sent_checks)
+
     def test_sim_take(self) -> None:
         h = self.harness()
         h.game.travel("Neptune's Bounty")

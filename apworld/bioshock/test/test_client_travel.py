@@ -175,6 +175,17 @@ class TestOpenRaptureClient(unittest.TestCase):
         h.step(2)
         self.assertIn(game_data.LEVEL_COMPLETION_LOCATION["Fort Frolic"], h.sent_checks)
 
+    def test_sim_story_finishes_medical_before_the_ride_out(self) -> None:
+        h = open_rapture().connect().attach()
+        h.game.travel("Medical Pavilion")
+        h.step(3)
+        medical = game_data.LEVEL_COMPLETION_LOCATION["Medical Pavilion"]
+        self.assertNotIn(medical, h.sent_checks)
+        h.game.reach_milestone()  # the debris
+        h.game.reach_milestone()  # Steinman, and his key
+        h.step(2)
+        self.assertIn(medical, h.sent_checks)
+
     def test_visited_levels_survive_a_restart(self) -> None:
         h = open_rapture().connect().attach()
         h.receive(ARCADIA_ACCESS)

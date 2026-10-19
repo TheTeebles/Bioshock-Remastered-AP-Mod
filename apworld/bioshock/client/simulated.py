@@ -16,7 +16,8 @@ from ..data import (
     AUDIO_DIARIES, LEVEL_NAMES, LITTLE_SISTERS_PER_LEVEL, LOCATION_TABLE, POWER_TO_THE_PEOPLE_PER_LEVEL,
     RESEARCH_LEVELS, RESEARCH_SUBJECTS, STORY_MILESTONES, WELCOME_TO_RAPTURE, WORLD_SPOTS, SpotKind,
 )
-from .game_data import MAP_LEVEL, WEAPON_CLASS
+from .game_data import MAP_LEVEL, QUEST_MILESTONES, WEAPON_CLASS
+from .travel import CLOSING_QUESTS
 from .protocol import ActionResult, AgentEvent, CommandResult, GameState, PlayerDied, TravelRedirected
 
 _GIVE_ITEM = re.compile(r"^GiveItem (\d+) ([A-Za-z_][\w.]*)$")
@@ -278,6 +279,7 @@ class SimulatedGame:
             raise ValueError(f"{location_name} is no pickup, weapon or safe.")
         if spot.kind == SpotKind.WEAPON:
             self.held_weapons.add(_WEAPON_CLASS[spot.vanilla])
+            self.reports_weapons = True  # the weapon check comes from the held weapons the agent reports
             return spot.vanilla
         if spot.kind == SpotKind.SAFE:
             self.containers_opened.setdefault(spot.map, set()).add(spot.actor)
@@ -310,6 +312,11 @@ class SimulatedGame:
         for milestone in in_level:
             if milestone.key not in self.milestones:
                 self.milestones.add(milestone.key)
+                # The game completes quests, which is what the client reads: the milestone's own, and once the
+                # level's last milestone is done, the quest that closes its story (Open Rapture's Level Complete).
+                self.quests |= {quest for quest, key in QUEST_MILESTONES.items() if key == milestone.key}
+                if all(other.key in self.milestones for other in in_level):
+                    self.quests |= CLOSING_QUESTS.get(level, frozenset())
                 return milestone.title
         raise ValueError(f"{level} has no more story milestones ({len(in_level)} in total).")
 

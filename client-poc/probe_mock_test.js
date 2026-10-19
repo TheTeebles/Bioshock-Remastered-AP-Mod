@@ -539,10 +539,11 @@ test('pickups() names what a pickup gives through its LootSlot, and pickupItem()
   assert.match(text, /its LootSpec LootItemSpecification LootItemSpecification0 at 0x[0-9a-f]+, every setting:\n.*ItemClass \(LootItemSpecification\) \+0x60 = class Telekinesis/);
   const slot = rt.ptr(rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x40));
   const before = rt.readU32(slot.toUInt32() + 0x60);
+  const damageBefore = rt.readU32(rt.plasmidAt() + 0xB4);
   assert.strictEqual(rt.context.pickupItem(0, 'Quest'), 'Quest is not an item class');
   assert.strictEqual(rt.context.pickupItem(0, 'chips'), 'pick it up: what do you get, and does the game say so?');
   assert.notStrictEqual(rt.readU32(slot.toUInt32() + 0x60), before);
-  assert.strictEqual(rt.readU32(rt.plasmidAt() + 0xB4), rt.readU32(rt.plasmidAt() + 0xB4), 'CollisionDamageClass untouched');
+  assert.strictEqual(rt.readU32(rt.plasmidAt() + 0xB4), damageBefore, 'CollisionDamageClass untouched');
   const stack = rt.readU32(rt.readU32(rt.plasmidAt() + 0xB0) + 0x44);
   assert.strictEqual(rt.readU32(stack + 0x50), rt.readU32(slot.toUInt32() + 0x60), 'the rolled stack too');
   assert.match(rt.logs.join('\n'), /LootItemSpecification LootItemSpecification0\.ItemClass Telekinesis -> chips/);

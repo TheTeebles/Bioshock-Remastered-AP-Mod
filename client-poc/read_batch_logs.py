@@ -55,10 +55,13 @@ def show(lines: list[str], limit: int = 12) -> list[str]:
 def read_client(name: str, lines: list[str]) -> list[str]:
     out = [f"## Client log: {name}", ""]
     sent: list[str] = []
+    unnamed = 0  # the client names at most eight checks per line ("... and N more")
     for line in lines:
         found = SENT.search(line)
         if found:
-            sent += [s for s in found.group(2).split("; ") if not s.startswith("and ")]
+            named = [s for s in found.group(2).split("; ") if not s.startswith("and ")]
+            sent += named
+            unnamed += max(int(found.group(1)) - len(named), 0)
     for part, pattern in CLIENT_PARTS:
         hits = [clean(line) for line in lines if pattern.search(line)]
         trouble = [line for line in hits if TROUBLE.search(line)]
@@ -76,6 +79,9 @@ def read_client(name: str, lines: list[str]) -> list[str]:
         kinds[kind].append(location)
     if not sent:
         out.append("  No 'Sent N check(s)' lines (a client older than apworld 0.1.34, or nothing was sent).")
+    if unnamed:
+        out.append(f"  {unnamed} more were sent without their names in the log, so the counts below may be "
+                   "short by up to that many.")
     for kind in [k for k, _ in CHECK_KINDS] + ["Other"]:
         if kinds[kind]:
             out.append(f"  {kind}: {len(kinds[kind])}")
