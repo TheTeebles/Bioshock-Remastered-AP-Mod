@@ -444,15 +444,19 @@ class BioShockContext(CommonContext):
         """Carry out the core's decisions."""
         for action in actions:
             if isinstance(action, Notice):
-                (logger.warning if action.warning else logger.info)(action.text)
+                if action.detail:
+                    logger.info(action.text, extra={"skip_gui": True})  # CommonClient's window leaves these out
+                else:
+                    (logger.warning if action.warning else logger.info)(action.text)
             elif isinstance(action, SendChecks):
                 # Deliberately not recorded in `locations_checked` (nor the goal in `finished_game`): CommonClient
                 # replays those on every login, including a login to a different seed. The core re-sends what a
                 # reconnect needs by itself.
                 names = [game_data.LOCATION_NAME.get(location, str(location)) for location in action.locations]
-                # One line per batch, for reading a test back from the log (builds/read_batch_logs.py).
+                # One line per batch, for reading a test back from the log (builds/read_batch_logs.py). The server
+                # already tells the window what each check held.
                 logger.info(f"Sent {len(names)} check(s): " + "; ".join(names[:8]) +
-                            (f"; and {len(names) - 8} more" if len(names) > 8 else ""))
+                            (f"; and {len(names) - 8} more" if len(names) > 8 else ""), extra={"skip_gui": True})
                 await self.check_locations(action.locations)
             elif isinstance(action, ScoutLocations):
                 await self.send_msgs([{"cmd": "LocationScouts", "locations": list(action.locations),

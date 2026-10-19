@@ -78,6 +78,7 @@ class PlayerDied:
 @dataclass(frozen=True)
 class AgentMessage:
     text: str
+    detail: bool = False  # routine: for the log file, not the client's window
 
 
 @dataclass(frozen=True)
@@ -188,6 +189,7 @@ class ShowOnMap:
 class Notice:
     text: str
     warning: bool = False
+    detail: bool = False  # routine: for the log file, not the client's window
 
 
 Action = (SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice

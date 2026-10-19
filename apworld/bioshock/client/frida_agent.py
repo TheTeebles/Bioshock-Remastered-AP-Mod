@@ -37,6 +37,7 @@ from .protocol import (
 PROCESS_NAME = "BioshockHD.exe"
 PYTHON_VARIABLE = "BIOSHOCK_AP_PYTHON"  # environment variable naming the Python to use
 SCRIPT_ERROR = "Agent script error: "
+DETAIL = "[bioshock-ap:detail] "  # the agent's routine lines: kept in the log file, left out of the client's window
 
 HELLO_SECONDS = 20.0  # for a Python to start and load Frida; slow the first time after the PC starts
 ATTACH_SECONDS = 30.0  # for Frida to get into the game and the agent to answer
@@ -193,6 +194,12 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
     if kind == "exec_disabled":
         return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
     return None
+
+
+def message_from_log(text: str) -> AgentMessage:
+    if text.startswith(DETAIL):
+        return AgentMessage("[bioshock-ap] " + text[len(DETAIL):], detail=True)
+    return AgentMessage(text)
 
 
 def answer_from_message(message: dict[str, Any]) -> AgentMessage | None:
@@ -650,7 +657,7 @@ class FridaAgent:
                 self.description = f"BioShock Remastered ({state.get('build', 'unknown build')})"
                 self.game_path = state.get("exe") if isinstance(state.get("exe"), str) else None
                 self._phase = _ATTACHED
-                self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}."))
+                self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}.", detail=True))
         elif event == "state":
             raw = message.get("state")
             if self._phase == _ATTACHED and isinstance(raw, dict):
@@ -687,7 +694,7 @@ class FridaAgent:
             if answer is not None:
                 self._events.append(answer)
         elif event == "log":
-            self._events.append(AgentMessage(text))  # what the agent prints is shown to the player
+            self._events.append(message_from_log(text))  # what the agent prints is shown to the player
         elif event == "detached":
             if self._phase == _ATTACHED and self._gone is None:
                 self._tell_raised(gone=True)

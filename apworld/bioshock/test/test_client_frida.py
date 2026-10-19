@@ -408,9 +408,11 @@ class TestFridaAgent(FridaAgentTestBase):
                          "the agent that ships with the apworld is what goes into the game")
 
         self.assertEqual(self.events(agent, 2), [
-            AgentMessage(f"Using Frida 17.0.0-fake from {agent.python}."),
+            AgentMessage(f"Using Frida 17.0.0-fake from {agent.python}.", detail=True),
             AgentMessage("[bioshock-ap] build: Steam 1.0.127355"),
-        ], "which Frida is in use, and what the agent prints, are shown to the player")
+        ], "what the agent prints is shown to the player; which Frida is in use goes to the log file only")
+        self.assertEqual(frida_agent.message_from_log("[bioshock-ap:detail] found the local player"),
+                         AgentMessage("[bioshock-ap] found the local player", detail=True), "the agent's routine lines")
         self.assertEqual(agent.read_state(), GAME_IN_MEDICAL)
 
         agent.run_command(5, "GiveItem 1 ShockGame.HealthUpgrade")

@@ -146,8 +146,8 @@ class BridgeCore:
         actions, self._out = self._out, []
         return actions
 
-    def _notice(self, text: str, warning: bool = False) -> None:
-        self._out.append(Notice(text, warning))
+    def _notice(self, text: str, warning: bool = False, detail: bool = False) -> None:
+        self._out.append(Notice(text, warning, detail))
 
     @property
     def busy(self) -> bool:
@@ -353,7 +353,7 @@ class BridgeCore:
         elif isinstance(event, PlayerDied):
             self._on_player_died(now)
         elif isinstance(event, AgentMessage):
-            self._notice(event.text)
+            self._notice(event.text, detail=event.detail)
         elif isinstance(event, LittleSisterResolved):
             self._on_little_sister(event.map)
 

@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.1';
+const AGENT_VERSION = '2026-10-19.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -175,10 +175,15 @@ function log(message) {
   console.log(`[bioshock-ap] ${message}`);
 }
 
+// Routine lines (what the agent found, what it changed): the client keeps them in its log file but out of its window.
+function detail(message) {
+  console.log(`[bioshock-ap:detail] ${message}`);
+}
+
 // An unknown build still gets the Steam command addresses: the vtable check decides whether they are usable.
 const build = BUILDS[mod.size] || { name: `unknown (module size ${mod.size})`, exec: STEAM_EXEC };
 const execInfo = build.exec;
-log(`agent ${AGENT_VERSION}, build: ${build.name}`);
+detail(`agent ${AGENT_VERSION}, build: ${build.name}`);
 
 // ---------------------------------------------------------------------------------------------------------------
 // Reading memory
@@ -446,7 +451,7 @@ function lookForPlayer(level, now) {
   if (direct !== null) {
     viewport = direct;
     playerPath = 'ready';
-    log(`found the local player through the engine: player ${direct}. Commands go to the player first.`);
+    detail(`found the local player through the engine: player ${direct}. Commands go to the player first.`);
     return;
   }
   if (playerPath === 'unknown' && now - firstTickAt > SEARCH_PATIENCE_MS) {
@@ -469,7 +474,7 @@ function lookForPlayer(level, now) {
     if (isPlayerOf(player, controller)) {
       viewport = player;
       playerPath = 'ready';
-      log(`found the local player among the actors: controller ${controller}, player ${player}. ` +
+      detail(`found the local player among the actors: controller ${controller}, player ${player}. ` +
         'Commands go to the player first.');
       return;
     }
@@ -1397,7 +1402,7 @@ function sisterFlagOf(cls) {
       sisterTrouble = `could not find ${SISTER_FLAG} in ${nameOfObject(cls)}`;
       log(`Little Sisters cannot be watched: ${sisterTrouble}`);
     } else {
-      log(`watching Little Sisters of class ${nameOfObject(cls)}: ${SISTER_FLAG} at +0x${flag.offset.toString(16)}, ` +
+      detail(`watching Little Sisters of class ${nameOfObject(cls)}: ${SISTER_FLAG} at +0x${flag.offset.toString(16)}, ` +
         `bit 0x${flag.mask.toString(16)}`);
     }
   }
@@ -1443,7 +1448,7 @@ function watchSisters(level, map, now) {
     if (resolved && !sister.resolved) {
       const count = (sistersResolved.get(map) || 0) + 1;
       sistersResolved.set(map, count);
-      log(`a Little Sister was rescued or harvested in ${map} (${count} seen there by this agent)`);
+      detail(`a Little Sister was rescued or harvested in ${map} (${count} seen there by this agent)`);
       send({ type: 'little_sister', map });
     }
     sister.resolved = resolved;
@@ -1657,7 +1662,7 @@ function watchObjects(map, now, level) {
         quests.trouble = 'could not find where a quest keeps Completed';
         log(`quests cannot be watched: ${quests.trouble}`);
       } else {
-        log(`watching ${quests.list.length} quests: Completed at +0x${quests.flag.offset.toString(16)}, ` +
+        detail(`watching ${quests.list.length} quests: Completed at +0x${quests.flag.offset.toString(16)}, ` +
           `bit 0x${quests.flag.mask.toString(16)}`);
       }
     }
@@ -1709,8 +1714,11 @@ function stationCounterOf(cls) {
   const key = cls.toString();
   if (!stations.counters.has(key)) {
     const counter = findIntProperty(cls, 'NumTimesUsed');
-    log(counter === null ? `stations of class ${nameOfObject(cls)} cannot be watched: no NumTimesUsed` :
-      `watching stations of class ${nameOfObject(cls)}: NumTimesUsed at +0x${counter.offset.toString(16)}`);
+    if (counter === null) {
+      log(`stations of class ${nameOfObject(cls)} cannot be watched: no NumTimesUsed`);
+    } else {
+      detail(`watching stations of class ${nameOfObject(cls)}: NumTimesUsed at +0x${counter.offset.toString(16)}`);
+    }
     stations.counters.set(key, counter);
   }
   return stations.counters.get(key);
@@ -1731,7 +1739,7 @@ function readStations(map) {
   }
   if (used > (stations.used.get(map) || 0)) {
     stations.used.set(map, used);
-    log(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
+    detail(`${used} Power to the People station${used === 1 ? '' : 's'} used in ${map}`);
   }
 }
 
@@ -1774,7 +1782,7 @@ const world = {
 function worldTrouble(text) {
   if (world.trouble === null) {
     world.trouble = text;
-    log(`world items: ${text}`);
+    detail(`world items: ${text}`);
   }
 }
 
@@ -1792,7 +1800,7 @@ function flagOf(cache, cls, wanted) {
     }
     if (flag === null) {
       const text = `objects of class ${nameOfObject(cls)} have no ${names.join(' or ')}`;
-      log(`world items: ${text}; their flags: ${boolNamesOf(cls).join(', ') || 'none'}`); // once per class
+      detail(`world items: ${text}; their flags: ${boolNamesOf(cls).join(', ') || 'none'}`); // once per class
       if (world.trouble === null) {
         world.trouble = text;
       }
@@ -1888,7 +1896,7 @@ function noteWorldThings(map, level, pickups, containers, unsure) {
       if (!world.missing.has(name)) {
         missing.add(name); // the next pass decides
       } else if (addTo(world.taken, map, name)) {
-        log(`${name} taken in ${map}`);
+        detail(`${name} taken in ${map}`);
       }
     }
     world.missing = missing;
@@ -1914,7 +1922,7 @@ function readWorldThings(map, level) {
     const name = actorNameOf(container);
     if (name !== null && flagSet(container, flagOf(world.openFlags, cls, OPEN_FLAGS)) &&
       addTo(world.opened, map, name)) {
-      log(`${name} open in ${map}`);
+      detail(`${name} open in ${map}`);
     }
   }
   emptyPickups(map, level);
@@ -2006,7 +2014,7 @@ function emptyPickups(map, level) {
     }
     if (!world.emptied.has(name)) {
       world.emptied.add(name);
-      log(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(slots[0].value)}`);
+      detail(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(slots[0].value)}`);
     }
   }
 }
@@ -2073,7 +2081,7 @@ function researchLayout(pawn) {
     return null;
   }
   research.layout = { tracks: tracks.offset, track, levels: levels.offset, level };
-  log(`research: ResearchTracks at +0x${tracks.offset.toString(16)} (${track.size} bytes each), ResearchLevels at ` +
+  detail(`research: ResearchTracks at +0x${tracks.offset.toString(16)} (${track.size} bytes each), ResearchLevels at ` +
     `+0x${levels.offset.toString(16)} (${level.size} bytes each)`);
   return research.layout;
 }
@@ -2111,8 +2119,8 @@ function readResearch(pawn, now) {
   }));
   if (research.table === null && table.length > 0) {
     research.table = table;
-    log(`research: ${trackRows.length} subjects, ${table.length} levels`);
-    table.forEach((entry) => log(`research level: ${entry.name} ${entry.level} at ${entry.score} points` +
+    detail(`research: ${trackRows.length} subjects, ${table.length} levels`);
+    table.forEach((entry) => detail(`research level: ${entry.name} ${entry.level} at ${entry.score} points` +
       (entry.award === null || entry.award === 'None' ? '' : `, gives ${entry.award}`)));
   }
   const levels = {};
@@ -2125,7 +2133,7 @@ function readResearch(pawn, now) {
     levels[name] = table.reduce((best, entry) => (entry.name === name && entry.level !== null &&
       entry.score !== null && score >= entry.score ? Math.max(best, entry.level) : best), 0);
     if (levels[name] > (research.levels[name] || 0)) {
-      log(`research: ${name} at level ${levels[name]}`);
+      detail(`research: ${name} at level ${levels[name]}`);
       if (research.watched) {
         research.holdUntil = Date.now() + RESEARCH_HOLD_MS; // the research screen is about to open
       }
@@ -2143,7 +2151,7 @@ function readResearch(pawn, now) {
         at.writePointer(gardens.placeholder);
         research.emptied++;
         const subject = nameOf(carefulS32(row.add(level.fields.ResearchName)));
-        log(`research: ${subject} level ${carefulS32(row.add(level.fields.LevelNumber))} now gives ` +
+        detail(`research: ${subject} level ${carefulS32(row.add(level.fields.LevelNumber))} now gives ` +
           `${GARDEN_PLACEHOLDER} instead of ${nameOfObject(award)}`);
       }
     }
@@ -2208,7 +2216,7 @@ function readWeapons(pawn) {
   const text = weapons.owned.join(', ');
   if (text !== weapons.reported) {
     weapons.reported = text;
-    log(`weapons held: ${text || 'none'}`);
+    detail(`weapons held: ${text || 'none'}`);
   }
 }
 
@@ -2409,7 +2417,7 @@ function gardenLayout(garden) {
     return null;
   }
   gardens.layout = { table: table.offset, specs: specs.offset, size, ...fields };
-  log(`Garden lines: VendingTable at +0x${table.offset.toString(16)}, its lines at ` +
+  detail(`Garden lines: VendingTable at +0x${table.offset.toString(16)}, its lines at ` +
     `+0x${specs.offset.toString(16)}, ${size} bytes each`);
   return gardens.layout;
 }
@@ -2466,7 +2474,7 @@ function placeholderDefaults(cls) {
   if (gardens.defaults === null) {
     gardens.trouble = `could not find the default values of ${GARDEN_PLACEHOLDER}`;
   } else {
-    log(`stand-ins for Garden lines are copies of ${GARDEN_PLACEHOLDER}: ` +
+    detail(`stand-ins for Garden lines are copies of ${GARDEN_PLACEHOLDER}: ` +
       `default values at class+0x${gardens.defaults.at.toString(16)}`);
   }
   return gardens.defaults;
@@ -2629,7 +2637,7 @@ function setGardenLines(config) {
   }
   gardens.wanted = wanted;
   gardens.config = { map: typeof config.map === 'string' ? config.map : null, lines };
-  log(`Garden lines to sell multiworld items: ${lines.size}${config.level ? ` in ${config.level}` : ''}`);
+  detail(`Garden lines to sell multiworld items: ${lines.size}${config.level ? ` in ${config.level}` : ''}`);
   return gardens.trouble;
 }
 
@@ -2658,7 +2666,7 @@ function readGardens(map) {
       const amount = carefulS32(line.add(layout.AmountPurchased));
       if (amount !== null && amount > 0 && !bought.has(n + 1)) {
         bought.add(n + 1);
-        log(`Gatherer's Garden line ${n + 1} bought in ${map}`);
+        detail(`Gatherer's Garden line ${n + 1} bought in ${map}`);
       }
     });
   }
@@ -2752,14 +2760,14 @@ function redirectMovies(config) {
         }
         args[0] = wide;
         if (!movies.served.has(name)) {
-          log(`the game opens ${ours} for ${path}`);
+          detail(`the game opens ${ours} for ${path}`);
         }
         movies.served.add(name);
       },
     });
   }
   movies.files = files;
-  log(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
+  detail(`Flash movies from ${folder}: ${names.join(', ')}. Lines show the AP icon after a save or level is loaded`);
   return null;
 }
 
@@ -2915,7 +2923,7 @@ function travelLayout() {
     }
   }
   travel.layout = layout;
-  log(`Open Rapture: Destinations at +0x${destinations.offset.toString(16)} (${entry.size} bytes each), ` +
+  detail(`Open Rapture: Destinations at +0x${destinations.offset.toString(16)} (${entry.size} bytes each), ` +
     `UnlockedDestinations at +0x${unlocked.offset.toString(16)}` +
     (layout.change === null ? '; no level change seen yet' : `, a level change's MapName at +0x${layout.change.map.toString(16)}`));
   return layout;
@@ -3101,7 +3109,7 @@ function pointLine(destination, entry, line, stop) {
     if (titleAt !== null && line.title !== null) {
       writeString(titleAt, line.title);
     }
-    log(`Open Rapture: the bathysphere line to ${line.map} goes there again`);
+    detail(`Open Rapture: the bathysphere line to ${line.map} goes there again`);
     line.to = null;
     return true;
   }
@@ -3120,10 +3128,10 @@ function pointLine(destination, entry, line, stop) {
     if (undo !== null && writeString(titleAt, stop.title)) {
       line.undoTitle = undo;
     } else {
-      log(`Open Rapture: the bathysphere line to ${want} keeps its title (no room for "${stop.title}")`);
+      detail(`Open Rapture: the bathysphere line to ${want} keeps its title (no room for "${stop.title}")`);
     }
   }
-  log(`Open Rapture: the bathysphere line to ${line.map} now goes to ${want}` + (stop.title ? ` as "${stop.title}"` : ''));
+  detail(`Open Rapture: the bathysphere line to ${line.map} now goes to ${want}` + (stop.title ? ` as "${stop.title}"` : ''));
   return true;
 }
 
@@ -3157,7 +3165,7 @@ function keepBathysphere(manager, layout, rules) {
     if (stop.arrivalIndex >= 0 && carefulS32(labelAt) !== stop.arrivalIndex) {
       labelAt.writeS32(stop.arrivalIndex);
       labelAt.add(4).writeS32(0);
-      log(`Open Rapture: the bathysphere to ${map} now arrives at ${stop.arrival}`);
+      detail(`Open Rapture: the bathysphere to ${map} now arrives at ${stop.arrival}`);
     }
   }
   const unlockedAt = manager.add(layout.unlocked);
@@ -3175,7 +3183,7 @@ function keepBathysphere(manager, layout, rules) {
   }
   if (writeIntArray(unlockedAt, wanted)) {
     travel.offered = wanted;
-    log(`Open Rapture: the bathysphere offers destinations [${wanted.join(', ')}] (was [${current.join(', ')}])`);
+    detail(`Open Rapture: the bathysphere offers destinations [${wanted.join(', ')}] (was [${current.join(', ')}])`);
     return;
   }
   // No room: drop what must go (in place), then have the game add the rest one at a time, in its own memory.
@@ -3191,7 +3199,7 @@ function keepBathysphere(manager, layout, rules) {
   }
   if (unlockByGame(manager, data.add(missing * entry.size), entry)) {
     travel.unlockAsked.add(key);
-    log(`Open Rapture: asked the game to unlock bathysphere destination ${missing}`);
+    detail(`Open Rapture: asked the game to unlock bathysphere destination ${missing}`);
   }
 }
 
@@ -3277,14 +3285,14 @@ function keepLevelChanges(map, layout, rules) {
         saved.now = goal.map;
         travel.originals.set(key, saved);
         travel.armed.push({ ...redirect, used: goal.map });
-        log(`Open Rapture: the way from ${map} to ${target} now leads to ${goal.map} (${goal.arrival})`);
+        detail(`Open Rapture: the way from ${map} to ${target} now leads to ${goal.map} (${goal.arrival})`);
       } else {
         travelTrouble(`could not point the level change to ${target} elsewhere (its strings have no room)`);
       }
     } else if (original !== undefined) { // its chapter has opened since: put it back
       if (pointChange(change, layout, original.map, original.label, original.rows)) {
         travel.originals.delete(key);
-        log(`Open Rapture: the way from ${map} to ${target} is open again`);
+        detail(`Open Rapture: the way from ${map} to ${target} is open again`);
       }
     }
   }
@@ -3301,7 +3309,7 @@ function restoreSaved(change, layout, map, current, rules) {
   }
   if (pointChange(change, layout, restore.mapName, restore.arrival,
     { mapname: restore.mapIndex, startlocationlabel: restore.arrivalIndex })) {
-    log(`Open Rapture: the way from ${map} that a save kept pointed at ${current} leads to ${restore.to} again`);
+    detail(`Open Rapture: the way from ${map} that a save kept pointed at ${current} leads to ${restore.to} again`);
   } else {
     travelTrouble(`could not point the level change a save kept at ${current} back to ${restore.to}`);
   }
@@ -3326,7 +3334,7 @@ function keepTravel(map) {
       }
       if (trouble === null) {
         travel.flagsSet.add(`${flag.name}=${flag.value}`);
-        log(`Open Rapture: story flag ${flag.name} = ${flag.value}`);
+        detail(`Open Rapture: story flag ${flag.name} = ${flag.value}`);
       } else {
         travelTrouble(`could not set story flag ${flag.name}: ${trouble}`);
       }
@@ -3382,7 +3390,7 @@ function setTravelRules(config) {
   const unknown = [...rules.stops.filter((s) => s.arrival && s.arrivalIndex < 0).map((s) => s.arrival),
     ...rules.redirects.filter((r) => r.arrivalIndex < 0).map((r) => r.arrival)];
   if (unknown.length > 0) {
-    log(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are ` +
+    detail(`Open Rapture: the game has no names ${unknown.join(', ')} yet; those arrival points stay as they are ` +
       'until a level that has them is loaded');
   }
   travel.rules = rules;
@@ -3468,7 +3476,7 @@ function setStoryFlag(name, value) {
     if (variable === null || variable.isNull()) {
       return 'the game made no variable';
     }
-    log(`Open Rapture: the game made story flag ${name}`);
+    detail(`Open Rapture: the game made story flag ${name}`);
   }
   const cls = classOfObject(variable);
   const flag = cls === null ? null : findBoolProperty(cls, 'Value');
@@ -3497,7 +3505,7 @@ function resolveNames(rules) {
     if (stop.arrival && stop.arrivalIndex < 0) {
       stop.arrivalIndex = indexOfName(stop.arrival);
       if (stop.arrivalIndex >= 0) {
-        log(`Open Rapture: the game knows ${stop.arrival} now; the bathysphere to ${stop.to || stop.map} arrives there`);
+        detail(`Open Rapture: the game knows ${stop.arrival} now; the bathysphere to ${stop.to || stop.map} arrives there`);
       }
     }
     if (stop.to && stop.toIndex < 0) {
@@ -3557,7 +3565,7 @@ function enableTouch() {
     touch.at = Date.now(); // on the game thread, inside the station's script: finished on the next tick
   }, 'void', ['pointer'], 'thiscall'));
   touch.installed = true;
-  log('Power to the People stations open no menu now: using one sends its check and closes it');
+  detail('Power to the People stations open no menu now: using one sends its check and closes it');
   return null;
 }
 
@@ -3682,7 +3690,7 @@ function watchLife(pawn, map) {
     return;
   }
   if (life.alive && !alive) {
-    log(`the player died in ${map}`);
+    detail(`the player died in ${map}`);
     send({ type: 'player_died', map });
   }
   life.alive = alive;
@@ -3926,7 +3934,7 @@ function springTrap(pawn, trap) {
     try {
       callScript(pawn, remove, parms);
       parms.isNull();
-      log(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
+      detail(`${trap.remove}(${shown(amount)}): ${trap.stat} ${shown(before)} -> ${shown(readStat(at, trap))}`);
       return null;
     } catch (e) {
       // Seen in the game (2026-10-14): both Remove functions stopped on "access violation accessing 0x74". The
@@ -3943,7 +3951,7 @@ function springTrap(pawn, trap) {
   } else {
     at.writeS32(target);
   }
-  log(`${trap.stat} written: ${shown(now)} -> ${shown(readStat(at, trap))} (${why})`);
+  detail(`${trap.stat} written: ${shown(now)} -> ${shown(readStat(at, trap))} (${why})`);
   hud.redraw = true;
   return null;
 }
@@ -3967,7 +3975,7 @@ function nativeCall(pawn, name) {
   let call = null;
   if (entry !== null && entry.toUInt32() >= moduleStart && entry.toUInt32() < moduleEnd) {
     call = { fn, run: new NativeFunction(entry, 'void', ['pointer', 'pointer', 'pointer'], 'thiscall') };
-    log(`${name}'s C++ body is at module+${entry.sub(base)}`);
+    detail(`${name}'s C++ body is at module+${entry.sub(base)}`);
   } else {
     log(`${name} has no C++ body the agent can call`);
   }
@@ -4126,7 +4134,7 @@ if (deltaFunction === null) {
       onLevelTick(this.context.ecx);
     },
   });
-  log(`game-thread hook installed at module+${deltaFunction.sub(base)}`);
+  detail(`game-thread hook installed at module+${deltaFunction.sub(base)}`);
 }
 
 // Read-only startup check (safe off the game thread): is UGameEngine::Exec also slot 0 of the FExec vtable? If so,
@@ -4139,7 +4147,7 @@ if (!disabled) {
     } else {
       const slot0 = self.readPointer().readPointer();
       const matches = slot0.equals(base.add(execInfo.engineExecRva));
-      log(`FExec slot 0 is module+${slot0.sub(base)} ` +
+      detail(`FExec slot 0 is module+${slot0.sub(base)} ` +
         `(${matches ? 'matches' : 'does NOT match'} the fixed Exec address)`);
     }
   } catch (e) {
@@ -4262,4 +4270,4 @@ rpc.exports = {
   },
 };
 
-log('ready. Try state(), probe() or give("GiveItem 10 ShockGame.ADAM")');
+detail('ready. Try state(), probe() or give("GiveItem 10 ShockGame.ADAM")');
