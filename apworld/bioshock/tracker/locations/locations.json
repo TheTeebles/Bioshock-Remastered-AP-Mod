@@ -1,0 +1,5487 @@
+[
+ {
+  "name": "Audio Diary: Hole in Bathroom Wall",
+  "map_locations": [
+   {
+    "map": "Welcome to Rapture: Floor 3",
+    "x": 78,
+    "y": 273
+   },
+   {
+    "map": "Welcome to Rapture",
+    "x": 1653,
+    "y": 313
+   }
+  ],
+  "sections": [
+   {
+    "name": "Welcome to Rapture - Audio Diary: Hole in Bathroom Wall"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: New Year's Eve Alone",
+  "map_locations": [
+   {
+    "map": "Welcome to Rapture: Floor 2",
+    "x": 234,
+    "y": 161
+   },
+   {
+    "map": "Welcome to Rapture",
+    "x": 1135,
+    "y": 201
+   }
+  ],
+  "sections": [
+   {
+    "name": "Welcome to Rapture - Audio Diary: New Year's Eve Alone"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Electro Bolt",
+  "map_locations": [
+   {
+    "map": "Welcome to Rapture: Floor 1",
+    "x": 527,
+    "y": 354
+   },
+   {
+    "map": "Welcome to Rapture",
+    "x": 527,
+    "y": 394
+   }
+  ],
+  "sections": [
+   {
+    "name": "Welcome to Rapture - Pickup: Electro Bolt"
+   }
+  ]
+ },
+ {
+  "name": "Welcome to Rapture: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Welcome to Rapture: Floor 1",
+    "x": 353,
+    "y": 895
+   },
+   {
+    "map": "Welcome to Rapture",
+    "x": 353,
+    "y": 935
+   }
+  ],
+  "sections": [
+   {
+    "name": "Welcome to Rapture - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Freezing Pipes",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 142,
+    "y": 241
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1852,
+    "y": 223
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Freezing Pipes"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Surgery's Picasso",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1175,
+    "y": 558
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 891,
+    "y": 464
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Surgery's Picasso"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Vandalism",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1342,
+    "y": 143
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1018,
+    "y": 148
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Vandalism"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Testing Telekinesis",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 457,
+    "y": 215
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2091,
+    "y": 203
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Testing Telekinesis"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Love for Science",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1324,
+    "y": 333
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1005,
+    "y": 293
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Love for Science"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Gatherer Vulnerability",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1119,
+    "y": 99
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 849,
+    "y": 115
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Gatherer Vulnerability"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Higher Standards",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1470,
+    "y": 375
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1116,
+    "y": 324
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Higher Standards"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Useless Experiments",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 392,
+    "y": 327
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2042,
+    "y": 288
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Useless Experiments"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Released Today",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1786,
+    "y": 379
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1355,
+    "y": 328
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Released Today"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Parasite Expectations",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1445,
+    "y": 392
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1097,
+    "y": 338
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Parasite Expectations"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Enrage Trial",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 312,
+    "y": 32
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1981,
+    "y": 64
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Enrage Trial"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: ADAM's Changes",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 2056,
+    "y": 405
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1560,
+    "y": 347
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: ADAM's Changes"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Plasmids Are the Paint",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 375,
+    "y": 522
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2029,
+    "y": 436
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Plasmids Are the Paint"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Symmetry",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 690,
+    "y": 271
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 523,
+    "y": 246
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Symmetry"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Limits of Imagination",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1364,
+    "y": 523
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1035,
+    "y": 437
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Limits of Imagination"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Aphrodite Walking",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 435,
+    "y": 131
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 330,
+    "y": 139
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Audio Diary: Aphrodite Walking"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Telekinesis",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 406,
+    "y": 220
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2052,
+    "y": 207
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Telekinesis"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 271,
+    "y": 275
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 206,
+    "y": 249
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Incinerate!",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 2",
+    "x": 75,
+    "y": 215
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1641,
+    "y": 203
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Incinerate!"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1377,
+    "y": 665
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1045,
+    "y": 545
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 160,
+    "y": 689
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1866,
+    "y": 563
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Safe 5",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 526,
+    "y": 319
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2143,
+    "y": 282
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 5"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 451,
+    "y": 40
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 342,
+    "y": 70
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Security Expert",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1301,
+    "y": 839
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 987,
+    "y": 677
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Security Expert"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Hacker's Delight",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1043,
+    "y": 725
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 791,
+    "y": 590
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Hacker's Delight"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Wrench Jockey",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 234,
+    "y": 147
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1922,
+    "y": 151
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Wrench Jockey"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Static Discharge",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 519,
+    "y": 214
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 393,
+    "y": 202
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Safe 6",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 455,
+    "y": 43
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2089,
+    "y": 73
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Safe 6"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Speedy Hacker",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 3",
+    "x": 377,
+    "y": 517
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 2030,
+    "y": 432
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Pickup: Speedy Hacker"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Machine Gun",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1905,
+    "y": 383
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1446,
+    "y": 331
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Weapon: Machine Gun"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 1115,
+    "y": 92
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 846,
+    "y": 110
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Medical Pavilion - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Medical Pavilion - Gatherer's Garden: EVE Link"
+   },
+   {
+    "name": "Medical Pavilion - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Medical Pavilion - Gatherer's Garden: EVE Upgrade"
+   }
+  ]
+ },
+ {
+  "name": "Medical Pavilion: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Medical Pavilion: Floor 1",
+    "x": 2010,
+    "y": 675
+   },
+   {
+    "map": "Medical Pavilion",
+    "x": 1525,
+    "y": 552
+   }
+  ],
+  "sections": [
+   {
+    "name": "Medical Pavilion - Story: Clear the Way to Surgery"
+   },
+   {
+    "name": "Medical Pavilion - Story: Defeat Dr. Steinman"
+   },
+   {
+    "name": "Medical Pavilion - Little Sister 1"
+   },
+   {
+    "name": "Medical Pavilion - Little Sister 2"
+   },
+   {
+    "name": "Medical Pavilion - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: ADAM Discovery",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 521,
+    "y": 520
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 437,
+    "y": 476
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: ADAM Discovery"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Meeting Ryan",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 700,
+    "y": 887
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 586,
+    "y": 784
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Meeting Ryan"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Eden Leaking",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 552,
+    "y": 621
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 463,
+    "y": 560
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Eden Leaking"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Finding the Sea Slug",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 615,
+    "y": 409
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 515,
+    "y": 383
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Finding the Sea Slug"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Masha Come Home",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 512,
+    "y": 297
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 429,
+    "y": 289
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Masha Come Home"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Saw Masha Today",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 264,
+    "y": 143
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1066,
+    "y": 160
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Saw Masha Today"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Smugglers",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 492,
+    "y": 768
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 412,
+    "y": 684
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Fontaine's Smugglers"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Have My Badge",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 222,
+    "y": 181
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 717,
+    "y": 1068
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Have My Badge"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Timmy H. Interrogation",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 644,
+    "y": 469
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1861,
+    "y": 433
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Timmy H. Interrogation"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Bathysphere Keys",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 1077,
+    "y": 680
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2223,
+    "y": 610
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Bathysphere Keys"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Putting the Screws On",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 600,
+    "y": 179
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 503,
+    "y": 1066
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Putting the Screws On"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Arresting Fontaine",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 167,
+    "y": 49
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 985,
+    "y": 81
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Arresting Fontaine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Rapture Changing",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 975,
+    "y": 843
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 817,
+    "y": 746
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Rapture Changing"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Working Late Again",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 809,
+    "y": 692
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 678,
+    "y": 620
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Working Late Again"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine Must Go",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 937,
+    "y": 544
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2106,
+    "y": 496
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Fontaine Must Go"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Death Penalty in Rapture",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 431,
+    "y": 874
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 362,
+    "y": 773
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Death Penalty in Rapture"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Watch Fontaine",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 517,
+    "y": 148
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 433,
+    "y": 164
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Watch Fontaine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Smuggling Ring",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 756,
+    "y": 779
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 634,
+    "y": 693
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Audio Diary: Smuggling Ring"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 950,
+    "y": 758
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 796,
+    "y": 675
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Focused Hacker",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 486,
+    "y": 499
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1728,
+    "y": 458
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Focused Hacker"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 29,
+    "y": 271
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 869,
+    "y": 267
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 587,
+    "y": 178
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 492,
+    "y": 1065
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Medical Expert",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 1062,
+    "y": 511
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2211,
+    "y": 468
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Medical Expert"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Shorten Alarms",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 284,
+    "y": 121
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1083,
+    "y": 142
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Shorten Alarms"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 240,
+    "y": 192
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 732,
+    "y": 1077
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Security Bullseye",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 581,
+    "y": 480
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 487,
+    "y": 442
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Pickup: Security Bullseye"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Shotgun",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 538,
+    "y": 478
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 451,
+    "y": 441
+   },
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 185,
+    "y": 233
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1000,
+    "y": 235
+   },
+   {
+    "map": "Neptune's Bounty: Floor 2",
+    "x": 40,
+    "y": 277
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 879,
+    "y": 272
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 1144,
+    "y": 674
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2279,
+    "y": 605
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Shotgun"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Research Camera",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 1",
+    "x": 321,
+    "y": 827
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 269,
+    "y": 733
+   },
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 90,
+    "y": 351
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 607,
+    "y": 1210
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Research Camera"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Pistol",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 459,
+    "y": 104
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 385,
+    "y": 1003
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 885,
+    "y": 478
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2063,
+    "y": 440
+   },
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 513,
+    "y": 311
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1751,
+    "y": 301
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Pistol"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Grenade Launcher",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 520,
+    "y": 440
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1757,
+    "y": 409
+   },
+   {
+    "map": "Neptune's Bounty: Floor 5",
+    "x": 240,
+    "y": 187
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 732,
+    "y": 1072
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Weapon: Grenade Launcher"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 885,
+    "y": 465
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 2063,
+    "y": 429
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Sonic Boom"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Winter Blast"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: EVE Link"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Extra Nutrition"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Neptune's Bounty - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 4",
+    "x": 450,
+    "y": 212
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 377,
+    "y": 1093
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Power to the People 1"
+   }
+  ]
+ },
+ {
+  "name": "Neptune's Bounty: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Neptune's Bounty: Floor 3",
+    "x": 607,
+    "y": 106
+   },
+   {
+    "map": "Neptune's Bounty",
+    "x": 1830,
+    "y": 128
+   }
+  ],
+  "sections": [
+   {
+    "name": "Neptune's Bounty - Story: Photograph the Spider Splicers"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 1"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 2"
+   },
+   {
+    "name": "Neptune's Bounty - Little Sister 3"
+   },
+   {
+    "name": "Neptune's Bounty - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Offered a Deal",
+  "map_locations": [
+   {
+    "map": "Smuggler's Hideout: Floor 1",
+    "x": 474,
+    "y": 96
+   },
+   {
+    "map": "Smuggler's Hideout",
+    "x": 474,
+    "y": 136
+   }
+  ],
+  "sections": [
+   {
+    "name": "Smuggler's Hideout - Audio Diary: Offered a Deal"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Meeting with Fontaine",
+  "map_locations": [
+   {
+    "map": "Smuggler's Hideout: Floor 2",
+    "x": 710,
+    "y": 541
+   },
+   {
+    "map": "Smuggler's Hideout",
+    "x": 1527,
+    "y": 581
+   }
+  ],
+  "sections": [
+   {
+    "name": "Smuggler's Hideout - Audio Diary: Meeting with Fontaine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Kraut Scientist",
+  "map_locations": [
+   {
+    "map": "Smuggler's Hideout: Floor 2",
+    "x": 634,
+    "y": 253
+   },
+   {
+    "map": "Smuggler's Hideout",
+    "x": 1451,
+    "y": 293
+   }
+  ],
+  "sections": [
+   {
+    "name": "Smuggler's Hideout - Audio Diary: Kraut Scientist"
+   }
+  ]
+ },
+ {
+  "name": "Smuggler's Hideout: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Smuggler's Hideout: Floor 2",
+    "x": 540,
+    "y": 809
+   },
+   {
+    "map": "Smuggler's Hideout",
+    "x": 1357,
+    "y": 849
+   }
+  ],
+  "sections": [
+   {
+    "name": "Smuggler's Hideout - Story: Open the Submarine Bay"
+   },
+   {
+    "name": "Smuggler's Hideout - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Seeing Ghosts",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 589,
+    "y": 827
+   },
+   {
+    "map": "Arcadia",
+    "x": 567,
+    "y": 835
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Seeing Ghosts"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: What Won't They Steal?",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 213,
+    "y": 632
+   },
+   {
+    "map": "Arcadia",
+    "x": 688,
+    "y": 1711
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: What Won't They Steal?"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Arcadia and Oxygen",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 672,
+    "y": 302
+   },
+   {
+    "map": "Arcadia",
+    "x": 646,
+    "y": 330
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Arcadia and Oxygen"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Market Is Patient",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 411,
+    "y": 457
+   },
+   {
+    "map": "Arcadia",
+    "x": 396,
+    "y": 480
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: The Market Is Patient"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Early Tests Promising",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 4",
+    "x": 123,
+    "y": 130
+   },
+   {
+    "map": "Arcadia",
+    "x": 118,
+    "y": 1228
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Early Tests Promising"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Big Night Out",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 633,
+    "y": 701
+   },
+   {
+    "map": "Arcadia",
+    "x": 609,
+    "y": 714
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Big Night Out"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Offer a Better Product",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 4",
+    "x": 187,
+    "y": 78
+   },
+   {
+    "map": "Arcadia",
+    "x": 180,
+    "y": 1178
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Offer a Better Product"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Mass Producing ADAM",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 755,
+    "y": 734
+   },
+   {
+    "map": "Arcadia",
+    "x": 726,
+    "y": 746
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Mass Producing ADAM"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Great Chain",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 573,
+    "y": 397
+   },
+   {
+    "map": "Arcadia",
+    "x": 1035,
+    "y": 1484
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: The Great Chain"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Saturnine",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 698,
+    "y": 707
+   },
+   {
+    "map": "Arcadia",
+    "x": 1155,
+    "y": 1784
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: The Saturnine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Heroes and Criminals",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 4",
+    "x": 68,
+    "y": 214
+   },
+   {
+    "map": "Arcadia",
+    "x": 65,
+    "y": 1309
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Heroes and Criminals"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Maternal Instinct",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 987,
+    "y": 479
+   },
+   {
+    "map": "Arcadia",
+    "x": 950,
+    "y": 500
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Maternal Instinct"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Shouldn't Have Come",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 623,
+    "y": 584
+   },
+   {
+    "map": "Arcadia",
+    "x": 1083,
+    "y": 1665
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Shouldn't Have Come"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Teaching an Old Hound",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 167,
+    "y": 626
+   },
+   {
+    "map": "Arcadia",
+    "x": 644,
+    "y": 1705
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Teaching an Old Hound"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Arcadia Closed",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 943,
+    "y": 732
+   },
+   {
+    "map": "Arcadia",
+    "x": 907,
+    "y": 744
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Audio Diary: Arcadia Closed"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 962,
+    "y": 441
+   },
+   {
+    "map": "Arcadia",
+    "x": 925,
+    "y": 464
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Hacking Expert",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 228,
+    "y": 658
+   },
+   {
+    "map": "Arcadia",
+    "x": 703,
+    "y": 1736
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Pickup: Hacking Expert"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 460,
+    "y": 753
+   },
+   {
+    "map": "Arcadia",
+    "x": 442,
+    "y": 764
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 329,
+    "y": 282
+   },
+   {
+    "map": "Arcadia",
+    "x": 317,
+    "y": 311
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Chemical Thrower",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 6",
+    "x": 214,
+    "y": 183
+   },
+   {
+    "map": "Arcadia",
+    "x": 1598,
+    "y": 1279
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Weapon: Chemical Thrower"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 548,
+    "y": 521
+   },
+   {
+    "map": "Arcadia",
+    "x": 527,
+    "y": 542
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Sonic Boom"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Winter Blast"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Electro Bolt 2"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Cyclone Trap"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Medical Expert"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Shorten Alarms"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Wrench Lurker"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: EVE Link"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Extra Nutrition"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Arcadia - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 1",
+    "x": 689,
+    "y": 474
+   },
+   {
+    "map": "Arcadia",
+    "x": 663,
+    "y": 496
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Power to the People 1"
+   }
+  ]
+ },
+ {
+  "name": "Arcadia: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Arcadia: Floor 5",
+    "x": 542,
+    "y": 133
+   },
+   {
+    "map": "Arcadia",
+    "x": 1005,
+    "y": 1231
+   }
+  ],
+  "sections": [
+   {
+    "name": "Arcadia - Story: Bring Langford the Rosa Gallica"
+   },
+   {
+    "name": "Arcadia - Story: Open Langford's Safe"
+   },
+   {
+    "name": "Arcadia - Story: Collect the Chlorophyll Solution"
+   },
+   {
+    "name": "Arcadia - Story: Release the Lazarus Vector"
+   },
+   {
+    "name": "Arcadia - Story: Defend Langford's Lab"
+   },
+   {
+    "name": "Arcadia - Little Sister 1"
+   },
+   {
+    "name": "Arcadia - Little Sister 2"
+   },
+   {
+    "name": "Arcadia - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Bee Enzyme",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 423,
+    "y": 901
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 805,
+    "y": 941
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Bee Enzyme"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Hatred",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 1",
+    "x": 167,
+    "y": 314
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 167,
+    "y": 354
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Hatred"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: First Encounter",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 1",
+    "x": 60,
+    "y": 234
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 60,
+    "y": 274
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: First Encounter"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Pulling Together",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 601,
+    "y": 751
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 983,
+    "y": 791
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Pulling Together"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Functional Children",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 540,
+    "y": 156
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 922,
+    "y": 196
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Functional Children"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Water in Wine",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 538,
+    "y": 508
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 920,
+    "y": 548
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Water in Wine"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Desperate Times",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 781,
+    "y": 475
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 1163,
+    "y": 515
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: Desperate Times"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: ADAM Explained",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 285,
+    "y": 459
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 667,
+    "y": 499
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Audio Diary: ADAM Explained"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 99,
+    "y": 576
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 481,
+    "y": 616
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: EVE Link 2",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 740,
+    "y": 929
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 1122,
+    "y": 969
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Pickup: EVE Link 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Photographer's Eye",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 3",
+    "x": 219,
+    "y": 137
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 1514,
+    "y": 177
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Pickup: Photographer's Eye"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 579,
+    "y": 640
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 961,
+    "y": 680
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 415,
+    "y": 267
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 797,
+    "y": 307
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 658,
+    "y": 522
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 1040,
+    "y": 562
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 306,
+    "y": 504
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 688,
+    "y": 544
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Insect Swarm"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Sonic Boom"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Medical Expert"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Shorten Alarms"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Wrench Lurker"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: EVE Link"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Extra Nutrition"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Farmer's Market - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 3",
+    "x": 310,
+    "y": 374
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 1605,
+    "y": 414
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Power to the People 1"
+   }
+  ]
+ },
+ {
+  "name": "Farmer's Market: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Farmer's Market: Floor 2",
+    "x": 432,
+    "y": 1012
+   },
+   {
+    "map": "Farmer's Market",
+    "x": 814,
+    "y": 1052
+   }
+  ],
+  "sections": [
+   {
+    "name": "Farmer's Market - Story: Collect the Distilled Water"
+   },
+   {
+    "name": "Farmer's Market - Story: Collect the Enzyme Samples"
+   },
+   {
+    "name": "Farmer's Market - Little Sister 1"
+   },
+   {
+    "name": "Farmer's Market - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Ryan's Stableboy",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 2",
+    "x": 375,
+    "y": 189
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1544,
+    "y": 195
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Ryan's Stableboy"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Musical Insult",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 3",
+    "x": 155,
+    "y": 87
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 2117,
+    "y": 112
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Musical Insult"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Iceman Cometh",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 874,
+    "y": 159
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 718,
+    "y": 171
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: The Iceman Cometh"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Bump Culpepper?",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 2",
+    "x": 337,
+    "y": 352
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1512,
+    "y": 329
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Bump Culpepper?"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Stood Up Again",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 503,
+    "y": 238
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 413,
+    "y": 235
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Stood Up Again"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Pregnancy",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1430,
+    "y": 684
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1175,
+    "y": 602
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Pregnancy"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Guns Blazing",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1196,
+    "y": 491
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 982,
+    "y": 443
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Guns Blazing"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Army",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1192,
+    "y": 390
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 979,
+    "y": 360
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Fontaine's Army"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Doubters",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 489,
+    "y": 370
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 402,
+    "y": 344
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: The Doubters"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fancy Cigarettes",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 195,
+    "y": 736
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 160,
+    "y": 1394
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Fancy Cigarettes"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Come to the Record Store",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 477,
+    "y": 620
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 392,
+    "y": 1299
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Come to the Record Store"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: It's All Grift",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1330,
+    "y": 496
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1092,
+    "y": 448
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: It's All Grift"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Wild Bunny",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 294,
+    "y": 602
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 241,
+    "y": 1284
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: The Wild Bunny"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Artists' Feud",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 384,
+    "y": 725
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 316,
+    "y": 1385
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Artists' Feud"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Requiem for Andrew Ryan",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 3",
+    "x": 56,
+    "y": 131
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 2036,
+    "y": 148
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Audio Diary: Requiem for Andrew Ryan"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 994,
+    "y": 630
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 816,
+    "y": 557
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Safe 6",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 512,
+    "y": 320
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 421,
+    "y": 303
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 6"
+   }
+  ]
+ },
+ {
+  "name": "Safe 7",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 530,
+    "y": 320
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 436,
+    "y": 303
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 7"
+   }
+  ]
+ },
+ {
+  "name": "Safe 8",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 549,
+    "y": 320
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 451,
+    "y": 303
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 8"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 163,
+    "y": 189
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 134,
+    "y": 195
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1190,
+    "y": 375
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 977,
+    "y": 348
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Electric Flesh",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 3",
+    "x": 44,
+    "y": 140
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 2026,
+    "y": 155
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Pickup: Electric Flesh"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Extra Nutrition 2",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 5",
+    "x": 30,
+    "y": 267
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 827,
+    "y": 1009
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Pickup: Extra Nutrition 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Medical Expert 2",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 404,
+    "y": 418
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 332,
+    "y": 1133
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Pickup: Medical Expert 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 1396,
+    "y": 688
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1146,
+    "y": 605
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Safe 9",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 2",
+    "x": 389,
+    "y": 228
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 1556,
+    "y": 227
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 9"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Alarm Expert",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 99,
+    "y": 368
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 81,
+    "y": 342
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Pickup: Alarm Expert"
+   }
+  ]
+ },
+ {
+  "name": "Safe 5",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 398,
+    "y": 737
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 327,
+    "y": 1395
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 5"
+   }
+  ]
+ },
+ {
+  "name": "Safe 10",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 328,
+    "y": 625
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 270,
+    "y": 1303
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Safe 10"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 543,
+    "y": 28
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 446,
+    "y": 63
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Insect Swarm 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Sonic Boom 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Winter Blast 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Electro Bolt 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Cyclone Trap"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Incinerate! 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Hacking Expert 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Security Evasion"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Photographer's Eye"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Medical Expert"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Shorten Alarms"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Wrench Lurker"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: EVE Link 2"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Extra Nutrition"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Fort Frolic - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 1",
+    "x": 990,
+    "y": 653
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 813,
+    "y": 577
+   },
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 198,
+    "y": 769
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 163,
+    "y": 1421
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Power to the People 1"
+   },
+   {
+    "name": "Fort Frolic - Power to the People 2"
+   }
+  ]
+ },
+ {
+  "name": "Fort Frolic: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Fort Frolic: Floor 4",
+    "x": 808,
+    "y": 134
+   },
+   {
+    "map": "Fort Frolic",
+    "x": 664,
+    "y": 900
+   }
+  ],
+  "sections": [
+   {
+    "name": "Fort Frolic - Story: Photograph Kyle Fitzpatrick"
+   },
+   {
+    "name": "Fort Frolic - Story: Photograph Martin Finnegan"
+   },
+   {
+    "name": "Fort Frolic - Story: Photograph Silas Cobb"
+   },
+   {
+    "name": "Fort Frolic - Story: Photograph Hector Rodriguez"
+   },
+   {
+    "name": "Fort Frolic - Story: Complete Cohen's Masterpiece"
+   },
+   {
+    "name": "Fort Frolic - Little Sister 1"
+   },
+   {
+    "name": "Fort Frolic - Little Sister 2"
+   },
+   {
+    "name": "Fort Frolic - Little Sister 3"
+   },
+   {
+    "name": "Fort Frolic - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Getting a Break",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 4",
+    "x": 145,
+    "y": 259
+   },
+   {
+    "map": "Hephaestus",
+    "x": 105,
+    "y": 1028
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Getting a Break"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Assembling the Bomb",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 305,
+    "y": 277
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1185,
+    "y": 239
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Assembling the Bomb"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Kyburz Door Code",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 398,
+    "y": 1024
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1761,
+    "y": 776
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Kyburz Door Code"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Genetic Arms Race",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 4",
+    "x": 393,
+    "y": 199
+   },
+   {
+    "map": "Hephaestus",
+    "x": 282,
+    "y": 985
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Genetic Arms Race"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Scoping the Gate",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 1",
+    "x": 1056,
+    "y": 247
+   },
+   {
+    "map": "Hephaestus",
+    "x": 759,
+    "y": 217
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Scoping the Gate"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Legacy",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 574,
+    "y": 192
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1888,
+    "y": 178
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Fontaine's Legacy"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: A Man or a Parasite",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 1",
+    "x": 1117,
+    "y": 644
+   },
+   {
+    "map": "Hephaestus",
+    "x": 803,
+    "y": 503
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: A Man or a Parasite"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Assassin",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 386,
+    "y": 226
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1752,
+    "y": 203
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Assassin"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Device Almost Finished",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 36,
+    "y": 141
+   },
+   {
+    "map": "Hephaestus",
+    "x": 992,
+    "y": 141
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Device Almost Finished"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Running Short on R-34s",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 552,
+    "y": 188
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1872,
+    "y": 175
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Running Short on R-34s"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Market Maintenance Code",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 48,
+    "y": 47
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1001,
+    "y": 74
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Market Maintenance Code"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Great Chain Moves Slowly",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 257,
+    "y": 95
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1151,
+    "y": 108
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Great Chain Moves Slowly"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Impossible Anywhere Else",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 560,
+    "y": 210
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1877,
+    "y": 191
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Audio Diary: Impossible Anywhere Else"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 1",
+    "x": 1123,
+    "y": 648
+   },
+   {
+    "map": "Hephaestus",
+    "x": 807,
+    "y": 505
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 926,
+    "y": 335
+   },
+   {
+    "map": "Hephaestus",
+    "x": 2141,
+    "y": 281
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 465,
+    "y": 921
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1809,
+    "y": 702
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 538,
+    "y": 300
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1862,
+    "y": 255
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Frozen Field 2",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 1",
+    "x": 1136,
+    "y": 641
+   },
+   {
+    "map": "Hephaestus",
+    "x": 816,
+    "y": 501
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Pickup: Frozen Field 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Shorten Alarms 2",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 305,
+    "y": 172
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1694,
+    "y": 163
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Pickup: Shorten Alarms 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Security Evasion 2",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 4",
+    "x": 138,
+    "y": 260
+   },
+   {
+    "map": "Hephaestus",
+    "x": 99,
+    "y": 1029
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Pickup: Security Evasion 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Damage Research",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 301,
+    "y": 279
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1182,
+    "y": 240
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Pickup: Damage Research"
+   }
+  ]
+ },
+ {
+  "name": "Weapon: Crossbow",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 504,
+    "y": 289
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1837,
+    "y": 247
+   },
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 816,
+    "y": 132
+   },
+   {
+    "map": "Hephaestus",
+    "x": 2062,
+    "y": 135
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Weapon: Crossbow"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 395,
+    "y": 240
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1759,
+    "y": 213
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Winter Blast 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Insect Swarm 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Cyclone Trap 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Sonic Boom 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Electro Bolt 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Electro Bolt 3"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Incinerate! 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Alarm Expert"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Frozen Field"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Electric Flesh"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Hacking Expert 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Security Evasion"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Photographer's Eye"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Vending Expert 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Medical Expert 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Shorten Alarms"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Wrench Lurker 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: EVE Link 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Extra Nutrition 2"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Speedy Hacker"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Hephaestus - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 3",
+    "x": 358,
+    "y": 280
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1732,
+    "y": 241
+   },
+   {
+    "map": "Hephaestus: Floor 2",
+    "x": 250,
+    "y": 49
+   },
+   {
+    "map": "Hephaestus",
+    "x": 1145,
+    "y": 75
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Power to the People 1"
+   },
+   {
+    "name": "Hephaestus - Power to the People 2"
+   }
+  ]
+ },
+ {
+  "name": "Hephaestus: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Hephaestus: Floor 1",
+    "x": 109,
+    "y": 168
+   },
+   {
+    "map": "Hephaestus",
+    "x": 78,
+    "y": 161
+   }
+  ],
+  "sections": [
+   {
+    "name": "Hephaestus - Story: Find the Nitroglycerin"
+   },
+   {
+    "name": "Hephaestus - Story: Assemble the EMP Bomb"
+   },
+   {
+    "name": "Hephaestus - Story: Overload the Core"
+   },
+   {
+    "name": "Hephaestus - Little Sister 1"
+   },
+   {
+    "name": "Hephaestus - Little Sister 2"
+   },
+   {
+    "name": "Hephaestus - Little Sister 3"
+   },
+   {
+    "name": "Hephaestus - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Baby Status",
+  "map_locations": [
+   {
+    "map": "Rapture Central Control: Floor 1",
+    "x": 998,
+    "y": 382
+   },
+   {
+    "map": "Rapture Central Control",
+    "x": 998,
+    "y": 422
+   }
+  ],
+  "sections": [
+   {
+    "name": "Rapture Central Control - Audio Diary: Baby Status"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Mind Control Test",
+  "map_locations": [
+   {
+    "map": "Rapture Central Control: Floor 1",
+    "x": 991,
+    "y": 350
+   },
+   {
+    "map": "Rapture Central Control",
+    "x": 991,
+    "y": 390
+   }
+  ],
+  "sections": [
+   {
+    "name": "Rapture Central Control - Audio Diary: Mind Control Test"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Vita-Chamber",
+  "map_locations": [
+   {
+    "map": "Rapture Central Control: Floor 1",
+    "x": 160,
+    "y": 578
+   },
+   {
+    "map": "Rapture Central Control",
+    "x": 160,
+    "y": 618
+   }
+  ],
+  "sections": [
+   {
+    "name": "Rapture Central Control - Audio Diary: The Vita-Chamber"
+   }
+  ]
+ },
+ {
+  "name": "Rapture Central Control: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Rapture Central Control: Floor 1",
+    "x": 349,
+    "y": 991
+   },
+   {
+    "map": "Rapture Central Control",
+    "x": 349,
+    "y": 1031
+   }
+  ],
+  "sections": [
+   {
+    "name": "Rapture Central Control - Story: Confront Andrew Ryan"
+   },
+   {
+    "name": "Rapture Central Control - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Mind Control Antidote",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 4",
+    "x": 422,
+    "y": 418
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1781,
+    "y": 369
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Mind Control Antidote"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Human Jukebox",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 4",
+    "x": 523,
+    "y": 501
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1861,
+    "y": 434
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Fontaine's Human Jukebox"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Artist Woman",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 4",
+    "x": 646,
+    "y": 177
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1958,
+    "y": 179
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Artist Woman"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Mozart of Genetics",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 2",
+    "x": 180,
+    "y": 610
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 368,
+    "y": 520
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Mozart of Genetics"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Sad Saps",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 3",
+    "x": 294,
+    "y": 136
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1075,
+    "y": 147
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Sad Saps"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Fontaine's Breakup",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 8",
+    "x": 364,
+    "y": 299
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 960,
+    "y": 1149
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Audio Diary: Fontaine's Breakup"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 6",
+    "x": 56,
+    "y": 421
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 149,
+    "y": 1245
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 6",
+    "x": 463,
+    "y": 340
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 469,
+    "y": 1182
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 5",
+    "x": 107,
+    "y": 123
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 84,
+    "y": 1011
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Safe 4",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 2",
+    "x": 204,
+    "y": 1044
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 387,
+    "y": 862
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Safe 4"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Clever Inventor",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 4",
+    "x": 424,
+    "y": 417
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1783,
+    "y": 368
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Pickup: Clever Inventor"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Electric Flesh 2",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 3",
+    "x": 159,
+    "y": 96
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 969,
+    "y": 115
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Pickup: Electric Flesh 2"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 2",
+    "x": 72,
+    "y": 595
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 283,
+    "y": 508
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Winter Blast 3"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Sonic Boom 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Insect Swarm 3"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Electro Bolt 3"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Incinerate! 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Incinerate! 3"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Cyclone Trap 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Damage Research"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Alarm Expert"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Frozen Field 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Electric Flesh"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Hacking Expert 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Security Evasion 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Photographer's Eye"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Vending Expert 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Medical Expert 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Shorten Alarms 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Wrench Lurker 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: EVE Link 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Extra Nutrition 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Machine Buster 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Speedy Hacker 2"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Olympus Heights - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 6",
+    "x": 398,
+    "y": 467
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 418,
+    "y": 1281
+   },
+   {
+    "map": "Olympus Heights: Floor 4",
+    "x": 631,
+    "y": 342
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 1946,
+    "y": 309
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Power to the People 1"
+   },
+   {
+    "name": "Olympus Heights - Power to the People 2"
+   }
+  ]
+ },
+ {
+  "name": "Olympus Heights: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Olympus Heights: Floor 2",
+    "x": 349,
+    "y": 600
+   },
+   {
+    "map": "Olympus Heights",
+    "x": 501,
+    "y": 512
+   }
+  ],
+  "sections": [
+   {
+    "name": "Olympus Heights - Story: Take the First Dose of Lot 192"
+   },
+   {
+    "name": "Olympus Heights - Little Sister 1"
+   },
+   {
+    "name": "Olympus Heights - Little Sister 2"
+   },
+   {
+    "name": "Olympus Heights - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Atlas Lives",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 4",
+    "x": 314,
+    "y": 375
+   },
+   {
+    "map": "Apollo Square",
+    "x": 1892,
+    "y": 376
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Audio Diary: Atlas Lives"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Protection Bond",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 2",
+    "x": 48,
+    "y": 72
+   },
+   {
+    "map": "Apollo Square",
+    "x": 569,
+    "y": 104
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Audio Diary: Protection Bond"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: The Longest Con",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 9",
+    "x": 503,
+    "y": 58
+   },
+   {
+    "map": "Apollo Square",
+    "x": 451,
+    "y": 1448
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Audio Diary: The Longest Con"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: What's Happening Here?",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 4",
+    "x": 192,
+    "y": 64
+   },
+   {
+    "map": "Apollo Square",
+    "x": 1782,
+    "y": 98
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Audio Diary: What's Happening Here?"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Focused Hacker 2",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 9",
+    "x": 505,
+    "y": 60
+   },
+   {
+    "map": "Apollo Square",
+    "x": 453,
+    "y": 1450
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Pickup: Focused Hacker 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Medical Expert 3",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 2",
+    "x": 239,
+    "y": 89
+   },
+   {
+    "map": "Apollo Square",
+    "x": 740,
+    "y": 119
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Pickup: Medical Expert 3"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 9",
+    "x": 516,
+    "y": 32
+   },
+   {
+    "map": "Apollo Square",
+    "x": 462,
+    "y": 1425
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 1",
+    "x": 55,
+    "y": 158
+   },
+   {
+    "map": "Apollo Square",
+    "x": 49,
+    "y": 181
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 4",
+    "x": 309,
+    "y": 365
+   },
+   {
+    "map": "Apollo Square",
+    "x": 1887,
+    "y": 368
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Winter Blast 3"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Sonic Boom 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Insect Swarm 3"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Electro Bolt 3"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Incinerate! 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Incinerate! 3"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Cyclone Trap 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Damage Research"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Alarm Expert"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Frozen Field 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Electric Flesh"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Hacking Expert 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Security Evasion 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Photographer's Eye"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Human Inferno"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Vending Expert 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Medical Expert 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Focused Hacker"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Shorten Alarms 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Wrench Lurker 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: EVE Link 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Extra Nutrition 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Machine Buster 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Speedy Hacker 2"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Apollo Square - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 9",
+    "x": 519,
+    "y": 137
+   },
+   {
+    "map": "Apollo Square",
+    "x": 466,
+    "y": 1519
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Power to the People 1"
+   }
+  ]
+ },
+ {
+  "name": "Apollo Square: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Apollo Square: Floor 5",
+    "x": 64,
+    "y": 299
+   },
+   {
+    "map": "Apollo Square",
+    "x": 58,
+    "y": 1310
+   }
+  ],
+  "sections": [
+   {
+    "name": "Apollo Square - Story: Take the Second Dose of Lot 192"
+   },
+   {
+    "name": "Apollo Square - Little Sister 1"
+   },
+   {
+    "name": "Apollo Square - Little Sister 2"
+   },
+   {
+    "name": "Apollo Square - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Protector Smell",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 2",
+    "x": 114,
+    "y": 283
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1427,
+    "y": 208
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Protector Smell"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Why Just Girls?",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 2052,
+    "y": 575
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1218,
+    "y": 381
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Why Just Girls?"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Mistakes",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 2",
+    "x": 223,
+    "y": 27
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1492,
+    "y": 56
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Mistakes"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Protecting Little Ones",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 2",
+    "x": 258,
+    "y": 251
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1513,
+    "y": 189
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Protecting Little Ones"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Cheap Son of a Bitch",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1675,
+    "y": 1107
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 994,
+    "y": 697
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Cheap Son of a Bitch"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Extra Munitions",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1833,
+    "y": 180
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1088,
+    "y": 147
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Extra Munitions"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Missing Boots",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1346,
+    "y": 916
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 799,
+    "y": 584
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Missing Boots"
+   }
+  ]
+ },
+ {
+  "name": "Audio Diary: Marketing Gold",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1580,
+    "y": 227
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 937,
+    "y": 175
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Audio Diary: Marketing Gold"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Safecracker 2",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 3",
+    "x": 1309,
+    "y": 470
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 2381,
+    "y": 319
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Pickup: Safecracker 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Damage Research 2",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1397,
+    "y": 742
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 829,
+    "y": 480
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Pickup: Damage Research 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1719,
+    "y": 382
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1020,
+    "y": 267
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Safe 2",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1342,
+    "y": 887
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 797,
+    "y": 566
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Safe 2"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Hacker's Delight 3",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 2108,
+    "y": 909
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1251,
+    "y": 579
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Pickup: Hacker's Delight 3"
+   }
+  ]
+ },
+ {
+  "name": "Pickup: Alarm Expert 2",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1993,
+    "y": 415
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1183,
+    "y": 286
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Pickup: Alarm Expert 2"
+   }
+  ]
+ },
+ {
+  "name": "Safe 3",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1496,
+    "y": 167
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 888,
+    "y": 139
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Safe 3"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1775,
+    "y": 739
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1054,
+    "y": 479
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: EVE Upgrade"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Enrage!"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Target Dummy"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Winter Blast 3"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Sonic Boom 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Insect Swarm"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Insect Swarm 3"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Electro Bolt 3"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Cyclone Trap 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Security Bullseye"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Incinerate! 3"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Clever Inventor"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Damage Research"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Alarm Expert"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Frozen Field 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Electric Flesh 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Hacking Expert 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Security Evasion 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Photographer's Eye"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Human Inferno 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: EVE Saver"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Vending Expert"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Vending Expert 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Medical Expert 3"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Focused Hacker 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Shorten Alarms 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Wrench Lurker 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Armored Shell"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: EVE Link 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Extra Nutrition 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Machine Buster"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Machine Buster 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Hacker's Delight"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Security Expert"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Speedy Hacker 2"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Wrench Jockey"
+   },
+   {
+    "name": "Point Prometheus - Gatherer's Garden: Static Discharge"
+   }
+  ]
+ },
+ {
+  "name": "Power to the People",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 3",
+    "x": 607,
+    "y": 522
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1964,
+    "y": 350
+   },
+   {
+    "map": "Point Prometheus: Floor 1",
+    "x": 1532,
+    "y": 221
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 909,
+    "y": 171
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Power to the People 1"
+   },
+   {
+    "name": "Point Prometheus - Power to the People 2"
+   }
+  ]
+ },
+ {
+  "name": "Point Prometheus: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Point Prometheus: Floor 3",
+    "x": 37,
+    "y": 343
+   },
+   {
+    "map": "Point Prometheus",
+    "x": 1626,
+    "y": 243
+   }
+  ],
+  "sections": [
+   {
+    "name": "Point Prometheus - Story: Get the Big Daddy Voice Box"
+   },
+   {
+    "name": "Point Prometheus - Story: Collect the Big Daddy Pheromones"
+   },
+   {
+    "name": "Point Prometheus - Story: Find the Big Daddy Bodysuit"
+   },
+   {
+    "name": "Point Prometheus - Story: Find the Big Daddy Helmet"
+   },
+   {
+    "name": "Point Prometheus - Story: Find the Big Daddy Boots"
+   },
+   {
+    "name": "Point Prometheus - Little Sister 1"
+   },
+   {
+    "name": "Point Prometheus - Little Sister 2"
+   },
+   {
+    "name": "Point Prometheus - Little Sister 3"
+   },
+   {
+    "name": "Point Prometheus - Level Complete"
+   }
+  ]
+ },
+ {
+  "name": "Safe 1",
+  "map_locations": [
+   {
+    "map": "Proving Grounds: Floor 2",
+    "x": 493,
+    "y": 347
+   },
+   {
+    "map": "Proving Grounds",
+    "x": 1551,
+    "y": 264
+   }
+  ],
+  "sections": [
+   {
+    "name": "Proving Grounds - Safe 1"
+   }
+  ]
+ },
+ {
+  "name": "Gatherer's Garden",
+  "map_locations": [
+   {
+    "map": "Proving Grounds: Floor 2",
+    "x": 218,
+    "y": 211
+   },
+   {
+    "map": "Proving Grounds",
+    "x": 1374,
+    "y": 176
+   }
+  ],
+  "sections": [
+   {
+    "name": "Proving Grounds - Gatherer's Garden: Plasmid Slot"
+   },
+   {
+    "name": "Proving Grounds - Gatherer's Garden: Physical Tonic Slot"
+   },
+   {
+    "name": "Proving Grounds - Gatherer's Garden: Engineering Tonic Slot"
+   },
+   {
+    "name": "Proving Grounds - Gatherer's Garden: Combat Tonic Slot"
+   },
+   {
+    "name": "Proving Grounds - Gatherer's Garden: Health Upgrade"
+   },
+   {
+    "name": "Proving Grounds - Gatherer's Garden: EVE Upgrade"
+   }
+  ]
+ },
+ {
+  "name": "Proving Grounds: story, Little Sisters, level complete",
+  "map_locations": [
+   {
+    "map": "Proving Grounds: Floor 2",
+    "x": 130,
+    "y": 210
+   },
+   {
+    "map": "Proving Grounds",
+    "x": 1317,
+    "y": 175
+   }
+  ],
+  "sections": [
+   {
+    "name": "Proving Grounds - Story: Escort the Little Sister"
+   }
+  ]
+ }
+]

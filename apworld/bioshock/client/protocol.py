@@ -40,6 +40,17 @@ class GameState:
     pickups_here: tuple[str, frozenset[str]] | None = None
     containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes open there
     research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
+    position: Position | None = None  # where the player stands, for the map tracker
+    hook_ms: float | None = None  # milliseconds of each second the agent took from the game's own thread
+    hook_parts: tuple[tuple[str, float], ...] = ()  # the same, by what the agent was doing, biggest first
+
+
+@dataclass(frozen=True)
+class Position:
+    region: str | None  # the map screen region of the zone the player is in ("FontaineFreezerHall1"), if any
+    x: int  # world units
+    y: int
+    z: int
 
 
 @dataclass(frozen=True)
@@ -69,6 +80,7 @@ class PlayerDied:
 @dataclass(frozen=True)
 class AgentMessage:
     text: str
+    detail: bool = False  # routine: for the log file, not the client's window
 
 
 @dataclass(frozen=True)
@@ -167,9 +179,20 @@ class SaveState:
 
 
 @dataclass(frozen=True)
+class ShowOnMap:
+    """Tell the map tracker where the player is: the floor (the map screen's LayerName) and the world position."""
+    floor: str
+    x: int
+    y: int
+    floor_changed: bool  # the floor is new since the last one told, so the tracker turns to its page
+
+
+@dataclass(frozen=True)
 class Notice:
     text: str
     warning: bool = False
+    detail: bool = False  # routine: for the log file, not the client's window
 
 
-Action = SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice
+Action = (SendChecks | ScoutLocations | SendGoal | SendDeath | RunCommand | RunAction | KillPlayer | SaveState | Notice
+          | ShowOnMap)

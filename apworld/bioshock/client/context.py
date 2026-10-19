@@ -23,13 +23,14 @@ from MultiServer import mark_raw
 from NetUtils import ClientStatus
 from Utils import async_start, gui_enabled
 
+from .. import map_tracker
 from ..data import GAME_NAME
 from . import flash_movies, frida_agent, game_data
 from .core import BridgeCore
 from .frida_agent import AgentUnusable, FridaAgent
 from .protocol import (
     Action, AgentError, GameAgent, KillPlayer, Notice, RunAction, RunCommand, SaveState, ScoutedItem,
-    ScoutLocations, SendChecks, SendDeath, SendGoal,
+    ScoutLocations, SendChecks, SendDeath, SendGoal, ShowOnMap,
 )
 from .simulated import SimulatedGame, resolve_level
 
@@ -443,15 +444,19 @@ class BioShockContext(CommonContext):
         """Carry out the core's decisions."""
         for action in actions:
             if isinstance(action, Notice):
-                (logger.warning if action.warning else logger.info)(action.text)
+                if action.detail:
+                    logger.info(action.text, extra={"skip_gui": True})  # CommonClient's window leaves these out
+                else:
+                    (logger.warning if action.warning else logger.info)(action.text)
             elif isinstance(action, SendChecks):
                 # Deliberately not recorded in `locations_checked` (nor the goal in `finished_game`): CommonClient
                 # replays those on every login, including a login to a different seed. The core re-sends what a
                 # reconnect needs by itself.
                 names = [game_data.LOCATION_NAME.get(location, str(location)) for location in action.locations]
-                # One line per batch, for reading a test back from the log (builds/read_batch_logs.py).
+                # One line per batch, for reading a test back from the log (builds/read_batch_logs.py). The server
+                # already tells the window what each check held.
                 logger.info(f"Sent {len(names)} check(s): " + "; ".join(names[:8]) +
-                            (f"; and {len(names) - 8} more" if len(names) > 8 else ""))
+                            (f"; and {len(names) - 8} more" if len(names) > 8 else ""), extra={"skip_gui": True})
                 await self.check_locations(action.locations)
             elif isinstance(action, ScoutLocations):
                 await self.send_msgs([{"cmd": "LocationScouts", "locations": list(action.locations),
@@ -466,8 +471,21 @@ class BioShockContext(CommonContext):
                     "cmd": "Set", "key": self.storage_key, "default": {}, "want_reply": False,
                     "operations": [{"operation": "replace", "value": action.data}],
                 }])
+            elif isinstance(action, ShowOnMap):
+                await self.send_msgs(self.map_messages(action))
             else:
                 self._to_agent(action)
+
+    def map_messages(self, action: ShowOnMap) -> list[dict[str, Any]]:
+        """Data storage writes that show the player on Universal Tracker's map tab (map_tracker.py)."""
+        keys = {"team": self.team, "player": self.slot}
+        messages = [{"cmd": "Set", "key": map_tracker.POSITION_KEY.format(**keys), "default": {}, "want_reply": False,
+                     "operations": [{"operation": "replace",
+                                     "value": {"layer": action.floor, "x": action.x, "y": action.y}}]}]
+        if action.floor_changed:
+            messages.append({"cmd": "Set", "key": map_tracker.MAP_KEY.format(**keys), "default": "",
+                             "want_reply": False, "operations": [{"operation": "replace", "value": action.floor}]})
+        return messages
 
     def _to_agent(self, action: Action) -> None:
         agent = self.agent

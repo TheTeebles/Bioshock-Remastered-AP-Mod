@@ -16,6 +16,8 @@ const assert = require('assert');
 const agentPath = process.argv[2] || 'agent.js';
 const source = fs.readFileSync(agentPath, 'utf8');
 
+// Frames (100 ms) for the object scan's rest between passes, so that a change mid-level is seen.
+const REST = 16;
 const BASE = 0x400000;
 const STEAM_SIZE = 23556096;
 const EPIC_SIZE = 23552000;
@@ -74,6 +76,9 @@ class Ptr {
       }
     } else if (plain !== undefined) {
       for (let i = 0; i < plain.length && i < length; i++) { bytes[i] = plain.charCodeAt(i) & 0xFF; }
+    } else { // words, as the fake memory keeps them
+      const words = new Uint32Array(bytes.buffer, 0, length >>> 2);
+      for (let i = 0; i < words.length; i++) { words[i] = this.runtime.memory.get(this.value + 4 * i) || 0; }
     }
     return bytes.buffer;
   }
@@ -724,6 +729,16 @@ function makeRuntime({
         }),
       };
     };
+    // The journal, as ShockPlayer declares it: JournalEntries {LogClass, Played}, 8 bytes each.
+    const journal = (classNames) => {
+      arrayOfStructs(playerClass, 'JournalEntries', 0xB20, 'JournalEntry',
+        [['LogClass', classProperty, 0], ['Played', boolProperty, 4]]);
+      return (pawn) => {
+        const data = runtime.object(Math.max(8, 8 * classNames.length));
+        classNames.forEach((className, i) => { poke(data + 8 * i, cls(className, objectClass)); poke(data + 8 * i + 4, 1); });
+        poke(pawn + 0xB20, data); poke(pawn + 0xB24, classNames.length); poke(pawn + 0xB28, classNames.length);
+      };
+    };
     // Story flags: global_ variables are VariableBool objects with Value at +0x40, made by
     // Script.newGlobalVariable(VariableName, variableType) -> ReturnValue.
     const storyFlags = () => {
@@ -746,7 +761,8 @@ function makeRuntime({
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
     return { nameIndex: name, rename, storyFlags, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research,
+      journal };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1344,6 +1360,7 @@ const tests = {
   },
   'exceptions on other threads and outside commands are none of the agent\'s business': () => {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
+    const readBefore = r.bytesRead.length; // the sister search reads the actor list
     const spec = { args: r.thrown('.PAG', 'elsewhere') };
     assert.strictEqual(r.raise(spec), false, 'before any command');
     r.raises.set('Go', [{ ...spec, thread: 2 }]);
@@ -1354,7 +1371,7 @@ const tests = {
     assert.deepStrictEqual(r.answers, [false, false, false]);
     assert.strictEqual(state(r).exceptionsSeen, 3, 'they are counted all the same');
     assert.strictEqual(state(r).watching, true);
-    assert.strictEqual(r.bytesRead.length, 0, 'and nothing is read to describe them');
+    assert.strictEqual(r.bytesRead.length, readBefore, 'and nothing is read to describe them');
   },
   'nothing is ever taken away from the game': () => {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
@@ -1497,7 +1514,9 @@ const tests = {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
     assert.strictEqual(state(r).engineReady, true);
     r.engine(ENGINE, 0x424242); state(r);
-    assert.match(JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /shutting down/);
+    const told = r.messages.find((m) => m.type === 'exec_disabled');
+    assert.match(JSON.stringify(told), /shutting down/);
+    assert.strictEqual(told.quitting, true);
   },
   'unknown build tries the Steam addresses behind the vtable check': () => {
     const good = makeRuntime({ moduleSize: 12345 }); good.engine(); good.load();
@@ -1531,9 +1550,18 @@ const tests = {
     r.load(); r.frames(3);
     r.removeActor(game.level, sister); r.frames(3);
     const again = r.sister(game.level, model); // out of another vent, as a new object
-    r.frames(3);
+    r.frames(21); // new sisters are looked for every 2 s
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), []);
     r.poke(again + 0x1038, 0x2); r.frames(2);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
+  },
+  'new sisters are looked for every 2 s, and one found late still counts': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.load(); r.frames(3);
+    const sister = r.sister(game.level, model); r.poke(sister + 0x1038, 0x2); // rescued before she is found
+    r.frames(5);
+    assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 0, 'not looked for yet');
+    r.frames(16);
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
   },
   'the actors of levels the player is not in are not looked through': () => {
@@ -1556,7 +1584,7 @@ const tests = {
     r.load(); r.frames(3);
     r.removeActor(game.level, sister); r.poke(sister, 0x1234); r.frames(3); // deleted: its vtable changed
     assert.strictEqual(state(r).sistersWatched, 0);
-    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(3);
+    r.poke(sister, 0); r.poke(sister + 0x1038, 0); r.addActor(game.level, sister); r.frames(21);
     assert.strictEqual(state(r).sistersWatched, 1);
     r.poke(sister + 0x1038, 0x2); r.frames(3);
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
@@ -1603,11 +1631,52 @@ const tests = {
   'state() lists the diaries received while it watches': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     model.quest('QuarantineKey', true);
-    r.load(); r.frames(3);
+    r.load(); r.frames(3 + REST);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
     model.diary('vo_ducky_fleespang');
-    r.frames(3);
+    r.frames(3 + REST);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+  },
+  'the object scan reads its slice of the table in one go': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    const count = r.memory.get(BASE + 0x1390430);
+    r.load(); r.frames(3);
+    assert.ok(r.bytesRead.includes(Math.min(count, 4000) * 4), `sizes read: ${r.bytesRead}`);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey"]');
+  },
+  'a scan cut short by its time limit picks up at the object it had not looked at': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const names = Array.from({ length: 1200 }, (_, i) => `Goal${i}x`); // no number at the end: a name's number is kept apart
+    names.forEach((name) => model.quest(name, true));
+    r.context.Date.now = () => (r.time += 1); // every look at the clock takes a millisecond: slices end early
+    r.load(); r.frames(200);
+    assert.strictEqual(state(r).completedQuests.length, names.length);
+  },
+  'the object scan rests between passes': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    r.load(); r.frames(3);
+    model.diary('vo_ducky_fleespang');
+    r.frames(3);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]', 'resting');
+    r.frames(REST);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+  },
+  'state() lists the diaries in the player\'s journal, received before the agent came too': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    model.journal(['vo_ducky_fleespang', 'Med_At_PickUpRadio'])(game.pawn);
+    r.load(); r.frames(15);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["Med_At_PickUpRadio","vo_ducky_fleespang"]');
+    assert.strictEqual(state(r).journalTrouble, null);
+    assert.ok(r.logged('journal: 2 entries'));
+  },
+  'a player without a journal says so once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(25);
+    assert.ok(state(r).journalTrouble.includes('no JournalEntries'));
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
   },
   'state() counts the Power to the People stations used, by map': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
@@ -1720,11 +1789,11 @@ const tests = {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     r.load();
     assert.strictEqual(r.context.rpc.exports.state().weaponsPending, true, 'not looked yet');
-    r.frames(2);
+    r.frames(2 + REST);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], [], 'no weapon anywhere: none held');
     assert.strictEqual(r.context.rpc.exports.state().weaponsPending, false, 'looked');
     model.weapon('Shotgun', game.pawn); model.weapon('Pistol', 0x7777000); model.weapon('Crossbow', game.pawn);
-    r.frames(3);
+    r.frames(3 + REST);
     assert.deepStrictEqual([...r.context.rpc.exports.state().weaponsHeld], ['Crossbow', 'Shotgun']);
   },
   'after a level change the weapons are looked at again before upgrades go in': () => {
@@ -2009,6 +2078,34 @@ const tests = {
     r.frames(6);
     assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
   },
+  'state() says how much of the game thread the hook takes': () => {
+    const r = makeRuntime(); r.game(); r.load();
+    assert.strictEqual(state(r).hookMsPerSecond, null, 'nothing measured yet');
+    for (let i = 0; i < 12; i++) {
+      r.frame();
+    }
+    const seen = state(r);
+    assert.strictEqual(typeof seen.hookMsPerSecond, 'number');
+    assert.ok(seen.hookCallsPerSecond >= 9, String(seen.hookCallsPerSecond)); // ten frames, once per loaded level
+    assert.ok(['sisters', 'other'].every((part) => typeof seen.hookParts[part] === 'number'),
+      JSON.stringify(seen.hookParts));
+  },
+  'a crossing that led back into its own level is reported when that level comes up again': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected'), [], 'not taken yet');
+    r.levels.splice(1, 1);
+    const again = r.level('2-SubBay', { extra: 6, capacity: 1030 }); r.player(again, { viewport: g.player });
+    r.frames(30);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected').map((m) => [m.from, m.to, m.landed]),
+      [['2-subbay', '3-arcadia', '2-subbay']]);
+  },
   'where the hub does not fit, the crossing borrows script notes\' strings, and gives them back when it opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '2-SubBay');
@@ -2080,14 +2177,14 @@ const tests = {
     const enrage = model.itemClass('BerserkRage', 30); model.itemClass('SlowFlow', 20);
     const { lines } = model.garden(4);
     r.poke(lines[3], enrage); r.poke(lines[3] + 0xC, 20); // line 4 sells Enrage at twice its value
-    r.load(); r.frames(2);
+    r.load(); r.frames(2 + REST);
     gardenLines(r, 1, [
       { line: 1, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
       { line: 2, name: 'Speedy Hacker', description: '', price: 80, class: 'SlowFlow', known: false },
       { line: 3, name: 'Clever Inventor', description: '', price: 80, class: 'EfficientCrafter', known: false },
       { line: 4, name: 'Hookshot', description: '', price: 20 },
     ]);
-    r.frames(8);
+    r.frames(8 + REST);
     assert.strictEqual(r.memory.get(lines[0] + 0xC), 150, 'Enrage: 30 x 2 = 60 ADAM, as the Garden sells it here');
     assert.strictEqual(r.memory.get(lines[1] + 0xC), 50, 'Speedy Hacker is not sold here: its value, 20 ADAM');
     assert.strictEqual(r.memory.get(lines[2] + 0xC), 200, 'a class that is not loaded: the client\'s price');
@@ -2101,7 +2198,7 @@ const tests = {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const enrage = model.itemClass('BerserkRage', 30); const thrower = model.itemClass('ChemicalThrower', 0);
     const { lines } = model.garden(4);
-    r.load(); r.frames(2);
+    r.load(); r.frames(2 + REST);
     assert.strictEqual(state(r).exe, 'E:\\Game\\Build\\Final\\BioshockHD.exe', 'for the client to find the menu');
     const redirect = (id, offer) => r.context.rpc.exports.action(id, `redirect_movies ${JSON.stringify(offer)}`);
     redirect(1, { folder: 'C:\\cache\\FlashMovies\\', files: ['craftingStationPC.swf', 'APIcons.swf'] });
@@ -2112,7 +2209,7 @@ const tests = {
       { line: 2, name: 'Enrage!', description: '', price: 80, class: 'BerserkRage', known: false },
       { line: 3, name: 'Chemical Thrower Range', description: '', price: 80, icon: 'ChemicalThrower' },
       { line: 4, name: 'Pistol Clip Size', description: '', price: 80, icon: 'Pistol' }]);
-    r.frames(8);
+    r.frames(8 + REST);
     const nameOf = (at) => r.memory.get(at + 0x28);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.chips), 'the menu open now is the game\'s own');
     assert.strictEqual(state(r).apIcon, false);
@@ -2122,7 +2219,7 @@ const tests = {
     assert.strictEqual(r.openFile(`${game}PlasmiNow.swf`), `${game}PlasmiNow.swf`, 'other movies are the game\'s');
     assert.strictEqual(r.openFile('E:\\Saves\\craftingStationPC.swf'), 'E:\\Saves\\craftingStationPC.swf');
     assert.strictEqual(state(r).apIcon, true);
-    r.frames(8);
+    r.frames(8 + REST);
     assert.strictEqual(nameOf(r.memory.get(lines[0])), nameOf(model.item), 'someone else\'s item: named Item, for the AP icon');
     assert.strictEqual(nameOf(r.memory.get(lines[1])), nameOf(enrage), 'our own item keeps its real icon');
     assert.strictEqual(nameOf(r.memory.get(lines[2])), nameOf(thrower), 'a weapon upgrade shows its weapon');
@@ -2281,11 +2378,11 @@ const tests = {
     const telekinesis = model.itemClass('Telekinesis', 10);
     const taken = model.pickup('ActivePlasmidPickup', 'ActivePlasmidPickup0', telekinesis);
     model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', model.itemClass('WrenchJockey', 10));
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere),
       '{"map":"1-medical","names":["ActivePlasmidPickup0","WeaponsPlasmidPickup1"]}');
-    r.poke(taken + 0xCC, 0x2); r.frames(10); // bDeleteMe: the player took it
+    r.poke(taken + 0xCC, 0x2); r.frames(10 + 2 * REST); // bDeleteMe: the player took it
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["ActivePlasmidPickup0"]}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["WeaponsPlasmidPickup1"]}');
     assert.ok(r.logged('ActivePlasmidPickup0 taken in 1-medical'));
@@ -2293,28 +2390,28 @@ const tests = {
   'a pickup the level no longer lists counts as taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const taken = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
-    r.removeActor(game.level, taken); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
+    r.removeActor(game.level, taken); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{"1-medical":["PhysicalPlasmidPickup0"]}');
   },
   'loading a save makes new pickups with the same names, which are not taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const medic = model.itemClass('Medic', 10);
     const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + REST);
     r.removeActor(game.level, first); r.poke(first + 0x30, 0); // the save's level has its own copy
-    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10);
+    model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic); r.frames(10 + REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },
   'pickups of another level object are not compared with the last one': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const gone = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + REST);
     r.removeActor(game.level, gone);
     r.levels.splice(1, 1); // the level is unloaded, and the same map is made anew (a save loaded)
     const again = r.level('1-medical', { extra: 6, capacity: 1030 }); r.player(again, { viewport: game.player });
-    r.frames(30);
+    r.frames(30 + REST);
     assert.strictEqual(state(r).playerReady, true);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":[]}');
@@ -2322,10 +2419,10 @@ const tests = {
   'a pickup missed by one pass only is not taken': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const flicker = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', model.itemClass('Medic', 10));
-    r.load(); r.frames(10);
-    r.removeActor(game.level, flicker); r.frames(1);
+    r.load(); r.frames(10 + 2 * REST);
+    r.removeActor(game.level, flicker); r.frames(1 + REST);
     assert.strictEqual(state(r).pickupsHere, null, 'two passes disagree: no list');
-    r.addActor(game.level, flicker); r.frames(10);
+    r.addActor(game.level, flicker); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },
@@ -2333,12 +2430,12 @@ const tests = {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const medic = model.itemClass('Medic', 10);
     const first = model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.load(); r.frames(10);
+    r.load(); r.frames(10 + 2 * REST);
     r.memory.set(BASE + 0x1356680, 1); // a save loading
-    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10);
+    r.removeActor(game.level, first); r.poke(first + 0x30, 0); r.frames(10 + 2 * REST);
     assert.strictEqual(state(r).pickupsHere, null);
     model.pickup('PhysicalPlasmidPickup', 'PhysicalPlasmidPickup0', medic);
-    r.memory.set(BASE + 0x1356680, 0); r.frames(10);
+    r.memory.set(BASE + 0x1356680, 0); r.frames(10 + 2 * REST);
     assert.strictEqual(JSON.stringify(state(r).pickupsTaken), '{}');
     assert.strictEqual(JSON.stringify(state(r).pickupsHere), '{"map":"1-medical","names":["PhysicalPlasmidPickup0"]}');
   },

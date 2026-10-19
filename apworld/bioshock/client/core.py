@@ -23,13 +23,14 @@ from collections.abc import Callable, Collection, Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from .. import map_tracker
 from ..data import GOAL_LEVEL, WORLD_VERSION, ItemKind
 from . import flash_movies, game_data, travel
 from .game_data import Delivery
 from .protocol import (
     Action, ActionResult, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState, KillPlayer,
     LittleSisterResolved, Notice, PlayerDied, RunAction, RunCommand, SaveState, ScoutedItem, ScoutLocations,
-    SendChecks, SendDeath, SendGoal, TravelRedirected,
+    SendChecks, SendDeath, SendGoal, ShowOnMap, TravelRedirected,
 )
 
 SAVE_VERSION = 1
@@ -43,6 +44,8 @@ DEATHLINK_GRACE = 10.0  # after killing the player for a DeathLink, ignore their
 DEATHLINK_WINDOW = 30.0  # a received death that cannot be carried out within this time is dropped
 LEVEL_CONFIRMATIONS = 2  # a level has to be seen this many polls in a row before it counts
 QUIET_ANNOUNCEMENTS = 3  # more held checks than this at once are announced in one line
+MAP_UPDATE_SECONDS = 1.0  # the map tracker hears of the player's position at most this often ...
+MAP_UPDATE_DISTANCE = 64  # ... and only once they have moved this far (world units; a door is about 128 wide)
 
 # Why an item was set aside instead of given.
 UNKNOWN = "unknown"  # the client has no way to give it yet (no game class known, or an item ID it has never heard of)
@@ -131,6 +134,9 @@ class BridgeCore:
         self._movies_command_id: int | None = None
         self._announced_locked: set[int] = set()
         self._announced_goal_locked = False
+        self._floor: tuple[str, str] | None = None  # (map, floor) the player was last seen on
+        self._map_told: ShowOnMap | None = None  # what the map tracker was last told, and when
+        self._map_told_at = 0.0
 
     # ---------------------------------------------------------------------------------------------------------------
     # Output
@@ -140,8 +146,8 @@ class BridgeCore:
         actions, self._out = self._out, []
         return actions
 
-    def _notice(self, text: str, warning: bool = False) -> None:
-        self._out.append(Notice(text, warning))
+    def _notice(self, text: str, warning: bool = False, detail: bool = False) -> None:
+        self._out.append(Notice(text, warning, detail))
 
     @property
     def busy(self) -> bool:
@@ -178,6 +184,7 @@ class BridgeCore:
             # Only for a slot we were not on before: /deathlink then holds for the rest of the session.
             self.death_link = bool(slot_data.get("death_link", 0))
         self.connected = True
+        self._map_told = None  # a new connection, maybe a new slot: its map tracker hears where the player is
         self.sent = set()
         self.goal_sent = False
         self.valid_locations = frozenset(valid_locations)
@@ -346,7 +353,7 @@ class BridgeCore:
         elif isinstance(event, PlayerDied):
             self._on_player_died(now)
         elif isinstance(event, AgentMessage):
-            self._notice(event.text)
+            self._notice(event.text, detail=event.detail)
         elif isinstance(event, LittleSisterResolved):
             self._on_little_sister(event.map)
 
@@ -361,6 +368,7 @@ class BridgeCore:
         self._send_garden_lines()
         self._send_travel_rules()
         self._redirect_movies()
+        self._show_on_map(now)
         self._pump_delivery(now)
         self._pump_deathlink(now)
         if self._dirty and self.connected:
@@ -409,6 +417,10 @@ class BridgeCore:
         waiting_for = sorted({str(self.access_items.get(game_data.LOCATION_LEVEL[location])) for location in held})
         lines.append(f"Checks: {len(self.checked | self.sent)} sent"
                      + (f", {len(held)} held until you receive {', '.join(waiting_for)}" if held else ""))
+        if self.agent_attached and self.state.hook_ms is not None:
+            parts = ", ".join(f"{name} {spent:.1f}" for name, spent in self.state.hook_parts)
+            detail = f" ({parts})" if parts else ""
+            lines.append(f"Game agent: {self.state.hook_ms:.1f} ms of each second of the game's time{detail}")
         if self.goal_reached:
             lines.append("Goal: Fontaine defeated" + ("" if self.has_access(GOAL_LEVEL) else
                                                     f", held until you receive {self.access_items.get(GOAL_LEVEL)}"))
@@ -944,6 +956,30 @@ class BridgeCore:
     # ---------------------------------------------------------------------------------------------------------------
     # DeathLink
     # ---------------------------------------------------------------------------------------------------------------
+
+    def _show_on_map(self, now: float) -> None:
+        """Tell the map tracker which floor the player is on and where: at once when the floor changes, else now and
+        then while they move. A zone the map screen does not draw (a stairwell, say) keeps the floor they were on."""
+        position, map_name = self.state.position, self.state.map
+        if not self.connected or position is None or map_name is None:
+            return
+        floors = map_tracker.regions().get(map_name)
+        if not floors:
+            return  # a map without pages, such as the Challenge Rooms
+        floor = floors.get(position.region.lower()) if position.region else None
+        if floor is None:
+            if self._floor is None or self._floor[0] != map_name:
+                return
+            floor = self._floor[1]
+        self._floor = (map_name, floor)
+        told = self._map_told
+        changed = told is None or told.floor != floor
+        if not changed and (now - self._map_told_at < MAP_UPDATE_SECONDS or
+                            max(abs(position.x - told.x), abs(position.y - told.y)) < MAP_UPDATE_DISTANCE):
+            return
+        self._map_told = ShowOnMap(floor, position.x, position.y, changed)
+        self._map_told_at = now
+        self._out.append(self._map_told)
 
     def _pump_deathlink(self, now: float) -> None:
         if not self._pending_kill:

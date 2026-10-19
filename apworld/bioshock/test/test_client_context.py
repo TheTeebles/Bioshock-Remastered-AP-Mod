@@ -21,7 +21,7 @@ from ..client import context as context_module
 from ..client.context import BioShockContext
 from ..client.core import SUPPORTED_SLOT_DATA_VERSION
 from ..client.frida_agent import FridaAgent
-from ..client.protocol import AgentError, CommandStarted, GameState, SendChecks
+from ..client.protocol import AgentError, CommandStarted, GameState, Notice, SendChecks
 from ..client.simulated import SimulatedGame
 from ..data import LEVELS, LOCATION_TABLE
 from ..items import ITEM_NAME_TO_ID
@@ -416,6 +416,15 @@ class TestContext(ContextTestBase):
         line = next(line for line in logs.output if "Sent 10 check(s)" in line)
         self.assertIn(LOCATION_TABLE[0].name, line)
         self.assertIn("and 2 more", line)
+        record = next(record for record in logs.records if "Sent 10 check(s)" in record.getMessage())
+        self.assertTrue(getattr(record, "skip_gui", False), "the server already tells the window what was found")
+
+    async def test_routine_lines_stay_out_of_the_window(self) -> None:
+        await self.connect()
+        with self.assertLogs("Client", level="INFO") as logs:
+            await self.ctx.perform([Notice("found the local player", detail=True), Notice("Game connected.")])
+        shown = {record.getMessage(): getattr(record, "skip_gui", False) for record in logs.records}
+        self.assertEqual(shown, {"found the local player": True, "Game connected.": False})
 
     async def test_commands(self) -> None:
         await self.connect()

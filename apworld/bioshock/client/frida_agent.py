@@ -31,12 +31,13 @@ from .game_data import (
 )
 from .protocol import (
     ActionResult, AgentError, AgentEvent, AgentMessage, CommandResult, CommandStarted, GameState,
-    LittleSisterResolved, PlayerDied, TravelRedirected,
+    LittleSisterResolved, PlayerDied, Position, TravelRedirected,
 )
 
 PROCESS_NAME = "BioshockHD.exe"
 PYTHON_VARIABLE = "BIOSHOCK_AP_PYTHON"  # environment variable naming the Python to use
 SCRIPT_ERROR = "Agent script error: "
+DETAIL = "[bioshock-ap:detail] "  # the agent's routine lines: kept in the log file, left out of the client's window
 
 HELLO_SECONDS = 20.0  # for a Python to start and load Frida; slow the first time after the PC starts
 ATTACH_SECONDS = 30.0  # for Frida to get into the game and the agent to answer
@@ -104,6 +105,15 @@ def _packaged(name: str) -> str:
     return data.decode("utf-8")
 
 
+def hook_parts_of(raw: Any) -> tuple[tuple[str, float], ...]:
+    """The agent's hookParts ({part: ms of each second}) as (part, ms) pairs, biggest first."""
+    if not isinstance(raw, dict):
+        return ()
+    parts = [(name, float(spent)) for name, spent in raw.items()
+             if isinstance(name, str) and isinstance(spent, (int, float)) and not isinstance(spent, bool)]
+    return tuple(sorted(parts, key=lambda part: -part[1]))
+
+
 def state_from_agent(raw: dict[str, Any]) -> GameState:
     """Translate the agent's `state()` answer. Kept apart from Frida so it can be tested."""
     loading = raw.get("loading")
@@ -136,7 +146,22 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         pickups_here=pickups_here_of(raw.get("pickupsHere")),
         containers_opened=actors_of(raw.get("containersOpened")),
         research=research_of(raw.get("researchLevels")),
+        position=position_of(raw.get("where")),
+        hook_ms=hook_ms if isinstance(hook_ms := raw.get("hookMsPerSecond"), (int, float))
+        and not isinstance(hook_ms, bool) else None,
+        hook_parts=hook_parts_of(raw.get("hookParts")),
     )
+
+
+def position_of(where: object) -> Position | None:
+    """The agent's { region, x, y, z }: where the player stands. None while it cannot tell."""
+    if not isinstance(where, dict):
+        return None
+    numbers = [where.get(axis) for axis in ("x", "y", "z")]
+    if not all(isinstance(n, (int, float)) and not isinstance(n, bool) and abs(n) < 1e7 for n in numbers):
+        return None
+    region = where.get("region")
+    return Position(region if isinstance(region, str) and region else None, *(round(n) for n in numbers))
 
 
 def weapons_of(held: object) -> frozenset[str] | None:
@@ -179,8 +204,15 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
     if kind == "travel_redirected":
         return TravelRedirected(normalize_map(payload.get("to")), normalize_map(payload.get("landed")))
     if kind == "exec_disabled":
-        return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
+        return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}",
+                            detail=payload.get("quitting") is True)  # an ordinary quit is no news
     return None
+
+
+def message_from_log(text: str) -> AgentMessage:
+    if text.startswith(DETAIL):
+        return AgentMessage("[bioshock-ap] " + text[len(DETAIL):], detail=True)
+    return AgentMessage(text)
 
 
 def answer_from_message(message: dict[str, Any]) -> AgentMessage | None:
@@ -638,7 +670,7 @@ class FridaAgent:
                 self.description = f"BioShock Remastered ({state.get('build', 'unknown build')})"
                 self.game_path = state.get("exe") if isinstance(state.get("exe"), str) else None
                 self._phase = _ATTACHED
-                self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}."))
+                self._events.appendleft(AgentMessage(f"Using Frida {self.frida_version} from {self.python}.", detail=True))
         elif event == "state":
             raw = message.get("state")
             if self._phase == _ATTACHED and isinstance(raw, dict):
@@ -675,7 +707,7 @@ class FridaAgent:
             if answer is not None:
                 self._events.append(answer)
         elif event == "log":
-            self._events.append(AgentMessage(text))  # what the agent prints is shown to the player
+            self._events.append(message_from_log(text))  # what the agent prints is shown to the player
         elif event == "detached":
             if self._phase == _ATTACHED and self._gone is None:
                 self._tell_raised(gone=True)

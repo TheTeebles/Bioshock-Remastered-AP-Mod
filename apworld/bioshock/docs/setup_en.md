@@ -160,6 +160,10 @@ game would not get those items afterwards without `/resync`.
   you back to Medical Pavilion's bathysphere and the client says why. A level counts as complete when you reach the
   next level of its chapter or finish its last objective, whatever order you play the chapters in. The levels you have
   been to are stored on the Archipelago server with your other progress. Universal Tracker follows the same rules.
+- **Always play with the client running.** Playing a randomized save without it is not supported. The client is
+  what gives you items and sends checks, and in Open Rapture it is also what makes the bathysphere and the level
+  changes go where the seed says. A save made in a chapter the story would not have reached yet may leave you stuck
+  if you load it without the client.
 - **One save per seed.** The client cannot tell saves apart yet. Whatever the loaded save has done is reported to the
   room you are connected to, so start a new game for every seed and never load a save from another one while
   connected.

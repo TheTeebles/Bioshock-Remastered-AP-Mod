@@ -4,7 +4,7 @@ from typing import Any
 from Options import OptionError
 from worlds.AutoWorld import World
 
-from . import items, locations, regions, rules
+from . import items, locations, map_tracker, regions, rules
 from . import options as bioshock_options
 from .data import (
     CHAPTER_OF_LEVEL, GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE,
@@ -37,6 +37,9 @@ class BioShockWorld(World):
 
     # Universal Tracker builds the player's world again from the slot data, without their YAML.
     ut_can_gen_without_yaml = True
+    # ... and shows the game's map with a pin on every check that has a place (map_tracker.py).
+    if map_tracker.tracker_world():
+        tracker_world = map_tracker.tracker_world()
     TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
                        "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
                        "start_with_research_camera", "world_item_checks", "safe_checks",
