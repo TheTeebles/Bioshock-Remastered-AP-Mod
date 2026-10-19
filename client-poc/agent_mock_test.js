@@ -2011,6 +2011,22 @@ const tests = {
     r.frames(6);
     assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
   },
+  'a crossing that led back into its own level is reported when that level comes up again': () => {
+    const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
+    r.string(g.level + 0x7C, '2-SubBay');
+    model.bathysphere([0], 8);
+    model.levelChange('3-Arcadia', 'FromFisheriesPS');
+    r.load(); r.frames(2);
+    travelRules(r, 1, { stops: [{ map: '1-medical' }], redirects: [{ from: '2-subbay', to: '3-arcadia', map: '1-medical',
+      arrival: 'Backtrack_MedicalStart', fallback: { map: '2-subbay', arrival: 'FromArcadiaPS' } }] });
+    r.frames(8);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected'), [], 'not taken yet');
+    r.levels.splice(1, 1);
+    const again = r.level('2-SubBay', { extra: 6, capacity: 1030 }); r.player(again, { viewport: g.player });
+    r.frames(30);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'travel_redirected').map((m) => [m.from, m.to, m.landed]),
+      [['2-subbay', '3-arcadia', '2-subbay']]);
+  },
   'where the hub does not fit, the crossing borrows script notes\' strings, and gives them back when it opens': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
     r.string(g.level + 0x7C, '2-SubBay');

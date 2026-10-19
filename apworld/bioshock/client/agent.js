@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.3';
+const AGENT_VERSION = '2026-10-19.4';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1591,6 +1591,9 @@ function watchObjects(map, now, level) {
     world.containers = [];
   }
   if (levelKey !== travel.level) {
+    if (travel.level !== null) {
+      noteBounce(map);
+    }
     travel.level = levelKey; // a save loaded, even in the same map: the travel objects are the last level's
     forgetTravelObjects();
   }
@@ -3371,6 +3374,18 @@ function noteTravel(from, to) {
   }
   travel.armed = [];
   travel.originals.clear(); // the level's objects are gone; a new level has its own
+}
+
+// The same map came up again while one of its crossings led back into it (the fallback where the hub's names do not
+// fit): most likely that crossing was taken, so the client can say why the player is still here. A save loaded there
+// meanwhile reads the same way, and the same words still hold for it.
+function noteBounce(map) {
+  const here = normalizeMap(map);
+  const taken = travel.armed.find((r) => r.from === here && r.used === here);
+  if (taken !== undefined) {
+    send({ type: 'travel_redirected', from: here, to: taken.to, landed: here });
+  }
+  travel.armed = [];
 }
 
 function setTravelRules(config) {
