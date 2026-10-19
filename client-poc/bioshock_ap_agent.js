@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.4';
+const AGENT_VERSION = '2026-10-19.6';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -567,6 +567,8 @@ function readState() {
   const playerLevel = levels.filter((seen) => seen.hasPlayer).pop(); // after a level change, the newer one
   return {
     agent: AGENT_VERSION,
+    hookMsPerSecond: load.last === null ? null : Math.round(load.last * 10) / 10, // game-thread time the hook took
+    hookCallsPerSecond: load.lastTicks,
     build: build.name,
     exe: mod.path, // where the game is, for the client to find its Flash movies
     execAvailable: execInfo !== null && !disabled,
@@ -639,6 +641,7 @@ function readState() {
     whereTrouble: standing.trouble,
     // Classes of the audio diaries and radio messages received since the agent started watching.
     logsReceived: [...logClassesSeen].sort(),
+    journalTrouble: journal.trouble,
   };
 }
 
@@ -1473,7 +1476,11 @@ function watchSisters(level, map, now) {
 // the classes of the diaries and messages seen; which is which check is the client's business.
 // A Power to the People station is an actor of class PlaceableWeaponUpgradeStation, and its NumTimesUsed goes from
 // 0 to 1 when the player uses it (seen in Neptune's Bounty, 2026-10-12). state() counts the used ones by map.
-const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick
+const OBJECT_SCAN_SLICE = 4000; // objects looked at per tick at most
+// ... and only until this much time has gone: at 350 frames a second a full slice every frame took the game down to
+// 7 (Teebs, 2026-10-19). A pass over the table then takes a second or two instead of a few frames.
+const OBJECT_SCAN_BUDGET_MS = 2;
+const OBJECT_SCAN_BATCH = 200; // objects between looks at the clock
 const QUEST_READ_INTERVAL_MS = 500;
 const quests = { list: [], flag: null, completed: [], readAt: 0, trouble: null };
 const scan = {
@@ -1486,7 +1493,7 @@ const logClassesSeen = new Set(); // classes of diaries and radio messages recei
 const classKinds = new Map(); // class address -> 'quest', 'log', 'sister', 'station', 'weapon', 'garden', 'class'
 
 function kindOf(cls) {
-  const key = cls.toString();
+  const key = cls.toUInt32(); // a number: no string made for each of the thousands of objects a scan looks at
   if (!classKinds.has(key)) {
     let kind = null;
     const name = nameOfObject(cls);
@@ -1597,8 +1604,14 @@ function watchObjects(map, now, level) {
     travel.level = levelKey; // a save loaded, even in the same map: the travel objects are the last level's
     forgetTravelObjects();
   }
-  const end = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
-  for (let i = scan.next; i < end; i++) {
+  const last = Math.min(count, scan.next + OBJECT_SCAN_SLICE);
+  const started = Date.now();
+  let end = scan.next;
+  for (let i = scan.next; i < last; i++) {
+    end = i + 1;
+    if ((i - scan.next) % OBJECT_SCAN_BATCH === OBJECT_SCAN_BATCH - 1 && Date.now() - started >= OBJECT_SCAN_BUDGET_MS) {
+      break; // the rest next time
+    }
     const object = carefulPtr(table.add(i * 4));
     const cls = object === null || object.isNull() ? null : classOfObject(object);
     const kind = cls === null ? null : kindOf(cls);
@@ -4080,6 +4093,63 @@ function carryOutTraps(pawn, now) {
   }
 }
 
+// The player's journal: ShockPlayer keeps JournalEntries, one {LogClass, Played} row per diary or radio message
+// received (AddLogEntry), and it travels and is saved with the game. Unlike the QuestLog objects found by the scan,
+// it still lists the ones received before a save was loaded, or while the client was not running (Teebs,
+// 2026-10-19). Its classes go into the same set. Not tried in game yet.
+const JOURNAL_INTERVAL_MS = 1000;
+const journal = { layout: undefined, readAt: 0, trouble: null, count: 0 };
+
+function journalTrouble(text) {
+  if (journal.trouble === null) {
+    journal.trouble = text;
+    log(`the diary list cannot be read: ${text}`);
+  }
+}
+
+function journalLayout(pawn) {
+  if (journal.layout !== undefined) {
+    return journal.layout;
+  }
+  const cls = classOfObject(pawn);
+  if (cls === null) {
+    return null; // asked again on the next read
+  }
+  journal.layout = null;
+  const entries = findProperty(cls, 'JournalEntries', 'ArrayProperty');
+  const row = entries === null ? null : structOfArray(entries.field);
+  if (row === null || !('LogClass' in row.fields)) {
+    journalTrouble('the player has no JournalEntries as expected');
+    return null;
+  }
+  journal.layout = { offset: entries.offset, size: Math.max(row.size, 4), logClass: row.fields.LogClass };
+  detail(`journal: JournalEntries at +0x${entries.offset.toString(16)} (${journal.layout.size} bytes each)`);
+  return journal.layout;
+}
+
+function readJournal(pawn, now) {
+  if (now - journal.readAt < JOURNAL_INTERVAL_MS) {
+    return;
+  }
+  journal.readAt = now;
+  const layout = journalLayout(pawn);
+  const rows = layout === null ? null : rowsOf(pawn.add(layout.offset), layout.size);
+  if (rows === null) {
+    return;
+  }
+  for (const row of rows) {
+    const cls = carefulPtr(row.add(layout.logClass));
+    const name = cls === null || cls.isNull() ? null : nameOfObject(cls);
+    if (name) {
+      logClassesSeen.add(name);
+    }
+  }
+  if (rows.length !== journal.count) {
+    journal.count = rows.length;
+    detail(`journal: ${rows.length} entries`);
+  }
+}
+
 function watchPlayer(level, info, map, now) {
   const loading = readPath(build.loading, (p) => p.readS32());
   if (loading) {
@@ -4103,6 +4173,11 @@ function watchPlayer(level, info, map, now) {
   } catch (e) {
     researchTrouble(e.message);
   }
+  try {
+    readJournal(body.pawn, now);
+  } catch (e) {
+    journalTrouble(e.message);
+  }
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -4111,9 +4186,44 @@ function watchPlayer(level, info, map, now) {
 
 let complained = false;
 
-function onLevelTick(level) {
+// The hook fires at least once a frame, hundreds of times a second on a fast PC. Watching the game does not need
+// that: the watchers run at most this often.
+const WATCH_INTERVAL_MS = 33; // 30 times a second; with the object scan's budget, at most ~6% of the thread
+let lastWatchAt = 0;
+
+// How much of the game thread's time the hook takes, for state() (milliseconds per second, over the last second).
+const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null };
+const clock = (() => {
   try {
-    const now = Date.now();
+    const kernel32 = Process.getModuleByName('kernel32.dll');
+    const counter = new NativeFunction(kernel32.getExportByName('QueryPerformanceCounter'), 'int', ['pointer'], 'stdcall');
+    const frequency = new NativeFunction(kernel32.getExportByName('QueryPerformanceFrequency'), 'int', ['pointer'],
+      'stdcall');
+    const buffer = Memory.alloc(8);
+    frequency(buffer);
+    const perMs = buffer.readU64().toNumber() / 1000;
+    return perMs > 0 ? () => { counter(buffer); return buffer.readU64().toNumber() / perMs; } : null;
+  } catch (e) {
+    return null;
+  }
+})() || (() => Date.now());
+
+function noteLoad(startedAt, now) {
+  load.spent += clock() - startedAt;
+  load.ticks += 1;
+  if (now - load.from >= 1000) {
+    load.last = load.spent * 1000 / Math.max(now - load.from, 1);
+    load.lastTicks = load.ticks;
+    load.from = now;
+    load.spent = 0;
+    load.ticks = 0;
+  }
+}
+
+function onLevelTick(level) {
+  const startedAt = clock();
+  const now = Date.now();
+  try {
     if (firstTickAt === 0) {
       firstTickAt = now;
     }
@@ -4122,7 +4232,8 @@ function onLevelTick(level) {
       lookForPlayer(level, now);
       noteLevel(level, info, now);
       const seen = levelsSeen.get(level.toString());
-      if (seen !== undefined && seen.hasPlayer && seen.map !== null) {
+      if (seen !== undefined && seen.hasPlayer && seen.map !== null && now - lastWatchAt >= WATCH_INTERVAL_MS) {
+        lastWatchAt = now;
         watchSisters(level, seen.map, now);
         watchObjects(seen.map, now, level);
         watchPlayer(level, info, seen.map, now);
@@ -4144,6 +4255,7 @@ function onLevelTick(level) {
       log(`problem inside the game-thread hook: ${e.message}`);
     }
   }
+  noteLoad(startedAt, now);
 }
 
 const deltaFunction = findDeltaFunction();

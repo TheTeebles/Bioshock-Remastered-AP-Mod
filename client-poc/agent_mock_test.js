@@ -724,6 +724,16 @@ function makeRuntime({
         }),
       };
     };
+    // The journal, as ShockPlayer declares it: JournalEntries {LogClass, Played}, 8 bytes each.
+    const journal = (classNames) => {
+      arrayOfStructs(playerClass, 'JournalEntries', 0xB20, 'JournalEntry',
+        [['LogClass', classProperty, 0], ['Played', boolProperty, 4]]);
+      return (pawn) => {
+        const data = runtime.object(Math.max(8, 8 * classNames.length));
+        classNames.forEach((className, i) => { poke(data + 8 * i, cls(className, objectClass)); poke(data + 8 * i + 4, 1); });
+        poke(pawn + 0xB20, data); poke(pawn + 0xB24, classNames.length); poke(pawn + 0xB28, classNames.length);
+      };
+    };
     // Story flags: global_ variables are VariableBool objects with Value at +0x40, made by
     // Script.newGlobalVariable(VariableName, variableType) -> ReturnValue.
     const storyFlags = () => {
@@ -746,7 +756,8 @@ function makeRuntime({
         names[runtime.memory.get(runtime.memory.get(change + 0x98) + 24)]],
     });
     return { nameIndex: name, rename, storyFlags, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
-      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research };
+      finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research,
+      journal };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
   runtime.sister = (level, model) => {
@@ -1611,6 +1622,22 @@ const tests = {
     r.frames(3);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
   },
+  'state() lists the diaries in the player\'s journal, received before the agent came too': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    model.journal(['vo_ducky_fleespang', 'Med_At_PickUpRadio'])(game.pawn);
+    r.load(); r.frames(15);
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '["Med_At_PickUpRadio","vo_ducky_fleespang"]');
+    assert.strictEqual(state(r).journalTrouble, null);
+    assert.ok(r.logged('journal: 2 entries'));
+  },
+  'a player without a journal says so once': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass);
+    r.load(); r.frames(25);
+    assert.ok(state(r).journalTrouble.includes('no JournalEntries'));
+    assert.strictEqual(JSON.stringify(state(r).logsReceived), '[]');
+  },
   'state() counts the Power to the People stations used, by map': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const station = model.station(); model.station();
@@ -2010,6 +2037,16 @@ const tests = {
     assert.strictEqual(state(r).travelTrouble, null);
     r.frames(6);
     assert.deepStrictEqual(model.changeOf(change).rows, ['2-SubBay', 'FromArcadiaPS'], 'and it stays so');
+  },
+  'state() says how much of the game thread the hook takes': () => {
+    const r = makeRuntime(); r.game(); r.load();
+    assert.strictEqual(state(r).hookMsPerSecond, null, 'nothing measured yet');
+    for (let i = 0; i < 12; i++) {
+      r.frame();
+    }
+    const seen = state(r);
+    assert.strictEqual(typeof seen.hookMsPerSecond, 'number');
+    assert.ok(seen.hookCallsPerSecond >= 9, String(seen.hookCallsPerSecond)); // ten frames, once per loaded level
   },
   'a crossing that led back into its own level is reported when that level comes up again': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();

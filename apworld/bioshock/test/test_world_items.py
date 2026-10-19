@@ -112,7 +112,7 @@ class TestShuffled(BioShockTestBase):
 
     def test_past_the_debris_names_real_checks(self) -> None:
         self.assertLessEqual(PAST_THE_DEBRIS, {location.name for location in LOCATION_TABLE})
-        self.assertEqual(len(PAST_THE_DEBRIS), 23)
+        self.assertEqual(len(PAST_THE_DEBRIS), 24)
 
 
 class TestShuffledOpenRapture(BioShockTestBase):

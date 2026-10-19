@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 GAME_NAME = "BioShock"
-WORLD_VERSION = "0.1.48"  # the apworld's version, also in archipelago.json; the client says which it is
+WORLD_VERSION = "0.1.49"  # the apworld's version, also in archipelago.json; the client says which it is
 
 
 # --------------------------------------------------------------------------------------------------------------------
@@ -572,17 +572,20 @@ KEPT_WORLD_PICKUPS: frozenset[str] = frozenset({"Electro Bolt", "Incinerate!"})
 TELEKINESIS = "Telekinesis"
 SURGERY = "Medical Pavilion: Surgery"  # the region past the debris
 
-# The Medical Pavilion checks that logic puts past the debris. The map files give the world items' positions (wall
-# safe 5 lies east of the Telekinesis pickup, toward Surgery; a save of Teebs's, 2026-10-18, held the Machine Gun and
-# had opened safe 6 before taking Telekinesis, so those two are before it); diaries, Little Sisters and the level's
-# end have none, so they are all put past it to be safe. A check put here that is really before the
-# debris only makes logic ask for Telekinesis a little early; the other way round could lock a seed.
+# The Medical Pavilion checks that logic puts past the debris, and so behind Telekinesis. The map files give the world
+# items' positions (wall safe 5 lies east of the Telekinesis pickup, toward Surgery; a save of Teebs's, 2026-10-18,
+# held the Machine Gun and had opened safe 6 before taking Telekinesis, so those two are before it); diaries, Little
+# Sisters and the level's end have none, so they are all put past it to be safe. A check put here that is really
+# before the debris only makes logic ask for Telekinesis a little early; the other way round could lock a seed.
 PAST_THE_DEBRIS: frozenset[str] = frozenset({
     *(f"{MEDICAL_PAVILION} - Audio Diary: {diary.title}" for diary in AUDIO_DIARIES if diary.level == MEDICAL_PAVILION),
     f"{MEDICAL_PAVILION} - Little Sister 1", f"{MEDICAL_PAVILION} - Little Sister 2",
     f"{MEDICAL_PAVILION} - Level Complete",
     f"{MEDICAL_PAVILION} - Story: Clear the Way to Surgery", f"{MEDICAL_PAVILION} - Story: Defeat Dr. Steinman",
     f"{MEDICAL_PAVILION} - Safe 5",
+    # Not past the debris, but out of reach without Telekinesis all the same: the wall safe in Chompers Dental
+    # (SecurityCrate_WallSafe3, Teebs, 2026-10-19). Logic treats it like the checks past the debris.
+    f"{MEDICAL_PAVILION} - Safe 4",
 })
 
 

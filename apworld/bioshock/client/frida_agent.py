@@ -138,6 +138,8 @@ def state_from_agent(raw: dict[str, Any]) -> GameState:
         containers_opened=actors_of(raw.get("containersOpened")),
         research=research_of(raw.get("researchLevels")),
         position=position_of(raw.get("where")),
+        hook_ms=hook_ms if isinstance(hook_ms := raw.get("hookMsPerSecond"), (int, float))
+        and not isinstance(hook_ms, bool) else None,
     )
 
 

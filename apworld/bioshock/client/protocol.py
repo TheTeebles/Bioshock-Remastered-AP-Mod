@@ -41,6 +41,7 @@ class GameState:
     containers_opened: Mapping[str, frozenset[str]] | None = None  # map -> safes open there
     research: Mapping[str, int] | None = None  # research subject (the game's name) -> the level reached
     position: Position | None = None  # where the player stands, for the map tracker
+    hook_ms: float | None = None  # milliseconds of each second the agent took from the game's own thread
 
 
 @dataclass(frozen=True)

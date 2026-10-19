@@ -136,6 +136,17 @@ class TestClientShowsThePlayer(unittest.TestCase):
         self.assertEqual(self.stand("UpperHub"), [ShowOnMap(FLOOR_1, 0, 0, True)])
 
 
+class TestAgentLoad(unittest.TestCase):
+    def test_read_from_the_agent_and_shown(self) -> None:
+        from ..client.frida_agent import state_from_agent
+        self.assertEqual(state_from_agent({"hookMsPerSecond": 3.5}).hook_ms, 3.5)
+        for nonsense in (None, True, "3"):
+            self.assertIsNone(state_from_agent({"hookMsPerSecond": nonsense}).hook_ms)
+        h = Harness().connect().attach()
+        h.core.on_state(GameState(map="2-fisheries", hook_ms=3.5))
+        self.assertIn("Game agent: 3.5 ms of each second of the game's time", h.core.status_lines())
+
+
 class TestAgentPosition(unittest.TestCase):
     def test_read_from_the_agent(self) -> None:
         self.assertEqual(position_of({"region": "UpperHub", "x": 1.4, "y": -2, "z": 3}), Position("UpperHub", 1, -2, 3))

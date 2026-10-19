@@ -417,6 +417,8 @@ class BridgeCore:
         waiting_for = sorted({str(self.access_items.get(game_data.LOCATION_LEVEL[location])) for location in held})
         lines.append(f"Checks: {len(self.checked | self.sent)} sent"
                      + (f", {len(held)} held until you receive {', '.join(waiting_for)}" if held else ""))
+        if self.agent_attached and self.state.hook_ms is not None:
+            lines.append(f"Game agent: {self.state.hook_ms:.1f} ms of each second of the game's time")
         if self.goal_reached:
             lines.append("Goal: Fontaine defeated" + ("" if self.has_access(GOAL_LEVEL) else
                                                     f", held until you receive {self.access_items.get(GOAL_LEVEL)}"))
