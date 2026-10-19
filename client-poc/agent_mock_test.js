@@ -76,6 +76,9 @@ class Ptr {
       }
     } else if (plain !== undefined) {
       for (let i = 0; i < plain.length && i < length; i++) { bytes[i] = plain.charCodeAt(i) & 0xFF; }
+    } else { // words, as the fake memory keeps them
+      const words = new Uint32Array(bytes.buffer, 0, length >>> 2);
+      for (let i = 0; i < words.length; i++) { words[i] = this.runtime.memory.get(this.value + 4 * i) || 0; }
     }
     return bytes.buffer;
   }
@@ -1357,6 +1360,7 @@ const tests = {
   },
   'exceptions on other threads and outside commands are none of the agent\'s business': () => {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
+    const readBefore = r.bytesRead.length; // the sister search reads the actor list
     const spec = { args: r.thrown('.PAG', 'elsewhere') };
     assert.strictEqual(r.raise(spec), false, 'before any command');
     r.raises.set('Go', [{ ...spec, thread: 2 }]);
@@ -1367,7 +1371,7 @@ const tests = {
     assert.deepStrictEqual(r.answers, [false, false, false]);
     assert.strictEqual(state(r).exceptionsSeen, 3, 'they are counted all the same');
     assert.strictEqual(state(r).watching, true);
-    assert.strictEqual(r.bytesRead.length, 0, 'and nothing is read to describe them');
+    assert.strictEqual(r.bytesRead.length, readBefore, 'and nothing is read to describe them');
   },
   'nothing is ever taken away from the game': () => {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
@@ -1632,6 +1636,14 @@ const tests = {
     model.diary('vo_ducky_fleespang');
     r.frames(3 + REST);
     assert.strictEqual(JSON.stringify(state(r).logsReceived), '["vo_ducky_fleespang"]');
+  },
+  'the object scan reads its slice of the table in one go': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    model.quest('QuarantineKey', true);
+    const count = r.memory.get(BASE + 0x1390430);
+    r.load(); r.frames(3);
+    assert.ok(r.bytesRead.includes(Math.min(count, 4000) * 4), `sizes read: ${r.bytesRead}`);
+    assert.strictEqual(JSON.stringify(state(r).completedQuests), '["QuarantineKey"]');
   },
   'the object scan rests between passes': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();

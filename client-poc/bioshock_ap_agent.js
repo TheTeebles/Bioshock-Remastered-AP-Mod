@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.9';
+const AGENT_VERSION = '2026-10-19.10';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1448,8 +1448,9 @@ function findSisters(level) {
   if (data === null || data.isNull() || count === null || count < 1 || count > MAX_ACTORS) {
     return;
   }
+  const slots = slotsOf(data, 0, count); // the whole list in one read, as the object scan does
   for (let i = 0; i < count; i++) {
-    const actor = ptrAt(data.add(i * 4));
+    const actor = slots !== null ? (slots[i] === 0 ? null : ptr(slots[i])) : ptrAt(data.add(i * 4));
     if (actor === null || actor.isNull()) {
       continue;
     }
@@ -1563,6 +1564,19 @@ function kindOf(cls) {
   return classKinds.get(key);
 }
 
+// Entries first..last of the table of all objects as numbers, or null when the slice cannot be read in one go.
+function slotsOf(table, first, last) {
+  const at = table.add(first * 4);
+  if (!readable(at) || !readable(at.add((last - first) * 4 - 1))) {
+    return null;
+  }
+  try {
+    return new Uint32Array(at.readByteArray((last - first) * 4));
+  } catch (e) {
+    return null;
+  }
+}
+
 function classOfObject(object) {
   const cls = carefulPtr(object.add(objectModel.objectClass));
   return cls === null || cls.isNull() ? null : cls;
@@ -1639,14 +1653,27 @@ function watchObjects(map, now, level) {
   const resting = scan.next === 0 && now < scan.restUntil;
   const last = resting ? scan.next : Math.min(count, scan.next + OBJECT_SCAN_SLICE);
   const started = Date.now();
+  // The slice of the table in one read, and each object's class read plainly: what the table lists are live objects.
+  // Reading each slot and class carefully (a VirtualQuery for every page not asked about in the last 250 ms) kept the
+  // scan at its time limit all the time in game (Teebs, 2026-10-19, Neptune's Bounty).
+  const slots = last > scan.next ? slotsOf(table, scan.next, last) : null;
   let end = scan.next;
   for (let i = scan.next; i < last; i++) {
     end = i + 1;
     if ((i - scan.next) % OBJECT_SCAN_BATCH === OBJECT_SCAN_BATCH - 1 && Date.now() - started >= OBJECT_SCAN_BUDGET_MS) {
       break; // the rest next time
     }
-    const object = carefulPtr(table.add(i * 4));
-    const cls = object === null || object.isNull() ? null : classOfObject(object);
+    let object;
+    let cls;
+    if (slots !== null) {
+      const address = slots[i - scan.next];
+      object = address === 0 ? null : ptr(address);
+      cls = object === null ? null : ptrAt(object.add(objectModel.objectClass));
+      cls = cls === null || cls.isNull() ? null : cls;
+    } else {
+      object = carefulPtr(table.add(i * 4));
+      cls = object === null || object.isNull() ? null : classOfObject(object);
+    }
     const kind = cls === null ? null : kindOf(cls);
     if (kind === 'quest') {
       scan.quests.push(object);
