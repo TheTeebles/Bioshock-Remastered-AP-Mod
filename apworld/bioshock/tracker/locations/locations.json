@@ -3,14 +3,14 @@
   "name": "Audio Diary: Hole in Bathroom Wall",
   "map_locations": [
    {
-    "map": "Welcome to Rapture: Floor 4",
-    "x": 752,
-    "y": 60
+    "map": "Welcome to Rapture: Floor 3",
+    "x": 78,
+    "y": 273
    },
    {
     "map": "Welcome to Rapture",
-    "x": 752,
-    "y": 1219
+    "x": 1653,
+    "y": 313
    }
   ],
   "sections": [
@@ -23,14 +23,14 @@
   "name": "Audio Diary: New Year's Eve Alone",
   "map_locations": [
    {
-    "map": "Welcome to Rapture: Floor 4",
-    "x": 961,
-    "y": 257
+    "map": "Welcome to Rapture: Floor 2",
+    "x": 234,
+    "y": 161
    },
    {
     "map": "Welcome to Rapture",
-    "x": 961,
-    "y": 1416
+    "x": 1135,
+    "y": 201
    }
   ],
   "sections": [
@@ -2188,7 +2188,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 423,
+    "x": 805,
     "y": 941
    }
   ],
@@ -2202,14 +2202,14 @@
   "name": "Audio Diary: Hatred",
   "map_locations": [
    {
-    "map": "Farmer's Market: Floor 2",
-    "x": 689,
-    "y": 791
+    "map": "Farmer's Market: Floor 1",
+    "x": 167,
+    "y": 314
    },
    {
     "map": "Farmer's Market",
-    "x": 689,
-    "y": 831
+    "x": 167,
+    "y": 354
    }
   ],
   "sections": [
@@ -2222,14 +2222,14 @@
   "name": "Audio Diary: First Encounter",
   "map_locations": [
    {
-    "map": "Farmer's Market: Floor 2",
-    "x": 582,
-    "y": 711
+    "map": "Farmer's Market: Floor 1",
+    "x": 60,
+    "y": 234
    },
    {
     "map": "Farmer's Market",
-    "x": 582,
-    "y": 751
+    "x": 60,
+    "y": 274
    }
   ],
   "sections": [
@@ -2248,7 +2248,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 601,
+    "x": 983,
     "y": 791
    }
   ],
@@ -2264,12 +2264,12 @@
    {
     "map": "Farmer's Market: Floor 2",
     "x": 540,
-    "y": 157
+    "y": 156
    },
    {
     "map": "Farmer's Market",
-    "x": 540,
-    "y": 197
+    "x": 922,
+    "y": 196
    }
   ],
   "sections": [
@@ -2288,7 +2288,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 538,
+    "x": 920,
     "y": 548
    }
   ],
@@ -2308,7 +2308,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 781,
+    "x": 1163,
     "y": 515
    }
   ],
@@ -2328,7 +2328,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 285,
+    "x": 667,
     "y": 499
    }
   ],
@@ -2348,7 +2348,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 99,
+    "x": 481,
     "y": 616
    }
   ],
@@ -2368,7 +2368,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 740,
+    "x": 1122,
     "y": 969
    }
   ],
@@ -2388,7 +2388,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 1132,
+    "x": 1514,
     "y": 177
    }
   ],
@@ -2408,7 +2408,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 579,
+    "x": 961,
     "y": 680
    }
   ],
@@ -2428,7 +2428,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 415,
+    "x": 797,
     "y": 307
    }
   ],
@@ -2444,12 +2444,12 @@
    {
     "map": "Farmer's Market: Floor 2",
     "x": 658,
-    "y": 523
+    "y": 522
    },
    {
     "map": "Farmer's Market",
-    "x": 658,
-    "y": 563
+    "x": 1040,
+    "y": 562
    }
   ],
   "sections": [
@@ -2468,7 +2468,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 306,
+    "x": 688,
     "y": 544
    }
   ],
@@ -2551,7 +2551,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 1223,
+    "x": 1605,
     "y": 414
    }
   ],
@@ -2571,7 +2571,7 @@
    },
    {
     "map": "Farmer's Market",
-    "x": 432,
+    "x": 814,
     "y": 1052
    }
   ],

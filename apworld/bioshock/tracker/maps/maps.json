@@ -465,23 +465,43 @@
   "location_size": 16,
   "location_border_thickness": 3,
   "bioshock_layers": {
+   "Market01Marker": [
+    381.25,
+    0.09276,
+    -659.93,
+    0.09276
+   ],
    "Market02Marker": [
-    902.7,
-    0.092721,
-    -182.21,
-    0.092721
+    1284.93,
+    0.09276,
+    -182.72,
+    0.09276
    ],
    "Market03Marker": [
-    1709.89,
-    0.092721,
-    -131.65,
-    0.092721
+    2092.22,
+    0.09276,
+    -131.86,
+    0.09276
    ],
    "Market04Marker": [
-    2542.75,
-    0.092721,
-    -181.86,
-    0.092721
+    995.0,
+    0.09276,
+    932.92,
+    0.09276
+   ]
+  }
+ },
+ {
+  "name": "Farmer's Market: Floor 1",
+  "img": "images/3-market_1.png",
+  "location_size": 30,
+  "location_border_thickness": 3,
+  "bioshock_layers": {
+   "Market01Marker": [
+    381.25,
+    0.09276,
+    -699.93,
+    0.09276
    ]
   }
  },
@@ -492,10 +512,10 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Market02Marker": [
-    902.7,
-    0.092721,
-    -222.21,
-    0.092721
+    902.93,
+    0.09276,
+    -222.72,
+    0.09276
    ]
   }
  },
@@ -506,10 +526,10 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Market03Marker": [
-    796.89,
-    0.092721,
-    -171.65,
-    0.092721
+    797.22,
+    0.09276,
+    -171.86,
+    0.09276
    ]
   }
  },
@@ -520,10 +540,10 @@
   "location_border_thickness": 3,
   "bioshock_layers": {
    "Market04Marker": [
-    994.75,
-    0.092721,
-    -221.86,
-    0.092721
+    995.0,
+    0.09276,
+    -222.08,
+    0.09276
    ]
   }
  },

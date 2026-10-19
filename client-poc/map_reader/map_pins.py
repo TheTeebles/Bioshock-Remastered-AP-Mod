@@ -51,9 +51,10 @@ class Pins(Survey):
     1 and 2."""
 
     def props(self, i):
-        """As Survey's, but a parse that finds the map screen's properties wins. In 3-Arcadia.bsm a floor marker's
-        bytes also parse from an earlier start into junk plus every property but RegionNames, one more property than
-        the right parse, which Survey's scoring would pick."""
+        """As Survey's, but the map screen's properties count as known ones. In 3-Arcadia.bsm a floor marker's bytes
+        also parse from an earlier start into junk plus every property but RegionNames, one more property than the
+        right parse, which Survey's scoring would pick. (Ranking them above the other known properties instead lost
+        the audio diaries' LootSlot in 2-SubBay.bsm.)"""
         if i not in self._props:
             b = self.body(self.exports[i - 1])
             best, best_score = {}, None
@@ -62,7 +63,7 @@ class Pins(Survey):
                     found, _ = self.properties(b, start)
                 except (ValueError, IndexError, struct.error, UnicodeDecodeError):
                     continue
-                score = (len(MAP_PROPERTIES & found.keys()), len(KNOWN & found.keys()), len(found))
+                score = (len((MAP_PROPERTIES | KNOWN) & found.keys()), len(found))
                 if best_score is None or score > best_score:
                     best, best_score = found, score
             self._props[i] = best
