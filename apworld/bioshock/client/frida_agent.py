@@ -192,7 +192,8 @@ def event_from_message(message: dict[str, Any]) -> AgentEvent | None:
     if kind == "travel_redirected":
         return TravelRedirected(normalize_map(payload.get("to")), normalize_map(payload.get("landed")))
     if kind == "exec_disabled":
-        return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}")
+        return AgentMessage(f"The game agent turned commands off: {payload.get('reason', 'unknown reason')}",
+                            detail=payload.get("quitting") is True)  # an ordinary quit is no news
     return None
 
 

@@ -1497,7 +1497,9 @@ const tests = {
     const r = makeRuntime(); r.game(); r.load(); r.frame();
     assert.strictEqual(state(r).engineReady, true);
     r.engine(ENGINE, 0x424242); state(r);
-    assert.match(JSON.stringify(r.messages.find((m) => m.type === 'exec_disabled')), /shutting down/);
+    const told = r.messages.find((m) => m.type === 'exec_disabled');
+    assert.match(JSON.stringify(told), /shutting down/);
+    assert.strictEqual(told.quitting, true);
   },
   'unknown build tries the Steam addresses behind the vtable check': () => {
     const good = makeRuntime({ moduleSize: 12345 }); good.engine(); good.load();

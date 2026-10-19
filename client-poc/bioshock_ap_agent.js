@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.2';
+const AGENT_VERSION = '2026-10-19.3';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -725,6 +725,7 @@ const engineExec = execInfo === null ? null : new NativeFunction(
 
 // Returns the FExec `this` pointer, null while the engine is still starting up, or throws on a build mismatch.
 let engineMatched = false; // the engine was seen with the expected vtable at least once
+const QUITTING = 'the game is shutting down';
 
 function engineExecThis() {
   const engine = base.add(execInfo.enginePtrRva).readPointer();
@@ -735,8 +736,9 @@ function engineExecThis() {
   const expected = base.add(execInfo.engineVtableRva);
   if (!vtable.equals(expected)) {
     // An engine that matched before and no longer does is being torn down: the game is quitting (seen 2026-10-15).
-    throw new Error(engineMatched ? 'the game is shutting down' :
-      `UGameEngine vtable is ${vtable}, expected ${expected}: this is a different build`);
+    throw new Error(engineMatched ? QUITTING :
+      `this is a different build of BioShock Remastered than the agent knows (UGameEngine vtable ${vtable}, ` +
+      `expected ${expected}), so it cannot give items`);
   }
   engineMatched = true;
   return engine.add(execInfo.execThisOffset);
@@ -967,8 +969,12 @@ function disable(reason) {
   }
   disabled = true;
   disabledReason = reason;
-  log(`commands disabled: ${reason}`);
-  send({ type: 'exec_disabled', reason });
+  if (reason === QUITTING) {
+    detail(`commands disabled: ${reason}`); // an ordinary quit: the client says the game closed
+  } else {
+    log(`commands disabled: ${reason}`);
+  }
+  send({ type: 'exec_disabled', reason, quitting: reason === QUITTING });
 }
 
 // Runs one command. Says who took it ('player', 'engine' or null), what the game printed meanwhile and how many

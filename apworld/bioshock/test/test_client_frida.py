@@ -1007,7 +1007,10 @@ class TestTranslation(unittest.TestCase):
         self.assertIsNone(sent({"type": "exec_raised", "id": 3, "command": "x", "what": "y"}),
                           "kept for the line that sums the command up; not an event of its own")
         self.assertEqual(sent({"type": "action_result", "id": 4, "ok": True}), ActionResult(4, True))
-        self.assertIsInstance(sent({"type": "exec_disabled", "reason": "different build"}), AgentMessage)
+        self.assertEqual(sent({"type": "exec_disabled", "reason": "different build", "quitting": False}),
+                         AgentMessage("The game agent turned commands off: different build"))
+        self.assertTrue(sent({"type": "exec_disabled", "reason": "the game is shutting down", "quitting": True}).detail,
+                        "quitting the game is not a problem to show")
         self.assertEqual(sent({"type": "little_sister", "map": "1-Medical.bsm"}), LittleSisterResolved("1-medical"))
         self.assertEqual(sent({"type": "player_died", "map": "1-medical"}), PlayerDied())
         self.assertIsNone(sent({"type": "action_result", "id": 0, "name": "kill", "ok": True}), "DeathLink carried out")

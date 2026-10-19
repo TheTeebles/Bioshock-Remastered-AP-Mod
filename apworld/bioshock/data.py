@@ -24,7 +24,7 @@ from __future__ import annotations
 from typing import NamedTuple
 
 GAME_NAME = "BioShock"
-WORLD_VERSION = "0.1.45"  # the apworld's version, also in archipelago.json; the client says which it is
+WORLD_VERSION = "0.1.46"  # the apworld's version, also in archipelago.json; the client says which it is
 
 
 # --------------------------------------------------------------------------------------------------------------------

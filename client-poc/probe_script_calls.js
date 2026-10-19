@@ -107,11 +107,13 @@
  *                     CollisionDamageClass and crashed). pickupItem(0) puts it back
  *   nearby(600)       every actor within 600 of the player, nearest first: class and the classes above it,
  *                     bIsOpened if it has one, and what it gives. nearby(600, 'Safe') only matching classes
+ *   hub(0)            after events(): point level change 0 of levels() at Medical Pavilion's bathysphere and run it
+ *                     from here, to see whether the client's /hub escape hatch can work that way. Save first
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-15.8';
+const PROBE_VERSION = '2026-10-19.1';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -4721,9 +4723,54 @@ globalThis.stop = function () {
   return 'hook removed';
 };
 
+// hub(0): the first try at the client's /hub escape hatch (2026-10-19). Level change 0 of levels() is pointed at
+// Medical Pavilion's bathysphere, as route() does, then run from here through its own latentExecute with the player's
+// controller, as the level's script would. Save first; run events() before. hub(0, 'execute') tries plain execute().
+globalThis.hub = function (n = 0, functionName = 'latentExecute') {
+  if (processEvent.call === null) {
+    return 'run events() first, and wait for its report';
+  }
+  const actions = matchingObjects('^ActionChangeLevel$').get('ActionChangeLevel') || [];
+  if (actions[n] === undefined) {
+    return actions.length === 0 ? 'no level change is loaded in this level' : `pick n from 0 to ${actions.length - 1}`;
+  }
+  const player = thePlayer();
+  if (player === null) {
+    return `could not find the one ${PLAYER_CLASS}: load a save first`;
+  }
+  const pawn = learnAnyClass('Pawn');
+  const controllerAt = pawn.error ? undefined : pawn.properties.get('Controller');
+  if (controllerAt === undefined) {
+    return 'Pawn has no Controller property here';
+  }
+  const controller = pointerAt(player.add(controllerAt.offset));
+  const found = findFunction('ActionChangeLevel', functionName);
+  if (found.error) {
+    return found.error;
+  }
+  log(`hub: ${globalThis.route(n, '1-Medical', 'Backtrack_MedicalStart')}`);
+  const described = [...found.parameters.entries()].map(([name, p]) => `${name} +${hex(p.offset)} ${p.kind}`);
+  log(`hub: ${found.owner}.${functionName}(${described.join(', ')}), controller ${controller}`);
+  const size = Math.max(found.size, 0x40);
+  const block = Memory.alloc(size);
+  for (let at = 0; at < size; at += 4) {
+    block.add(at).writeU32(0); // no options (an empty string), no return value yet
+  }
+  const pc = found.parameters.get('PC');
+  if (pc !== undefined && controller !== null) {
+    block.add(pc.offset).writePointer(controller);
+  }
+  runOnGameThread(() => {
+    callScript(actions[n], found.function, block);
+    log(`hub: ${functionName} called; it returned ${pointerAt(block)}. Does Medical Pavilion load, at its bathysphere?`);
+    block.isNull();
+  });
+  return 'queued for the game thread; the result follows';
+};
+
 // Each batch step starts with a marker line, so builds/read_batch_logs.py can tell the steps apart in probe_log.txt.
 for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem',
-  'nearby']) {
+  'nearby', 'hub']) {
   const step = globalThis[name];
   if (typeof step === 'function') {
     globalThis[name] = function (...args) {
