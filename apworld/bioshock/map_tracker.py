@@ -49,7 +49,8 @@ def page_of_floor(layer: Any) -> int:
 
 def player_on_page(index: int, position: Any) -> tuple[int, int, str] | None:
     """Where the player's dot goes on this page, or None when the page does not show the player's floor."""
-    if not isinstance(position, dict) or not 0 <= index < len(pages()):
+    # Universal Tracker asks before any page is picked, with no index (None) then.
+    if not isinstance(position, dict) or not isinstance(index, int) or not 0 <= index < len(pages()):
         return None
     transform = pages()[index].get("bioshock_layers", {}).get(position.get("layer"))
     x, y = position.get("x"), position.get("y")

@@ -84,6 +84,7 @@ class TestPlayerOnTheMap(unittest.TestCase):
         for nonsense in (None, "", {"layer": FLOOR_3}, {"layer": FLOOR_3, "x": "1", "y": 2}):
             self.assertIsNone(map_tracker.player_on_page(index, nonsense))
         self.assertIsNone(map_tracker.player_on_page(-1, {"layer": FLOOR_3, "x": 0, "y": 0}))
+        self.assertIsNone(map_tracker.player_on_page(None, {"layer": FLOOR_3, "x": 0, "y": 0}), "no page picked yet")
         self.assertIsNone(map_tracker.player_on_page(10_000, {"layer": FLOOR_3, "x": 0, "y": 0}))
 
 
