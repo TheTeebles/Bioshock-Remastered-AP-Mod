@@ -2071,6 +2071,9 @@ function emptyPickups(map, level) {
     return; // nothing here, or the chips not found yet: the next pass may find them
   }
   const empty = standIn(EMPTY_PICKUP_NAME, EMPTY_PICKUP_DESCRIPTION);
+  if (gardens.placeholder === null) {
+    return; // the chips class went away (a level loaded): the next pass finds it again
+  }
   const placeholder = empty === null ? gardens.placeholder : empty;
   for (const { object, name } of world.pickups) {
     if (!wanted.includes(name)) {

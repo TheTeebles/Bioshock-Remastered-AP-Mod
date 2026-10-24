@@ -2536,6 +2536,18 @@ const tests = {
     assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
     assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
   },
+  'a pickup is left alone while the chips class is gone': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    r.load(); r.frames(3);
+    model.rename(model.chips, 'Bread'); // the class the scan found is something else now
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(shuffled), [jockey, jockey], 'not emptied, and never given None');
+    assert.strictEqual(state(r).worldTrouble, null, 'nothing written through a missing class');
+  },
   'a pickup not rolled yet gives nothing once it rolls': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const jockey = model.itemClass('WrenchJockey', 10);
