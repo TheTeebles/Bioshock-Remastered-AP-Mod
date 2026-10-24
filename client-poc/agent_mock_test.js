@@ -2736,6 +2736,16 @@ const tests = {
   },
 };
 
+// The agent ships twice: in the apworld, and here for running by hand with the Frida CLI (README.md). They must be the
+// same file, whichever of them the tests were given.
+tests['the hand-run agent is the same file as the apworld\'s'] = () => {
+  const path = require('path');
+  const [shipped, byHand] = [path.join(__dirname, '..', 'apworld', 'bioshock', 'client', 'agent.js'),
+    path.join(__dirname, 'bioshock_ap_agent.js')];
+  assert.ok(fs.readFileSync(shipped, 'utf8') === fs.readFileSync(byHand, 'utf8'),
+    'client-poc/bioshock_ap_agent.js differs from apworld/bioshock/client/agent.js: copy one over the other');
+};
+
 let failed = 0;
 for (const [name, test] of Object.entries(tests)) {
   try { test(); console.log(`ok   ${name}`); } catch (e) { failed++; console.log(`FAIL ${name}\n     ${e.message}`); }
