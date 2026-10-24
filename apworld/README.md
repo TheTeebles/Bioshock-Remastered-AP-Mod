@@ -28,6 +28,11 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
 2. Run the tests: `python -m pytest worlds/bioshock`, and optionally `python -m pytest test/general`.
 3. Package it: `python Launcher.py "Build APWorlds" -- "BioShock"`. The output is `build/apworlds/bioshock.apworld`.
 
+`tools/release.py` does steps 1 and 3 for you (`--build path/to/Archipelago`, run with that checkout's Python) and
+sets the versions a release needs, all at once: `--world 0.2.1` for the world (`data.py` and `archipelago.json`),
+`--agent 2026-10-25.1` for the game agent (both copies). With no arguments it says what they are and fails if they
+disagree.
+
 Install by double-clicking the `.apworld` or copying it into Archipelago's `custom_worlds` folder.
 
 ## Make a release
