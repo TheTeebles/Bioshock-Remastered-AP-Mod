@@ -1853,10 +1853,28 @@ const tests = {
     r.frames(3);
     assert.ok(r.logged('the menu is set before it opens'));
     // The lever: the level's script makes its manager with its own destination, and the menu opens in the same frame.
-    const manager = model.bathysphere([1], 8); r.addActor(game.level, manager);
+    // Not an actor: found in the table of all objects, before the object scan has come to it.
+    const manager = model.bathysphere([1], 8);
     r.openBathysphereMenu(game.pawn);
     assert.deepStrictEqual(model.unlockedOf(manager), [0, 2], 'set before the menu read it');
     assert.strictEqual(model.arrivalOf(manager, 2), 'FromFisheriesPS');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'the first bathysphere menu gets every stop even when the game has to add them one by one': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.bathysphereMenu();
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 4, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }, { map: '4-recreation' }], redirects: [] });
+    r.frames(3);
+    r.gameEvent(game.hud, model.tick); // the game runs its script as ever: a call to copy, watched for since the rules
+    const manager = model.bathysphere([1], 1); // room for one: the game grows the list itself
+    r.openBathysphereMenu(game.pawn);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'all of them, before the menu read the list');
+    assert.strictEqual(r.scriptCalls.length, 3);
+    assert.deepStrictEqual(r.heapAllocs, [], 'no memory of ours');
     assert.strictEqual(state(r).travelTrouble, null);
   },
   'without Open Rapture the bathysphere menu is not hooked': () => {
