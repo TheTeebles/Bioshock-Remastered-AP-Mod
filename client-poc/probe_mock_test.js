@@ -687,8 +687,16 @@ test('use() hooks a native by opcode when asked', () => {
   assert.match(rt.logs.join('\n'), /execVirtualFunction is module\+0x1234/);
 });
 
+// A probe that has learned the script layout and has its hooks in, as after its start-up report.
+function readyProbe(options) {
+  const rt = startedProbe(options);
+  playCalls(rt, 400);
+  rt.flush();
+  return rt;
+}
+
 test('hookCost() measures an empty JavaScript hook against a native counter', () => {
-  const rt = startedProbe();
+  const rt = readyProbe();
   const before = rt.hooks.length;
   assert.match(rt.context.hookCost(), /measuring for 8 s/);
   assert.match(rt.context.hookCost(), /already measuring/);
@@ -704,8 +712,13 @@ test('hookCost() measures an empty JavaScript hook against a native counter', ()
   assert.match(rt.context.hookCost(), /measuring/, 'and it can be run again');
 });
 
+test('hookCost() waits until the start-up sampling is done', () => {
+  const rt = startedProbe(); // sampling, nothing played yet
+  assert.match(rt.context.hookCost(), /still learning the script layout/);
+});
+
 test('hookCost() says so when native hooks cannot be compiled', () => {
-  const rt = startedProbe({ cmodule: false });
+  const rt = readyProbe({ cmodule: false });
   assert.match(rt.context.hookCost(), /cannot compile native hooks/);
 });
 

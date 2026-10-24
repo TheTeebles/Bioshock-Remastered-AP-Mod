@@ -2600,6 +2600,10 @@ globalThis.hookCost = function () {
   if (hookCostTimer !== null) {
     return 'already measuring: wait for the result';
   }
+  if (samplers.some((entry) => entry.listener !== null)) {
+    // The start-up sampling hooks come out one by one as they fill: the two counts would not see the same game.
+    return 'the probe is still learning the script layout: wait for its report, then run hookCost()';
+  }
   if (gameThreadHook !== null) {
     // Another command left a JavaScript hook on the same function: the first count would not be native alone.
     return 'another command has hooked the same function already: restart the probe and run hookCost() first';
