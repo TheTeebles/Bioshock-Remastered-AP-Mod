@@ -124,6 +124,8 @@ class BridgeCore:
         self._garden_sent: str | None = None  # ... and were these, so the same lines are not sent again
         self._travel_command_id: int | None = None  # the last travel rules sent to the agent went under this id
         self._travel_sent: str | None = None  # ... and were these
+        self._sisters_command_id: int | None = None  # the last maps without sisters to watch went under this id
+        self._sisters_sent: str | None = None  # ... and were these
         self._travel_trouble_shown = False
         self._travel_ever_sent = False  # this agent has had travel rules (it keeps them across slots)
         self._entered: str | None = None  # the level the player was last told about where its way on leads
@@ -283,6 +285,8 @@ class BridgeCore:
         self._garden_sent = None
         self._travel_command_id = None
         self._travel_sent = None
+        self._sisters_command_id = None
+        self._sisters_sent = None
         self._travel_ever_sent = False  # a new agent has no rules to undo
         self._movies_asked = False
         self._movies_command_id = None
@@ -346,6 +350,8 @@ class BridgeCore:
             else:
                 self._notice(f"Gatherer's Garden lines that sell other players' items show a bag of chips: "
                              f"{event.reason}.", warning=True)
+        elif isinstance(event, ActionResult) and event.command_id == self._sisters_command_id:
+            pass  # an agent that cannot leave sisters alone keeps watching them, which costs only time
         elif isinstance(event, ActionResult):
             # The agent either supports an action or it doesn't, so asking again would not help.
             self._on_result(event.command_id, event.ok, now, event.reason or "the game could not do it",
@@ -370,6 +376,7 @@ class BridgeCore:
         self._redirect_movies()
         self._show_on_map(now)
         self._pump_delivery(now)
+        self._send_sisters_done()  # after the items, which matter more
         self._pump_deathlink(now)
         if self._dirty and self.connected:
             self._dirty = False
@@ -849,6 +856,23 @@ class BridgeCore:
         self._garden_command_id = self._next_command_id
         self._next_command_id += 1
         self._out.append(RunAction(self._garden_command_id, action))
+
+    def _send_sisters_done(self) -> None:
+        """Tell the agent the maps whose Little Sisters need no more watching: every sister check of the level is
+        collected or checked, or none is part of this seed. Watching sisters is a good part of the agent's time."""
+        if not (self.connected and self.agent_attached):
+            return
+        open_levels = {level for (level, _), location in game_data.LITTLE_SISTER_LOCATION.items()
+                       if location in self.valid_locations and location not in self.collected
+                       and location not in self.checked}
+        maps = sorted(name for name, level in game_data.MAP_LEVEL.items() if level not in open_levels)
+        action = "sisters_done " + json.dumps({"maps": maps}, separators=(",", ":"))
+        if action == self._sisters_sent:
+            return
+        self._sisters_sent = action
+        self._sisters_command_id = self._next_command_id
+        self._next_command_id += 1
+        self._out.append(RunAction(self._sisters_command_id, action))
 
     def _send_travel_rules(self) -> None:
         """With Open Rapture, tell the agent where the bathysphere may go, whenever that changes."""

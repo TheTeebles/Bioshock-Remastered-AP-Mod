@@ -97,7 +97,7 @@ function makeRuntime({
   const runtime = {
     memory: new Map(), text: new Map(), messages: [], logs: [], time: 1000, hooks: [], execCalls: [],
     strings: new Map(), refuse: new Set(), faults: new Set(), playerOnly: new Set(), nextAlloc: 0x70000000,
-    levels: [], guardTouched: false, queries: 0, nextObject: 0x20000000,
+    levels: [], guardTouched: false, queries: 0, regions: [], nextObject: 0x20000000,
     prints: new Map(), // part of a command -> the lines the "game" prints when it runs
     outputDevice: null, // the callback the agent put in its output device
     nextText: 0x30000000,
@@ -185,6 +185,10 @@ function makeRuntime({
           runtime.queries++;
           const guard = (queried.value >>> 12) === (GUARD_PAGE >>> 12);
           const ok = guard || committed(queried.value);
+          // BaseAddress and RegionSize: one page, unless a test made a region of many pages alike.
+          const region = runtime.regions.find((r) => queried.value >= r.base && queried.value < r.base + r.size);
+          runtime.memory.set(buffer.value, region ? region.base : (queried.value & ~0xFFF) >>> 0);
+          runtime.memory.set(buffer.value + 12, region ? region.size : 0x1000);
           runtime.memory.set(buffer.value + 16, ok ? 0x1000 : 0x10000); // State: committed or free
           runtime.memory.set(buffer.value + 20, guard ? 0x104 : (ok ? 0x04 : 0)); // Protect, with PAGE_GUARD
           return 28;
@@ -965,6 +969,20 @@ const tests = {
     r.frames(3);
     assert.strictEqual(state(r).map, '2-fisheries');
   },
+  'one question to Windows covers a whole region of pages alike': () => {
+    const queriesFor = (regions) => {
+      const r = makeRuntime(); r.game(); const model = r.objectModel();
+      const jockey = model.itemClass('WrenchJockey', 10);
+      for (let n = 0; n < 60; n++) { model.pickup('WeaponsPlasmidPickup', `WeaponsPlasmidPickup${n}`, jockey); }
+      r.regions = regions; r.load(); r.frames(20);
+      assert.strictEqual(state(r).worldTrouble, null);
+      return { queries: r.queries, here: JSON.stringify(state(r).pickupsHere) };
+    };
+    const apart = queriesFor([]);
+    const alike = queriesFor([{ base: 0x20000000, size: 0x10000000 }]); // every object the test makes
+    assert.strictEqual(alike.here, apart.here, 'the same pickups are found');
+    assert.ok(alike.queries * 2 < apart.queries, `${alike.queries} questions, against ${apart.queries} page by page`);
+  },
   'commands wait while the player is still being looked for, then go to the engine alone': () => {
     const r = makeRuntime(); r.engine(); r.level('Entry', { extra: 2 }); r.load();
     exec(r, 1, 'get ShockPlayer Health'); r.frames(20);
@@ -1558,6 +1576,35 @@ const tests = {
     assert.strictEqual(r.messages.filter((m) => m.type === 'little_sister').length, 1);
     assert.strictEqual(JSON.stringify(state(r).littleSistersSeen), '{"1-medical":1}');
   },
+  'Little Sisters are left alone in the maps the client names as done': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const sister = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(4, 'sisters_done ' + JSON.stringify({ maps: ['1-Medical_int', '2-fisheries'] }));
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[4, true]]);
+    r.poke(sister + 0x1038, 0x2); r.frames(5);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), [], 'not watched in a done map');
+    r.context.rpc.exports.action(5, 'sisters_done ' + JSON.stringify({ maps: ['2-fisheries'] }));
+    r.frames(5);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical'],
+      'watched again once the client says the map has sisters left');
+    r.context.rpc.exports.action(6, 'sisters_done {"levels":[]}');
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
+      [[4, true], [5, true], [6, false]]);
+  },
+  'a Little Sister counts for the map she was found in': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const done = r.sister(game.level, model); const open = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(4, 'sisters_done ' + JSON.stringify({ maps: ['1-medical'] }));
+    r.poke(done + 0x1038, 0x2); r.frames(3); // dealt with in a map the client is done with
+    r.string(game.level + 0x7C, '2-fisheries'); r.frames(3); // the player moves on while both are still there
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), [], 'no news of a done map');
+    r.context.rpc.exports.action(5, 'sisters_done ' + JSON.stringify({ maps: [] }));
+    r.poke(open + 0x1038, 0x2); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical'],
+      'reported for where she was found, not where the player is now');
+  },
   'a Little Sister going into a vent is not reported': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const sister = r.sister(game.level, model);
@@ -2143,8 +2190,11 @@ const tests = {
     const seen = state(r);
     assert.strictEqual(typeof seen.hookMsPerSecond, 'number');
     assert.ok(seen.hookCallsPerSecond >= 9, String(seen.hookCallsPerSecond)); // ten frames, once per loaded level
-    assert.ok(['sisters', 'other'].every((part) => typeof seen.hookParts[part] === 'number'),
-      JSON.stringify(seen.hookParts));
+    assert.ok(['sisters', 'other', 'player', 'player:where', 'player:journal'].every((part) =>
+      typeof seen.hookParts[part] === 'number'), JSON.stringify(seen.hookParts));
+    const counted = Object.entries(seen.hookParts).filter(([part]) => !part.includes(':'))
+      .reduce((sum, [, spent]) => sum + spent, 0);
+    assert.ok(Math.abs(counted - seen.hookMsPerSecond) < 1, 'the pieces of "player" are not counted twice');
   },
   'a crossing that led back into its own level is reported when that level comes up again': () => {
     const r = makeRuntime(); const g = r.game(); const model = r.objectModel();
