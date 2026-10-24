@@ -10,7 +10,11 @@ Reads BioShock Remastered map files (.bsm) and lists what the randomizer could u
 - given: what the map's scripts hand the player (ActionGiveItemsToPlayer): radio messages, story items and so on;
 - world: plasmid and tonic pickups, weapon pickups and safes, one by one with their Label and position: what
   world-item and safe checks (design section 5) would be made of;
-- pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each.
+- pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each;
+- enemies: which research subjects the map puts in it (an actor of the subject's class, or a spawner or spawn action
+  naming one), by the game's ResearchName, with how many actors, spawners and spawn actions name each. This is what
+  data.RESEARCH_SUBJECTS's levels should follow (a subject is researched where it is surely met). Only the enemy
+  classes in ENEMY_CLASSES count, so an enemy made by a spawner or action not in SPAWNERS is missed [inferred].
 
 Only reads; Python 3.8+, nothing to install. Needs map_stock.py next to it.
 
@@ -29,6 +33,40 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from map_stock import SIZES, Package, compact  # noqa: E402
 
+# The research subjects (ShockPlayer's ResearchName) and the enemy classes of each, picked by hand from the running
+# game's class list (reference/bioshock_runtime_classes.txt: ShockAI and ShockAIClasses, without their goals, sensors,
+# dead bodies and lights). Only these count: a name that merely looks like an enemy's (BouncerDrillSmoke) does not.
+ENEMY_CLASSES = {
+    "MeleeThug": ("MeleeThug", "MeleeThugClub", "ElectrifiedMeleeThug", "ElectrifiedMeleeThugClub", "SpawnedMeleeThug",
+                  "SpawnedMeleeThugClub", "SpawnedMeleeThugFlashlight", "SpawnedMeleeThugMachete",
+                  "SpawnedMeleeThugWrench"),
+    "RangedAggressor": ("RangedAggressor", "RangedAggressorPistol", "RangedAggressorSMG", "SpawnedRangedAggressorPistol",
+                        "SpawnedRangedAggressorSMG"),
+    "Grenadier": ("Grenadier", "MolotovGrenadier", "SpawnedGrenadier"),
+    "CeilingCrawler": ("CeilingCrawler",),
+    "Assassin": ("Assassin",),
+    "Bouncer": ("Bouncer", "BouncerElite", "SpawnedBouncer"),
+    "Rosie": ("Rosie", "RosieElite"),
+    "SecurityBot": ("SecurityBot", "MaximumSecurityBot", "MediumSecurityBot", "MinimumSecurityBot",
+                    "SpawnedDeck1MediumSecurityBot", "SpawnedDeck2MediumSecurityBot", "SpawnedDeck3MediumSecurityBot",
+                    "SpawnedMedicalFirstSecurityBotA", "SpawnedMinimumSecurityBot"),
+    "Gatherer": ("Gatherer", "PlayerEscortedGatherer", "SpawnedGatherer", "SpawnedPlayerEscortedGatherer"),
+    "Turret": ("Turret", "MaximumSecurityTurret", "MediumSecurityTurret", "MinimumSecurityTurret", "TurretFlamethrower",
+               "TurretRPG", "Deck1TurretRPG", "SpawnedDeck1MaximumSecurityTurret", "SpawnedDeck1MinimumSecurityTurret",
+               "SpawnedMaximumSecurityTurret", "SpawnedMinimumSecurityTurret"),
+    "SecurityCamera": ("SecurityCamera", "SpawnedDeck1SecurityCamera", "SpawnedDeck1SecurityCameraWall",
+                       "SpawnedSecurityCamera"),
+}
+ENEMY_OF_CLASS = {cls: subject for subject, classes in ENEMY_CLASSES.items() for cls in classes}
+# What spawns enemies: a spawner or spawn action that names its subject, or one whose settings name the classes it
+# makes (None). Other "Spawn" names (ActionAssignNextSecurityBotSpawnLocation) spawn nothing.
+SPAWNERS = {
+    "SecurityBotSpawner": "SecurityBot", "TurretSpawner": "Turret", "SecurityCameraSpawner": "SecurityCamera",
+    "AggressorSpawner": None,  # any kind of splicer: its settings say which
+    "ActionSpawnSecurityBot": "SecurityBot", "ActionSpawnTurret": "Turret",
+    "ActionSpawnPlayerEscortedGatherer": "Gatherer", "ActionSpawnLinkedGathererAndProtector": "Gatherer",
+    "ActionSpawnAI": None, "ActionSpawnActor": None, "ActionSpawnActorAtActorLocation": None,
+}
 QUEST_ACTIONS = {"ActionInitiateQuest": "start", "ActionCompleteQuest": "complete",
                  "ActionCompleteQuestObjective": "complete objective"}
 SKIP_MAPS = ("_deu", "_esn", "_fra", "_ita", "_jpn", "_pol", "_rus", "_cze", "_hun")  # localized copies, empty
@@ -170,6 +208,11 @@ WEAPONS = ("Pistol", "MachineGun", "Shotgun", "GrenadeLauncher", "ChemicalThrowe
 PLAIN_WEAPON_PICKUPS = tuple(f"{weapon}Pickup" for weapon in WEAPONS)
 
 
+def enemy_of(name):
+    """The research subject of an enemy class, by its name with or without its package; None for anything else."""
+    return ENEMY_OF_CLASS.get(name.rpartition(".")[2]) if isinstance(name, str) else None
+
+
 def is_weapon_pickup(cls):
     return ("And" in cls and cls.endswith("Pickup")) or cls in PLAIN_WEAPON_PICKUPS
 
@@ -192,10 +235,12 @@ def position(value):
 def survey(path):
     pkg = Survey(path.read_bytes())
     result = {"map": path.name, "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [],
-              "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}}
+              "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}, "enemies": {}}
     pickups = Counter()
+    enemies: dict[str, Counter] = {}
     for i, e in enumerate(pkg.exports, 1):
         cls = pkg.class_of(e)
+        note_enemy(pkg, i, e, cls, enemies)
         if cls == "ActionChangeLevel":
             found = {**pkg.props(i), **pkg.resolved(i)}
             script = e["outer"]
@@ -233,26 +278,18 @@ def survey(path):
     result["given"].sort()
     result["diaries"].sort()
     result["pickups"] = dict(sorted(pickups.items()))
+    result["enemies"] = {subject: dict(sorted(how.items())) for subject, how in sorted(enemies.items())}
     return result
 
 
-def main():
-    paths = []
-    for arg in sys.argv[1:] or ["."]:
-        path = Path(arg)
-        paths += sorted(path.rglob("*.bsm"), key=lambda p: p.name.lower()) if path.is_dir() else [path]
-    results = []
-    for path in paths:
-        if path.stem.lower().endswith(SKIP_MAPS):
-            continue
-        try:
-            results.append(survey(path))
-        except Exception as error:  # one odd file should not stop the rest
-            results.append({"map": path.name, "error": f"{type(error).__name__}: {error}"})
-        print(f"read {path.name}", file=sys.stderr)
-    json.dump(results, sys.stdout, indent=1)
-    print()
-
-
-if __name__ == "__main__":
-    main()
+def note_enemy(pkg, i, e, cls, enemies):
+    """Counts export i if it is an enemy, or a spawner or spawn action that makes one (every subject it names)."""
+    if cls in SPAWNERS:
+        subjects = {SPAWNERS[cls]} - {None}
+        values = [*pkg.props(i).values(), *pkg.resolved(i).values()]
+        subjects |= {enemy_of(pkg.name_of(v)) for v in values if isinstance(v, Ref)}  # the classes it is set to make
+        subjects |= {enemy_of(v) for v in values if isinstance(v, str)}
+        for subject in subjects - {None}:
+            enemies.setdefault(subject, Counter())["spawn actions" if cls.startswith("Action") else "spawners"] += 1
+    elif e["outer"] == 0 and enemy_of(cls):  # placed in the map, Spawned... classes included
+        enemies.setdefault(enemy_of(cls), Counter())["actors"] += 1

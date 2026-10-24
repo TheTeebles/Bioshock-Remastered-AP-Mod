@@ -10,14 +10,16 @@ It reports:
 - each audio diary the client knows (game_data.DIARY_CLASSES) that lies in a different level's map than the one
   data.AUDIO_DIARIES puts it in, or in no map at all (given by a script, or carried by someone);
 - the quests each map's scripts start and complete, for Level Complete detection without the story order;
-- the plasmids, tonics, weapons and safes lying in each map, for world-item and safe checks.
+- the plasmids, tonics, weapons and safes lying in each map, for world-item and safe checks;
+- the first level in story order where each research subject is met, against the level data.RESEARCH_SUBJECTS
+  puts its research checks in (from the survey's enemies, 2026-10-24).
 """
 import json
 import sys
 from collections import defaultdict
 
 from worlds.bioshock.client.game_data import DIARY_CLASSES, MAP_LEVEL, normalize_map
-from worlds.bioshock.data import AUDIO_DIARIES
+from worlds.bioshock.data import AUDIO_DIARIES, LEVEL_NAMES, RESEARCH_SUBJECTS
 
 
 def level_of(map_file):
@@ -86,6 +88,22 @@ def main():
             counts[item["class"]] += 1
             say(f"| {level_of(entry['map'])} | {item['class']} | {item['label']} | {', '.join(item['items'])} |")
     say("\nTotals: " + ", ".join(f"{cls} {n}" for cls, n in sorted(counts.items())))
+
+    say("\n## Research subjects\n")
+    say("Where each subject is first met in story order, from its actors, spawners and spawn actions in the maps. "
+        "A subject met earlier than data.py says could have its research checks placed there.\n")
+    say("| Subject | data.py | First met | Met in |")
+    say("|---|---|---|---|")
+    met = defaultdict(set)
+    for entry in maps:
+        for subject in entry.get("enemies", {}):
+            met[subject].add(level_of(entry["map"]))
+    order = {name: i for i, name in enumerate(LEVEL_NAMES)}
+    for subject in RESEARCH_SUBJECTS:
+        levels = sorted((level for level in met[subject.key] if level in order), key=order.get)
+        first = levels[0] if levels else "nowhere the survey can see"
+        flag = " (earlier)" if levels and order[levels[0]] < order[subject.level] else ""
+        say(f"| {subject.name} | {subject.level} | {first}{flag} | {', '.join(levels)} |")
     print("\n".join(out))
 
 
