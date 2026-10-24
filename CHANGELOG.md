@@ -1,5 +1,19 @@
 # Changelog
 
+## Unreleased
+
+None of this has been tried in the real game yet.
+
+- With World Item Checks set to Shuffled, the plasmid and tonic pickups give an "Archipelago Check" that restores
+  nothing, instead of a bag of chips. Research levels with Research Checks give nothing, and Gatherer's Garden lines
+  that are checks restore nothing when bought (#14).
+- The in-game agent takes less of the game's time: one call into Windows covers a whole region of memory, the
+  per-frame hook does less, and Little Sisters are no longer watched in levels whose sister checks are all done. The
+  client's `/bioshock` readout splits "player" into its parts, to show what still costs time (#15).
+- Open Rapture: the first bathysphere menu in a level should now offer the right stops, not the level's own list
+  (#16). If it still shows the vanilla list, close it and pull the switch again.
+- `archipelago.json` no longer sets `version` and `compatible_version`; the APWorld build adds them (#18).
+
 ## 0.2.0 (first release)
 
 The first build of the BioShock Remastered APWorld meant for players. It needs Archipelago 0.6.7 or newer, the Steam

@@ -188,8 +188,9 @@ game would not get those items afterwards without `/resync`.
 
 ## Known issues
 
-- **Open Rapture: the first bathysphere menu in a level can show the vanilla list.** Close the menu and pull the
-  switch again; from then on it shows the stops the seed allows.
+- **Open Rapture: the first bathysphere menu in a level can show the vanilla list.** The client now sets the menu
+  just before it opens, which should fix this but has not been tried in the game yet. If it still happens, close the
+  menu and pull the switch again; from then on it shows the stops the seed allows.
 - **The dollars counter does not flash** when the Pickpocket trap takes your money. The amount is right.
 - **Untried in the real game:** the Gatherer's Gardens after Neptune's Bounty, sending the goal when Fontaine is
   defeated, and a whole seed played start to finish.
