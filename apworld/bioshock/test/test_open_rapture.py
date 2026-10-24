@@ -196,6 +196,24 @@ class TestOpenRaptureGenerates(PoolTestBase):
             self.generate_for_real({"level_access": "access_items", "chapter_order": "shuffled"})
         self.assertIn("only works with Level Access set to 'open_rapture'", str(raised.exception))
 
+    def test_a_start_item_for_a_chapter_later_in_the_order_is_no_start(self) -> None:
+        # Chapter 1 excluded and Arcadia Access to start with: enough with chapters in any order, but with them
+        # shuffled only when the seed's order begins with Arcadia.
+        options = {"level_access": "open_rapture", "chapter_order": "shuffled",
+                   "exclude_locations": locations_in_chapter(1), "start_inventory": {"Arcadia Access": 1}}
+        outcomes = []
+        for seed in range(8):
+            with self.subTest(seed=seed):
+                try:
+                    multiworld = self.generate_for_real(options, seed=seed)
+                except OptionError as refused:
+                    self.assertIn("open from the start", str(refused))
+                    outcomes.append("refused")
+                    continue
+                self.assertEqual(multiworld.worlds[1].chapter_sequence[0], 3)
+                outcomes.append("made")
+        self.assertIn("refused", outcomes)
+
     def test_somewhere_to_start_is_still_needed(self) -> None:
         # Stations only: every one is past chapter 1, so the first chapter item would have nowhere to go.
         stations_only = {"level_access": "open_rapture", "story_checks": False, "little_sister_checks": False,

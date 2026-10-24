@@ -60,8 +60,8 @@ class BioShockWorld(World):
                     getattr(self.options, name).value = tracked[name]
             self.chapter_sequence = tuple(int(n) for n in tracked.get("chapter_sequence") or ())
         else:  # a seed being rebuilt was checked when it was made, with start inventories the slot data doesn't carry
+            self.chapter_sequence = self._pick_chapter_sequence()  # first: what is open from the start depends on it
             self._check_options()
-            self.chapter_sequence = self._pick_chapter_sequence()
         if self.options.start_with_research_camera and RESEARCH_CAMERA not in self.options.start_inventory.value:
             self.multiworld.push_precollected(self.create_item(RESEARCH_CAMERA))
 
