@@ -37,9 +37,11 @@ Install by double-clicking the `.apworld` or copying it into Archipelago's `cust
 
 ## Make a release
 
-1. Set the new version in both `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json`
-   (`world_version`), and add its section to `CHANGELOG.md` at the top of the repository.
-2. Run the tests and build `bioshock.apworld` as above, and the agent's tests (below).
+1. Run `python tools/release.py --world 0.2.1 --agent 2026-10-25.1` to set the world's version in
+   `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json` (`world_version`), and the agent's
+   version in both agent copies. Add the changelog section by hand at the top of `CHANGELOG.md`.
+2. Run the tests and the agent's tests (below), then `python tools/release.py --build path/to/Archipelago` with
+   that checkout's Python to copy the world in and build `bioshock.apworld`.
 3. On GitHub, draft a release with the tag `v<version>` on `main`, paste the changelog section as its notes, and
    attach `bioshock.apworld` and a template YAML ("Generate Template Options" writes `Players/Templates/BioShock.yaml`).
 
@@ -54,6 +56,12 @@ Install by double-clicking the `.apworld` or copying it into Archipelago's `cust
 | `test_client_frida.py` | The way into the real game: the helper process spoken to directly, the adapter (including what the game raises during a command, and a game that goes away in the middle of one), and finding a Python |
 | `test_client_playthrough.py` | Whole generated seeds played start to finish, with Archipelago's logic as referee |
 | `test_client_server.py` | The client against Archipelago's own server code, over an in-memory pipe instead of a socket. The last class runs server, client, helper and a stand-in Frida together |
+| `test_client_travel.py` | Open Rapture on the client side: the bathysphere's stops, crossings sent back to the hub, Level Complete in any order, and Chapter Order |
+| `test_client_movies.py` | The copy of the Garden's menu that can show the AP icon, with a tiny movie standing in for the game's |
+| `test_open_rapture.py` | Open Rapture on the world side: chapter access, the starting camera, Chapter Order, and whole seeds |
+| `test_world_items.py` | World Item Checks and Safe Checks: the plasmids, tonics and weapons lying in the levels, and the safes |
+| `test_research.py` | Research Checks: researching enemies with the Research Camera |
+| `test_map_tracker.py` | Universal Tracker's map tab: the files in `tracker/`, the functions it calls, and the client telling it where the player is |
 
 Shared pieces:
 

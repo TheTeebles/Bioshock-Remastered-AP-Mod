@@ -1,5 +1,6 @@
 # Runs on every pull request and every push to main: the world's own tests and Archipelago's general suite inside an
-# Archipelago checkout (as apworld/README.md describes), and the game agent's tests against the fake Frida runtime.
+# Archipelago checkout (as apworld/README.md describes), the game agent's and the probe's tests against the fake Frida
+# runtime, and the release script's tests.
 name: Tests
 
 on:
@@ -41,13 +42,29 @@ jobs:
       - name: Archipelago's general tests
         working-directory: archipelago
         run: python -m pytest test/general -q
+      - name: The map survey's report, against the world's tables
+        working-directory: archipelago
+        env:
+          PYTHONPATH: .
+        run: python ../mod/client-poc/map_reader/test_survey_report.py
 
   agent:
-    name: Game agent (mock Frida)
+    name: Game agent and probe (mock Frida), tools
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - run: node client-poc/agent_mock_test.js apworld/bioshock/client/agent.js
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: The game agent
+        run: node client-poc/agent_mock_test.js apworld/bioshock/client/agent.js
+      - name: The probe
+        run: node client-poc/probe_mock_test.js client-poc/probe_script_calls.js
+      - name: The map survey's command line
+        run: python -m unittest client-poc/map_reader/test_map_survey.py
+      - name: The release script
+        run: |
+          if [ -f tools/test_release.py ]; then python -m unittest tools/test_release.py; else echo "no tools/test_release.py yet"; fi

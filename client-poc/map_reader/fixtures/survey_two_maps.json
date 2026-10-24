@@ -1,0 +1,2 @@
+[{"map": "1-Medical.bsm", "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [], "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}, "enemies": {"Bouncer": {"actors": 1}, "MeleeThug": {"spawners": 3}}},
+ {"map": "2-Fisheries.bsm", "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [], "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}, "enemies": {"Assassin": {"actors": 1}, "MeleeThug": {"actors": 2}}}]

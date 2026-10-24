@@ -323,6 +323,7 @@ class BioShockContext(CommonContext):
         return str(flash_movies.prepare(exe, Path(Utils.cache_path("bioshock", "FlashMovies")), library))
 
     def drop_agent(self, reason: str = "") -> None:
+        """Stop using the game agent: take the answers it already sent, close it, and tell the core why."""
         if self.agent is None:
             return
         # Take the answers that are already waiting, so that an item the game confirmed just before it went away,
@@ -408,6 +409,7 @@ class BioShockContext(CommonContext):
         self.set_agent(link)
 
     def start_simulation(self) -> SimulatedGame:
+        """Stop looking for the real game and play the simulated one instead. Returns it."""
         self.auto_attach = False
         self._gave_up = False
         self.stop_looking()

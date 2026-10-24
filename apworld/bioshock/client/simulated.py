@@ -232,6 +232,7 @@ class SimulatedGame:
         return level
 
     def collect_diary(self, number: int) -> str:
+        """Pick up audio diary `number` (from 1). Returns "Level: Title"; ValueError for a bad number."""
         if not 1 <= number <= len(AUDIO_DIARIES):
             raise ValueError(f"Audio diaries are numbered 1 to {len(AUDIO_DIARIES)}.")
         self.diaries.add(number)
@@ -239,6 +240,7 @@ class SimulatedGame:
         return f"{diary.level}: {diary.title}"
 
     def deal_with_little_sister(self, level: str | None = None) -> None:
+        """Rescue or harvest one more Little Sister in `level` (the player's by default); ValueError if none left."""
         level = level or self.level
         limit = LITTLE_SISTERS_PER_LEVEL.get(level, 0)
         if self.little_sisters[level] >= limit:
@@ -246,6 +248,7 @@ class SimulatedGame:
         self.little_sisters[level] += 1
 
     def use_station(self, level: str | None = None) -> None:
+        """Use one more Power to the People station in `level` (the player's by default); ValueError if none left."""
         level = level or self.level
         limit = POWER_TO_THE_PEOPLE_PER_LEVEL.get(level, 0)
         if self.stations[level] >= limit:

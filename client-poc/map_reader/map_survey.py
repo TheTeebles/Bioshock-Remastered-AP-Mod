@@ -293,3 +293,25 @@ def note_enemy(pkg, i, e, cls, enemies):
             enemies.setdefault(subject, Counter())["spawn actions" if cls.startswith("Action") else "spawners"] += 1
     elif e["outer"] == 0 and enemy_of(cls):  # placed in the map, Spawned... classes included
         enemies.setdefault(enemy_of(cls), Counter())["actors"] += 1
+
+
+def main():
+    paths = []
+    for arg in sys.argv[1:] or ["."]:
+        path = Path(arg)
+        paths += sorted(path.rglob("*.bsm"), key=lambda p: p.name.lower()) if path.is_dir() else [path]
+    results = []
+    for path in paths:
+        if path.stem.lower().endswith(SKIP_MAPS):
+            continue
+        try:
+            results.append(survey(path))
+        except Exception as error:  # one odd file should not stop the rest
+            results.append({"map": path.name, "error": f"{type(error).__name__}: {error}"})
+        print(f"read {path.name}", file=sys.stderr)
+    json.dump(results, sys.stdout, indent=1)
+    print()
+
+
+if __name__ == "__main__":
+    main()

@@ -264,15 +264,16 @@ class TestShuffledChapterOrder(unittest.TestCase):
         self.assertEqual(travel.open_chapters({FORT_FROLIC_ACCESS}, self.order, {4}), {1, 4})
         self.assertEqual(travel.why_locked(3, {FORT_FROLIC_ACCESS}, self.order, {4}), "you receive Arcadia Access")
 
-    def test_why_locked_names_the_chapter_to_finish(self) -> None:
+    def test_why_locked_never_gives_away_the_order(self) -> None:
+        self.assertEqual(travel.why_locked(3, set(), self.order), "you receive Arcadia Access",
+                         "the missing access item, not the chapter before it")
         self.assertEqual(travel.why_locked(3, {ARCADIA_ACCESS, FORT_FROLIC_ACCESS}, self.order),
-                         "you finish Fort Frolic")
-        self.assertEqual(travel.why_locked(3, set(), self.order),
-                         "you receive Arcadia Access and you finish Fort Frolic")
+                         "you have finished the chapter before it")
 
     def test_a_locked_crossing_says_which_chapter_to_finish(self) -> None:
         text = travel.blocked_notice("3-arcadia", "1-medical", self.held, (2, 4, 3), {2})
-        self.assertIn("Arcadia is locked until you finish Fort Frolic", text)
+        self.assertIn("Arcadia is locked until you have finished the chapter before it", text)
+        self.assertNotIn("Fort Frolic", text)
         self.assertIsNone(travel.blocked_notice("3-arcadia", "1-medical", self.held, (2, 3, 4), {2}))
 
     def finish_fort_frolic(self):
