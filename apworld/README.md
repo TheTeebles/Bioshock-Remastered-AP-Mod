@@ -37,9 +37,11 @@ Install by double-clicking the `.apworld` or copying it into Archipelago's `cust
 
 ## Make a release
 
-1. Set the new version in both `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json`
-   (`world_version`), and add its section to `CHANGELOG.md` at the top of the repository.
-2. Run the tests and build `bioshock.apworld` as above, and the agent's tests (below).
+1. Run `python tools/release.py --world 0.2.1 --agent 2026-10-25.1` to set the world's version in
+   `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json` (`world_version`), and the agent's
+   version in both agent copies. Add the changelog section by hand at the top of `CHANGELOG.md`.
+2. Run the tests and the agent's tests (below), then `python tools/release.py --build path/to/Archipelago` with
+   that checkout's Python to copy the world in and build `bioshock.apworld`.
 3. On GitHub, draft a release with the tag `v<version>` on `main`, paste the changelog section as its notes, and
    attach `bioshock.apworld` and a template YAML ("Generate Template Options" writes `Players/Templates/BioShock.yaml`).
 
