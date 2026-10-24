@@ -184,9 +184,9 @@ class TestClient(unittest.TestCase):
         self.assertEqual(h.game.empty_pickups, {"placeholder": "chips",
                                                 "maps": {name: list(actors)
                                                          for name, actors in game_data.SHUFFLED_PICKUPS.items()}})
-        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Wrench Jockey"), "chips")
+        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Wrench Jockey"), "nothing")
         self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Incinerate!"), "Incinerate!")
-        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "chips")
+        self.assertEqual(h.game.take_from_world("Medical Pavilion - Pickup: Telekinesis"), "nothing")
         h.step(4)
         self.assertIn(loc("Medical Pavilion - Pickup: Wrench Jockey"), h.sent_checks)
 

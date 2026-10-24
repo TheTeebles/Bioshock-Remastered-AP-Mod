@@ -111,8 +111,8 @@ class WorldItemChecks(Choice):
 
     Off: nothing lying in the levels is a check.
     Keep Items: each pickup still gives its own plasmid, tonic or weapon, and sends a check as well.
-    Shuffled: the plasmid and tonic pickups give a bag of chips instead, and what they held goes into the
-    multiworld. Telekinesis comes from the multiworld too, as a progression item: the debris in front of Surgery,
+    Shuffled: the plasmid and tonic pickups give nothing instead (they show as an Archipelago Check), and what
+    they held goes into the multiworld. Telekinesis comes from the multiworld too, as a progression item: the debris in front of Surgery,
     and every level after Medical Pavilion, wait for it. Electro Bolt and Incinerate! still give themselves,
     because the story needs them, and weapons stay where they are.
     """
@@ -142,7 +142,7 @@ class ResearchChecks(Choice):
     to progress.
 
     With research checks on, the 9 gene tonics that research gives (SportBoost, Scrounger, Natural Camouflage and
-    others) come from the multiworld instead, and research gives a bag of chips in their place.
+    others) come from the multiworld instead, and research gives nothing in their place.
     """
     display_name = "Research Checks"
     option_off = 0

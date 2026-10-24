@@ -537,12 +537,18 @@ function makeRuntime({
       runtime.string(values + 0x50, className); poke(values + 0x60, credit * 10);
       return at;
     };
-    const chips = make('chips', classClass, 0x1100); poke(chips + 0x40, cls('Consumable', item));
+    // Consumable declares what the chips restore (kept as tenths, like every float here) and a number that is not
+    // an effect, which a stand-in must keep.
+    const consumable = cls('Consumable', item);
+    fields(consumable, [['HealthBoost', floatProperty, 0x70], ['BioAmmoBoost', floatProperty, 0x74],
+      ['MaxCarried', intProperty, 0x78]]);
+    const chips = make('chips', classClass, 0x1100); poke(chips + 0x40, consumable);
     for (let at = 0x1000; at < 0x1100; at += 0x1000) { poke(chips + at, 0); }
     poke(chips + 0xFFC, 0); poke(chips + 0x10FC, 0);
     const defaults = runtime.object(0x100);
     poke(chips + 0x54C, defaults); poke(chips + 0x550, 188); poke(chips + 0x554, 188);
     runtime.string(defaults + 0x44, 'Salty and crunchy.'); runtime.string(defaults + 0x50, 'Potato Chips');
+    poke(defaults + 0x70, 150); poke(defaults + 0x74, 50); poke(defaults + 0x78, 3);
     // The player's EVE and dollars as ShockPlayer declares them, and (unless left out) its functions for taking some.
     const removeBioAmmo = make('RemoveBioAmmo', functionClass);
     const removeCredits = make('RemoveCredits', functionClass);
@@ -809,6 +815,13 @@ function makeRuntime({
 
 const exec = (r, id, command) => r.context.rpc.exports.exec(id, command);
 const state = (r) => r.context.rpc.exports.state();
+// Whether a class is the agent's empty stand-in: a copy of chips, named for the multiworld, that restores nothing.
+const isEmptyStandIn = (r, model, at) => {
+  const values = r.memory.get(at + 0x54C);
+  return at >= 0x70000000 && r.memory.get(at + 0x28) === r.memory.get(model.chips + 0x28) &&
+    r.strings.get(r.memory.get(values + 0x50)) === 'Archipelago Check' &&
+    r.memory.get(values + 0x70) === 0 && r.memory.get(values + 0x74) === 0;
+};
 const gardenLines = (r, id, lines) => r.context.rpc.exports.action(id, 'garden_lines ' +
   JSON.stringify({ level: 'Medical Pavilion', map: '1-medical', lines }));
 const travelRules = (r, id, rules) => r.context.rpc.exports.action(id, `travel_rules ${JSON.stringify(rules)}`);
@@ -2163,6 +2176,12 @@ const tests = {
     assert.strictEqual(r.strings.get(r.memory.get(values + 0x50)), 'Hookshot');
     assert.strictEqual(r.strings.get(r.memory.get(values + 0x44)), 'For Halthrax');
     assert.strictEqual(r.text.get(r.memory.get(model.defaults + 0x50)), 'Potato Chips', 'chips itself is untouched');
+    assert.deepStrictEqual([0x70, 0x74, 0x78].map((at) => r.memory.get(values + at)), [0, 0, 3],
+      'it restores no health or EVE, and keeps a number that is not an effect');
+    assert.deepStrictEqual([0x70, 0x74, 0x78].map((at) => r.memory.get(model.defaults + at)), [150, 50, 3],
+      'the chips still restore what they did');
+    assert.ok(r.logged('stand-ins restore nothing: zeroed Consumable.HealthBoost 15, Consumable.BioAmmoBoost 5; ' +
+      'kept Consumable.MaxCarried 3'));
     assert.strictEqual(r.memory.get(lines[0] + 0xC), 200, '80 ADAM is 20 times the price of chips');
     assert.notStrictEqual(r.memory.get(lines[2]), copy, 'line 3 has a copy of its own');
     assert.strictEqual(r.memory.get(lines[2] + 0xC), 50);
@@ -2466,7 +2485,7 @@ const tests = {
     r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
     r.frames(10);
-    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
+    assert.ok(model.gives(shuffled).every((at) => isEmptyStandIn(r, model, at)));
   },
   'state() reports the safes open, by map, and leaves lockboxes alone': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
@@ -2484,7 +2503,7 @@ const tests = {
     assert.strictEqual(JSON.stringify(state(r).containersOpened), open);
     assert.strictEqual(state(r).worldTrouble, null, 'no complaint about lockboxes');
   },
-  'shuffled pickups give the placeholder, and the kept ones their own item': () => {
+  'shuffled pickups give nothing, and the kept ones their own item': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const jockey = model.itemClass('WrenchJockey', 10); const incinerate = model.itemClass('Incinerate', 10);
     const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
@@ -2494,16 +2513,30 @@ const tests = {
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'], '2-fisheries': ['x'] } }));
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[7, true]]);
     r.frames(10);
-    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips], 'its LootSpec and its rolled ItemStack');
+    const [spec, stack] = model.gives(shuffled);
+    assert.ok(isEmptyStandIn(r, model, spec), 'its LootSpec gives the empty stand-in');
+    assert.strictEqual(stack, spec, 'and so does its rolled ItemStack');
     assert.deepStrictEqual(model.gives(kept), [incinerate, incinerate]);
     assert.strictEqual(state(r).pickupsEmptied, 1);
-    assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
+    assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives nothing instead of WrenchJockey'));
     assert.strictEqual(state(r).worldTrouble, null);
     r.context.rpc.exports.action(8, 'empty_pickups ' + JSON.stringify({ placeholder: 'Bread', maps: {} }));
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
       [[7, true], [8, false]]);
   },
-  'a pickup not rolled yet gives the placeholder once it rolls': () => {
+  'shuffled pickups give chips when no empty stand-in can be made': () => {
+    const r = makeRuntime(); r.game(); const model = r.objectModel();
+    r.poke(model.chips + 0x54C, 0); // the chips' default values cannot be found, so they cannot be copied
+    const jockey = model.itemClass('WrenchJockey', 10);
+    const shuffled = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
+      { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
+    r.frames(10);
+    assert.deepStrictEqual(model.gives(shuffled), [model.chips, model.chips]);
+    assert.ok(r.logged('WeaponsPlasmidPickup1 in 1-medical now gives chips instead of WrenchJockey'));
+  },
+  'a pickup not rolled yet gives nothing once it rolls': () => {
     const r = makeRuntime(); r.game(); const model = r.objectModel();
     const jockey = model.itemClass('WrenchJockey', 10);
     const later = model.pickup('WeaponsPlasmidPickup', 'WeaponsPlasmidPickup1', jockey, false);
@@ -2511,12 +2544,16 @@ const tests = {
     r.context.rpc.exports.action(7, 'empty_pickups ' + JSON.stringify(
       { placeholder: 'chips', maps: { '1-medical': ['WeaponsPlasmidPickup1'] } }));
     r.frames(10);
-    assert.deepStrictEqual(model.gives(later), [model.chips, 0], 'what it will roll');
-    model.roll(later); r.frames(10); // rolled from the swapped LootSpec: chips already
-    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    const empty = model.gives(later)[0];
+    assert.ok(isEmptyStandIn(r, model, empty), 'what it will roll');
+    assert.strictEqual(model.gives(later)[1], 0);
+    model.roll(later); r.frames(10); // rolled from the swapped LootSpec: the stand-in already
+    assert.deepStrictEqual(model.gives(later), [empty, empty]);
     const stack = r.memory.get(r.memory.get(later + 0x520) + 0x44);
     r.poke(stack + 0x50, jockey); r.frames(10); // a stack rolled from before the swap is swapped on a later pass
-    assert.deepStrictEqual(model.gives(later), [model.chips, model.chips]);
+    assert.deepStrictEqual(model.gives(later), [empty, empty]);
+    r.poke(stack + 0x50, model.chips); r.frames(10); // a save names the stand-in as chips: it becomes one again
+    assert.deepStrictEqual(model.gives(later), [empty, empty]);
     assert.strictEqual(state(r).pickupsEmptied, 1);
   },
   'state() reports the level of each research subject and the table of levels': () => {
@@ -2549,7 +2586,7 @@ const tests = {
     r.load(); r.frames(15);
     r.context.rpc.exports.action(5, 'empty_research_awards'); r.frames(15);
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]), [[5, true]]);
-    assert.strictEqual(r.memory.get(levels + 20 + 0x10), model.chips);
+    assert.strictEqual(r.memory.get(levels + 20 + 0x10), 0, 'the level gives nothing, as None');
     assert.strictEqual(r.memory.get(levels + 0x10), 0, 'a level that gives nothing is left alone');
     assert.strictEqual(r.memory.get(levels + 40 + 0x10), game.pawn, 'only item classes are swapped');
     assert.strictEqual(state(r).researchAwardsEmptied, 1);

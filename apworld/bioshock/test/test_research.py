@@ -73,7 +73,7 @@ class TestClient(unittest.TestCase):
         h.step(4)
         self.assertTrue(h.game.research_awards_emptied)
         h.game.photograph("thuggish")
-        self.assertEqual(h.game.photograph("thuggish"), "Thuggish Splicer research level 2, which gives a bag of chips")
+        self.assertEqual(h.game.photograph("thuggish"), "Thuggish Splicer research level 2")
         h.step(4)
         self.assertIn(loc("Research: Thuggish Splicer 1"), h.sent_checks)
         self.assertIn(loc("Research: Thuggish Splicer 2"), h.sent_checks)

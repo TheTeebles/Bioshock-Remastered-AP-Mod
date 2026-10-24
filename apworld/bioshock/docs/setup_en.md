@@ -97,11 +97,11 @@ If the game was started as administrator, Archipelago has to be started as admin
     it opens the menu. Nothing in the game's folder is changed.
   - *World items and safes (World Item Checks and Safe Checks, Steam):* built but not tried in the real game yet.
     The client watches the plasmid and tonic pickups lying in the level you are in, the safes and lockboxes (open
-    ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give a bag of
-    chips instead of their item.
+    ones stay open in a save) and the weapons you hold. With the pickups shuffled it makes them give nothing
+    instead of their item (an Archipelago Check that restores nothing).
   - *Research (Research Checks, Steam):* built but not tried in the real game yet. The client reads how far each
-    enemy is researched from the player's research tables, and with research checks on it makes research give a
-    bag of chips instead of its tonics.
+    enemy is researched from the player's research tables, and with research checks on it makes research give
+    nothing instead of its tonics.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.

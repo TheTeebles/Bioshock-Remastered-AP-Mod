@@ -49,12 +49,12 @@ item it holds. Your
 own BioShock items cost what the game charges for them; other items cost 80 ADAM if they are useful and 20
 otherwise. Your own items show their own icon (a weapon upgrade shows its weapon) and other items show the
 Archipelago icon. Buying a line sends its
-check and gives you a bag of chips instead of the gene.
+check and gives you nothing instead of the gene.
 
 World Item Checks and Safe Checks (both off by default, and not tried in the game yet) make what lies in the levels
 checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
 of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
-as well; with Shuffled the plasmid and tonic pickups give a bag of chips instead and their items go into the
+as well; with Shuffled the plasmid and tonic pickups give nothing instead and their items go into the
 multiworld, except Electro Bolt and Incinerate!, which the story needs. Telekinesis is shuffled too, as a
 progression item: you need it to clear the debris in front of Surgery, so logic puts everything past it, and every
 level after Medical Pavilion, behind Telekinesis. Safe Checks makes opening each of the 41
@@ -66,7 +66,7 @@ Sisters, Security Bots, Turrets and Security Cameras) has 5 research levels. Fir
 each a check (11, one photo each); All makes every level a check (55). Levels 2 to 5 take many photos, so they never
 hold anything needed to progress. With research checks on, the 9 tonics research gives (SportBoost 1 and 2,
 Scrounger, Static Discharge 2, Extra Nutrition 3, Natural Camouflage, Wrench Jockey 2, Photographer's Eye 2 and
-Security Expert 2) come from the multiworld, and research gives a bag of chips instead.
+Security Expert 2) come from the multiworld, and research gives nothing instead.
 
 Welcome to Rapture can never be revisited, so its two audio diaries and its Electro Bolt only hold filler whatever
 you choose.

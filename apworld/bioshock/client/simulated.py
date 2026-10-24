@@ -272,7 +272,7 @@ class SimulatedGame:
 
     def take_from_world(self, location_name: str) -> str:
         """Take the pickup, open the safe, or pick up the weapon that is this location. Returns what the
-        player got (a pickup the client has emptied gives a bag of chips)."""
+        player got (a pickup the client has emptied gives nothing)."""
         location_id = next((location.id for location in LOCATION_TABLE if location.name == location_name), None)
         spot = next((spot for spot in WORLD_SPOTS if spot.id == location_id), None)
         if spot is None:
@@ -286,7 +286,7 @@ class SimulatedGame:
             return f"the {spot.kind}'s contents"
         self.pickups_taken.setdefault(spot.map, set()).add(spot.actor)
         emptied = (self.empty_pickups or {}).get("maps", {}).get(spot.map, ())
-        return self.empty_pickups["placeholder"] if spot.actor in emptied else spot.vanilla
+        return "nothing" if spot.actor in emptied else spot.vanilla
 
     def photograph(self, text: str) -> str:
         """Research the subject whose name contains `text` one level further. Returns what happened."""
@@ -301,8 +301,8 @@ class SimulatedGame:
             raise ValueError(f"{subject.name} is researched to the end.")
         self.research[subject.key] = level
         award = dict(subject.awards).get(level)
-        if award is not None:
-            award = "a bag of chips" if self.research_awards_emptied else award
+        if self.research_awards_emptied:
+            award = None  # the level gives nothing, as the agent makes it
         return f"{subject.name} research level {level}" + (f", which gives {award}" if award else "")
 
     def reach_milestone(self, level: str | None = None) -> str:
