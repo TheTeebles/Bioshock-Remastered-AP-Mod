@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.11';
+const AGENT_VERSION = '2026-10-24.2';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -253,18 +253,9 @@ function readable(pointer) {
   const page = value >>> 12;
   let verdict = pageVerdicts.get(page);
   if (verdict === undefined) {
-    verdict = false;
-    try {
-      if (virtualQuery(pointer, queryBuffer, QUERY_SIZE) !== 0) {
-        const state = queryBuffer.add(16).readU32();
-        const protect = queryBuffer.add(20).readU32();
-        const access = protect & 0xFF;
-        const committed = state === 0x1000;
-        const guarded = (protect & 0x100) !== 0;
-        verdict = committed && !guarded && access !== 0 && access !== 0x01 && access !== 0x10;
-      }
-    } catch (e) {
-      verdict = false;
+    verdict = regionVerdict(page);
+    if (verdict === undefined) {
+      verdict = queryPage(pointer, page);
     }
     if (pageVerdicts.size > 8192) {
       pageVerdicts.clear();
@@ -272,6 +263,52 @@ function readable(pointer) {
     pageVerdicts.set(page, verdict);
   }
   return verdict;
+}
+
+// VirtualQuery answers for a whole region of pages that are alike, so its answer is kept for the region: the
+// other pages of it then need no call of their own. The object scan touches thousands of pages, and each call into
+// Windows from the agent costs a few microseconds. Forgotten together with the pages' verdicts (forgetPages).
+const REGIONS_KEPT = 64;
+const regionVerdicts = []; // { from, to, verdict } in pages, the latest first
+
+function regionVerdict(page) {
+  for (const region of regionVerdicts) {
+    if (page >= region.from && page < region.to) {
+      return region.verdict;
+    }
+  }
+  return undefined;
+}
+
+function queryPage(pointer, page) {
+  let verdict = false;
+  try {
+    if (virtualQuery(pointer, queryBuffer, QUERY_SIZE) !== 0) {
+      const state = queryBuffer.add(16).readU32();
+      const protect = queryBuffer.add(20).readU32();
+      const access = protect & 0xFF;
+      const committed = state === 0x1000;
+      const guarded = (protect & 0x100) !== 0;
+      verdict = committed && !guarded && access !== 0 && access !== 0x01 && access !== 0x10;
+      const from = queryBuffer.readU32() >>> 12; // BaseAddress
+      const to = from + (queryBuffer.add(12).readU32() >>> 12); // ... and RegionSize
+      if (page >= from && page < to && to - from > 1) {
+        regionVerdicts.unshift({ from, to, verdict });
+        if (regionVerdicts.length > REGIONS_KEPT) {
+          regionVerdicts.pop();
+        }
+      }
+    }
+  } catch (e) {
+    verdict = false;
+  }
+  return verdict;
+}
+
+// What a page is can change (memory freed, or given out again), so verdicts are only trusted for a short while.
+function forgetPages() {
+  pageVerdicts.clear();
+  regionVerdicts.length = 0;
 }
 
 // Reads a pointer-sized value at an address that may not be real. Null when it is not safe or not possible.
@@ -467,7 +504,7 @@ function lookForPlayer(level, now) {
     lastSearch.clear();
   }
   lastSearch.set(key, now);
-  pageVerdicts.clear();
+  forgetPages();
 
   for (const controller of playerControllersOf(level).controllers) {
     const player = ptrAt(controller.add(LAYOUT.controllerPlayer));
@@ -519,25 +556,27 @@ function playerBody(level, info) {
   return { controller, pawn };
 }
 
-function noteLevel(level, info, now) {
-  const key = level.toString();
+// Returns what the latest look at the level showed.
+function noteLevel(level, key, info, now) {
   const seen = levelsSeen.get(key);
   if (seen !== undefined && now - seen.readAt < 250) {
     seen.seenAt = now;
-    return;
+    return seen;
   }
   if (levelsSeen.size > 8) {
     levelsSeen.clear();
   }
-  pageVerdicts.clear(); // what a page is can change; ask again a few times a second
-  levelsSeen.set(key, {
+  forgetPages(); // ask again a few times a second
+  const fresh = {
     seenAt: now,
     readAt: now,
     map: stringAt(level.add(LAYOUT.levelMap)),
     actors: s32At(level.add(LAYOUT.levelActors + 4)),
     capacity: s32At(level.add(LAYOUT.levelActors + 8)),
     hasPlayer: playerTarget(level, info) !== null,
-  });
+  };
+  levelsSeen.set(key, fresh);
+  return fresh;
 }
 
 // The levels that ticked within the last second, the most recent one last.
@@ -1234,7 +1273,7 @@ function probeTick(level, now) {
   }
   const key = level.toString();
   if (!probed.has(key) && probed.size < 4) {
-    pageVerdicts.clear();
+    forgetPages();
     let lines;
     try {
       lines = describeLevel(level);
@@ -1441,6 +1480,17 @@ function noteSister(object, cls) {
 // seconds; the sisters already found are still read every look. The object scan finds them too.
 const SISTER_SEARCH_INTERVAL_MS = 2000;
 const sisterSearch = { level: null, at: 0 };
+// Maps whose sisters the client needs no more news of (every sister check there collected, or none in the seed):
+// they are neither looked for nor read there.
+let sistersDone = new Set();
+
+function setSistersDone(config) {
+  if (config === null || typeof config !== 'object' || !Array.isArray(config.maps)) {
+    return 'no maps named';
+  }
+  sistersDone = new Set(config.maps.map(normalizeMap).filter((map) => map !== null));
+  return null;
+}
 
 function findSisters(level) {
   const data = ptrAt(level.add(LAYOUT.levelActors));
@@ -1463,7 +1513,8 @@ function findSisters(level) {
 
 // Runs on the game thread for the level the player is in, a few times a second.
 function watchSisters(level, map, now) {
-  if (objectModel === null || virtualQuery === null || now - lastSisterLook < SISTER_INTERVAL_MS) {
+  if (objectModel === null || virtualQuery === null || now - lastSisterLook < SISTER_INTERVAL_MS ||
+    sistersDone.has(normalizeMap(map))) {
     return;
   }
   lastSisterLook = now;
@@ -4220,25 +4271,34 @@ function watchPlayer(level, info, map, now) {
   if (body === null) {
     return;
   }
-  carryOutKills(body.pawn, now);
-  carryOutTraps(body.pawn, now);
-  watchLife(body.pawn, map);
-  readWeapons(body.pawn);
-  try {
-    readWhere(body.pawn, now);
-  } catch (e) {
-    whereTrouble(e.message);
-  }
-  try {
-    readResearch(body.pawn, now);
-  } catch (e) {
-    researchTrouble(e.message);
-  }
-  try {
-    readJournal(body.pawn, now);
-  } catch (e) {
-    journalTrouble(e.message);
-  }
+  // Timed one by one as parts of "player" (0.1.52 in game: 20 ms of each second, not yet told apart).
+  timed('player:kills and traps', () => {
+    carryOutKills(body.pawn, now);
+    carryOutTraps(body.pawn, now);
+  });
+  timed('player:life', () => watchLife(body.pawn, map));
+  timed('player:weapons', () => readWeapons(body.pawn));
+  timed('player:where', () => {
+    try {
+      readWhere(body.pawn, now);
+    } catch (e) {
+      whereTrouble(e.message);
+    }
+  });
+  timed('player:research', () => {
+    try {
+      readResearch(body.pawn, now);
+    } catch (e) {
+      researchTrouble(e.message);
+    }
+  });
+  timed('player:journal', () => {
+    try {
+      readJournal(body.pawn, now);
+    } catch (e) {
+      journalTrouble(e.message);
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -4259,7 +4319,8 @@ const load = { from: 0, spent: 0, last: null, ticks: 0, lastTicks: null, parts: 
 const WATCH_SHARE = 0.1;
 let watchCost = 0;
 
-// Runs fn, adding the time it took to the hook's part of that name.
+// Runs fn, adding the time it took to the hook's part of that name. A name with a colon is a piece of another part
+// (player:where is in player), shown on its own but not counted twice in the total.
 function timed(part, fn) {
   const startedAt = clock();
   try {
@@ -4295,7 +4356,8 @@ function noteLoad(startedAt, now, sampled) {
   load.ticks += 1;
   if (now - load.from >= 1000) {
     const elapsed = Math.max(now - load.from, 1);
-    const timedParts = Object.values(load.parts).reduce((sum, spent) => sum + spent, 0);
+    const timedParts = Object.entries(load.parts).reduce((sum, [part, spent]) => (part.includes(':') ? sum :
+      sum + spent), 0);
     load.last = (load.spent + timedParts) * 1000 / elapsed;
     load.lastTicks = load.ticks;
     load.lastParts = Object.fromEntries([...Object.entries(load.parts), ['other', load.spent]]
@@ -4307,6 +4369,25 @@ function noteLoad(startedAt, now, sampled) {
   }
 }
 
+// The hook runs hundreds of times a second for the same few levels, so whether one is a level (levelInfoOf) is
+// asked again only this often. Its LevelInfo is only ever compared with what an actor points at, never read
+// through, so one that went away in the meantime holds up a command for a moment at worst.
+const LEVEL_RECHECK_MS = 100;
+const levelChecks = new Map(); // level address -> { info, at }
+
+function checkedLevelInfo(level, key, now) {
+  const checked = levelChecks.get(key);
+  if (checked !== undefined && now - checked.at < LEVEL_RECHECK_MS) {
+    return checked.info;
+  }
+  if (levelChecks.size > 8) {
+    levelChecks.clear();
+  }
+  const info = levelInfoOf(level);
+  levelChecks.set(key, { info, at: now });
+  return info;
+}
+
 function onLevelTick(level) {
   const sampled = load.ticks % LOAD_SAMPLE === 0;
   const startedAt = sampled ? clock() : 0;
@@ -4315,13 +4396,13 @@ function onLevelTick(level) {
     if (firstTickAt === 0) {
       firstTickAt = now;
     }
-    const info = levelInfoOf(level);
+    const key = level.toString();
+    const info = checkedLevelInfo(level, key, now);
     if (info !== null) {
       // Not timed by part: these run on every call, and reading the clock around them cost about as much as they
       // do (6.7 ms of each second for a lookForPlayer that returns at once, in game). They are in "other".
       lookForPlayer(level, now);
-      noteLevel(level, info, now);
-      const seen = levelsSeen.get(level.toString());
+      const seen = noteLevel(level, key, info, now);
       const wait = Math.max(WATCH_INTERVAL_MS, watchCost * (1 - WATCH_SHARE) / WATCH_SHARE);
       if (seen !== undefined && seen.hasPlayer && seen.map !== null && now - lastWatchAt >= wait) {
         lastWatchAt = now;
@@ -4453,7 +4534,8 @@ rpc.exports = {
   // Named actions. 'kill' (DeathLink) is answered once it has been carried out on the game thread;
   // 'touch_stations' (stations open no menu), 'garden_lines {json}' (what the Gardens sell) and
   // 'redirect_movies {json}' (Flash movies from the client's folder) and 'travel_rules {json}' (Open Rapture: where
-  // the bathysphere and level changes go) and 'empty_pickups {json}' (pickups that give the placeholder) at once.
+  // the bathysphere and level changes go), 'empty_pickups {json}' (pickups that give the placeholder) and
+  // 'sisters_done {json}' (maps whose Little Sisters need no watching) at once.
   // The traps 'eve_drain' and 'pickpocket' are answered like 'kill', once carried out.
   action(id, name) {
     if (name === 'kill') {
@@ -4469,7 +4551,7 @@ rpc.exports = {
       return;
     }
     for (const [action, carryOut] of [['garden_lines', setGardenLines], ['redirect_movies', redirectMovies],
-      ['travel_rules', setTravelRules], ['empty_pickups', setEmptyPickups]]) {
+      ['travel_rules', setTravelRules], ['empty_pickups', setEmptyPickups], ['sisters_done', setSistersDone]]) {
       if (typeof name === 'string' && name.startsWith(`${action} `)) {
         let trouble;
         try {
