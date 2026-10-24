@@ -12,6 +12,9 @@ None of this has been tried in the real game yet.
   client's `/bioshock` readout splits "player" into its parts, to show what still costs time (#15).
 - Open Rapture: the first bathysphere menu in a level should now offer the right stops, not the level's own list
   (#16). If it still shows the vanilla list, close it and pull the switch again.
+- Open Rapture: a new option, Chapter Order. With `shuffled` the seed picks an order for Neptune's Bounty, Arcadia
+  and Fort Frolic (shown in the spoiler log), and each opens once its access item has arrived and the chapter before
+  it is finished (#17).
 - `archipelago.json` no longer sets `version` and `compatible_version`; the APWorld build adds them (#18).
 
 ## 0.2.0 (first release)
