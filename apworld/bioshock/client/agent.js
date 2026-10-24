@@ -1434,7 +1434,7 @@ function findObjectProperty(cls, wanted) {
 const SISTER_INTERVAL_MS = 100;
 const SISTER_FLAG = 'HasBeenSavedOrPacified';
 const sisterClasses = new Map(); // class address -> where its flag is, or null for classes that are not sisters
-const sistersKnown = new Map(); // actor address -> { object, vtable, cls, flag, resolved }
+const sistersKnown = new Map(); // actor address -> { object, vtable, cls, flag, resolved, map }
 const sistersResolved = new Map(); // map -> sisters this agent saw rescued or harvested there
 let lastSisterLook = 0;
 let sisterTrouble = null;
@@ -1462,8 +1462,9 @@ function sisterFlagOf(cls) {
   return flag;
 }
 
-// Starts following an object if it is a sister not followed yet. Its class must already have been read from it.
-function noteSister(object, cls) {
+// Starts following an object if it is a sister not followed yet, found while the player was in this map. Its class
+// must already have been read from it.
+function noteSister(object, cls, map) {
   const key = object.toString();
   if (sistersKnown.has(key)) {
     return;
@@ -1471,7 +1472,7 @@ function noteSister(object, cls) {
   const flag = sisterFlagOf(cls);
   const vtable = flag === null ? null : carefulPtr(object);
   if (vtable !== null) {
-    sistersKnown.set(key, { object, vtable, cls, flag, resolved: false });
+    sistersKnown.set(key, { object, vtable, cls, flag, resolved: false, map: normalizeMap(map) });
   }
 }
 
@@ -1492,7 +1493,7 @@ function setSistersDone(config) {
   return null;
 }
 
-function findSisters(level) {
+function findSisters(level, map) {
   const data = ptrAt(level.add(LAYOUT.levelActors));
   const count = s32At(level.add(LAYOUT.levelActors + 4));
   if (data === null || data.isNull() || count === null || count < 1 || count > MAX_ACTORS) {
@@ -1506,7 +1507,7 @@ function findSisters(level) {
     }
     const cls = ptrAt(actor.add(objectModel.objectClass)); // a listed actor is a real object: plain reads will do
     if (cls !== null && !cls.isNull() && kindOf(cls) === 'sister') {
-      noteSister(actor, cls);
+      noteSister(actor, cls, map);
     }
   }
 }
@@ -1522,7 +1523,7 @@ function watchSisters(level, map, now) {
   if (levelKey !== sisterSearch.level || now - sisterSearch.at >= SISTER_SEARCH_INTERVAL_MS) {
     sisterSearch.level = levelKey;
     sisterSearch.at = now;
-    findSisters(level);
+    findSisters(level, map);
   }
   for (const [key, sister] of [...sistersKnown]) {
     if (!same(carefulPtr(sister.object), sister.vtable) || !same(classOfObject(sister.object), sister.cls)) {
@@ -1531,11 +1532,13 @@ function watchSisters(level, map, now) {
     }
     const word = carefulS32(sister.object.add(sister.flag.offset));
     const resolved = word !== null && ((word >>> 0) & sister.flag.mask) !== 0;
-    if (resolved && !sister.resolved) {
-      const count = (sistersResolved.get(map) || 0) + 1;
-      sistersResolved.set(map, count);
-      detail(`a Little Sister was rescued or harvested in ${map} (${count} seen there by this agent)`);
-      send({ type: 'little_sister', map });
+    // She counts for the map she was found in (one the client is done with gets no news), not the one played now.
+    const where = sister.map === null ? map : sister.map;
+    if (resolved && !sister.resolved && !sistersDone.has(normalizeMap(where))) {
+      const count = (sistersResolved.get(where) || 0) + 1;
+      sistersResolved.set(where, count);
+      detail(`a Little Sister was rescued or harvested in ${where} (${count} seen there by this agent)`);
+      send({ type: 'little_sister', map: where });
     }
     sister.resolved = resolved;
   }
@@ -1731,7 +1734,7 @@ function watchObjects(map, now, level) {
     } else if (kind === 'log') {
       logClassesSeen.add(nameOfObject(cls)); // not logged: radio messages are QuestLogs too, and come often
     } else if (kind === 'sister') {
-      noteSister(object, cls);
+      noteSister(object, cls, map);
     } else if (kind === 'station') {
       scan.stations.push(object);
     } else if (kind === 'weapon') {

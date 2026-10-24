@@ -1578,6 +1578,19 @@ const tests = {
     assert.deepStrictEqual(r.messages.filter((m) => m.type === 'action_result').map((m) => [m.id, m.ok]),
       [[4, true], [5, true], [6, false]]);
   },
+  'a Little Sister counts for the map she was found in': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    const done = r.sister(game.level, model); const open = r.sister(game.level, model);
+    r.load(); r.frames(3);
+    r.context.rpc.exports.action(4, 'sisters_done ' + JSON.stringify({ maps: ['1-medical'] }));
+    r.poke(done + 0x1038, 0x2); r.frames(3); // dealt with in a map the client is done with
+    r.string(game.level + 0x7C, '2-fisheries'); r.frames(3); // the player moves on while both are still there
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister'), [], 'no news of a done map');
+    r.context.rpc.exports.action(5, 'sisters_done ' + JSON.stringify({ maps: [] }));
+    r.poke(open + 0x1038, 0x2); r.frames(3);
+    assert.deepStrictEqual(r.messages.filter((m) => m.type === 'little_sister').map((m) => m.map), ['1-medical'],
+      'reported for where she was found, not where the player is now');
+  },
   'a Little Sister going into a vent is not reported': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
     const sister = r.sister(game.level, model);
