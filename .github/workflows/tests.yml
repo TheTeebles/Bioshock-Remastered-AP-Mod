@@ -42,6 +42,11 @@ jobs:
       - name: Archipelago's general tests
         working-directory: archipelago
         run: python -m pytest test/general -q
+      - name: The map survey's report, against the world's tables
+        working-directory: archipelago
+        env:
+          PYTHONPATH: .
+        run: python ../mod/client-poc/map_reader/test_survey_report.py
 
   agent:
     name: Game agent and probe (mock Frida), tools
