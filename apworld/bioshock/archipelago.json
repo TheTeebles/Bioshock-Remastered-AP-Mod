@@ -3,6 +3,6 @@
 	"compatible_version": 7,
 	"game": "BioShock",
 	"minimum_ap_version": "0.6.7",
-	"world_version": "0.1.54",
+	"world_version": "0.2.0",
 	"authors": ["Teebs"]
 }

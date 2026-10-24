@@ -17,8 +17,8 @@ class LevelAccess(Choice):
 
     Vanilla: no access items. Every check is available from the start.
 
-    Open Rapture (NOT PLAYABLE YET: the game side is still being built): access items open travel itself, one per
-    chapter. After Medical Pavilion the bathysphere takes you to any of Neptune's Bounty, Arcadia and Fort Frolic you
+    Open Rapture (experimental: each piece works in game, but no whole seed has been played through yet): access
+    items open travel itself, one per chapter. After Medical Pavilion the bathysphere takes you to any of Neptune's Bounty, Arcadia and Fort Frolic you
     hold the access item for, in any order. Hephaestus needs its access item and the three before it; Olympus
     Heights and Point Prometheus follow in story order, each with its access item.
     """
@@ -106,7 +106,7 @@ class ShopChecks(Choice):
 
 class WorldItemChecks(Choice):
     """
-    Experimental, not tried in game yet. Taking the plasmids and gene tonics that lie in the levels sends checks
+    Taking the plasmids and gene tonics that lie in the levels sends checks
     (31), and so does holding each weapon for the first time (7, or 6 when you start with the Research Camera).
 
     Off: nothing lying in the levels is a check.
@@ -132,7 +132,7 @@ class SafeChecks(Toggle):
 
 class ResearchChecks(Choice):
     """
-    Experimental, not tried in game yet. Researching enemies with the Research Camera sends checks: each of the 11
+    Researching enemies with the Research Camera sends checks: each of the 11
     subjects (the five kinds of splicer, Bouncers, Rosies, Little Sisters, Security Bots, Turrets and Security
     Cameras) has 5 research levels.
 
