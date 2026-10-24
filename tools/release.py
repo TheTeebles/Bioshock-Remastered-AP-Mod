@@ -95,14 +95,22 @@ def build(archipelago: Path) -> None:
     if not (archipelago / "Launcher.py").is_file() or not (archipelago / "worlds").is_dir():
         sys.exit(f"{archipelago} is not an Archipelago source checkout")
     target = archipelago / "worlds" / "bioshock"
-    if target.is_symlink():
-        print(f"{target} links to {target.resolve()}: building from there")
+    if target.exists() and target.resolve() == WORLD.resolve():
+        print(f"{target} is this repository's world (a link): building it in place")
+    elif target.is_symlink():
+        sys.exit(f"{target} links to {target.resolve()}, not to this repository's world: the build would package "
+                 "that instead. Point the link here, or remove it so the world is copied in")
     else:
         if target.exists():
             shutil.rmtree(target)
         shutil.copytree(WORLD, target, ignore=shutil.ignore_patterns("__pycache__"))
+    output = archipelago / "build" / "apworlds" / "bioshock.apworld"
+    if output.exists():
+        output.unlink()  # so an older build is never taken for this one
     subprocess.run([sys.executable, "Launcher.py", "Build APWorlds", "--", "BioShock"], cwd=archipelago, check=True)
-    print(f"built {archipelago / 'build' / 'apworlds' / 'bioshock.apworld'}")
+    if not output.is_file():
+        sys.exit(f"the build ran but made no {output}: see what it printed above")
+    print(f"built {output}")
 
 
 def main() -> int:
