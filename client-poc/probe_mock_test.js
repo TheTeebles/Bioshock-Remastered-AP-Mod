@@ -381,6 +381,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
       return { onEnter: 'native' };
     },
     Interceptor: {
+      flush: () => {},
       attach: (target, callbacks) => {
         const hook = { target, callbacks, detached: false };
         runtime.hooks.push(hook);

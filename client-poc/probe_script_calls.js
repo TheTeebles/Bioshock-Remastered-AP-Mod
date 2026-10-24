@@ -2594,10 +2594,15 @@ function callScript(object, fn, parms) {
 // how many calls a second the game loses to one.
 const HOOK_COST_PHASE_MS = 4000;
 let hookCostTimer = null;
+let hookCostModule = null; // the compiled counter: kept until its hook is out, or its code could be unmapped under it
 
 globalThis.hookCost = function () {
   if (hookCostTimer !== null) {
     return 'already measuring: wait for the result';
+  }
+  if (gameThreadHook !== null) {
+    // Another command left a JavaScript hook on the same function: the first count would not be native alone.
+    return 'another command has hooked the same function already: restart the probe and run hookCost() first';
   }
   const calls = Memory.alloc(4);
   calls.writeS32(0);
@@ -2617,6 +2622,7 @@ onEnter (GumInvocationContext * ic)
   } catch (e) {
     return `Frida cannot compile native hooks here (${e.message}), so the agent's hook has to stay JavaScript`;
   }
+  hookCostModule = cm;
   const target = base.add(DELTA_FUNCTION);
   const counted = Interceptor.attach(target, cm);
   const phases = [];
@@ -2637,6 +2643,8 @@ onEnter (GumInvocationContext * ic)
     hookCostTimer = null;
     empty.detach();
     counted.detach();
+    Interceptor.flush();
+    hookCostModule = null;
     const [alone, beside] = phases;
     log(`hookCost: native hooks work; ${alone.perSecond.toFixed(1)} calls a second with a native hook alone, ` +
       `${beside.perSecond.toFixed(1)} with an empty JavaScript hook beside it ` +
