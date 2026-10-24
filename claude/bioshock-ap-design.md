@@ -1,11 +1,9 @@
 # BioShock Remastered × Archipelago: Design and Feasibility
 
-*Last updated 2026-10-07. Status: APWorld v0.1.4. Items can be put into the real game on the Steam build, by hand:
-ADAM, a first-level tonic, a plasmid slot, and second levels of two tonics and a plasmid from the designer package,
-each with the game's own window. Every class the client names is one the running game listed when asked, and a
-class the game does not have is now reported instead of passing for delivered. The client itself (helper process,
-map names) has still not met the real game. Noticing what the player does (story objectives, Little Sisters,
-stations, diaries) is the big piece still missing.*
+*Status 2026-10-19: APWorld 0.2.0, the first release. Every kind of check, item delivery, traps, DeathLink, Open
+Rapture and the Universal Tracker map work in the real game (Steam); see [CHANGELOG.md](../CHANGELOG.md) and the
+[setup guide](../apworld/bioshock/docs/setup_en.md) for where things stand today. The sections below are the design
+record as it grew, and parts of them describe earlier versions.*
 
 ## 1. Summary
 
