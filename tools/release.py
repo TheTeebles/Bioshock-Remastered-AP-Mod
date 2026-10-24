@@ -100,6 +100,9 @@ def build(archipelago: Path) -> None:
     elif target.is_symlink():
         sys.exit(f"{target} links to {target.resolve()}, not to this repository's world: the build would package "
                  "that instead. Point the link here, or remove it so the world is copied in")
+    elif target.exists() and WORLD.resolve().is_relative_to(target.resolve()):
+        sys.exit(f"{target} holds this repository itself: deleting it to copy the world in would delete the release. "
+                 "Clone the repository somewhere else, or link worlds/bioshock to its apworld/bioshock")
     else:
         if target.exists():
             shutil.rmtree(target)
