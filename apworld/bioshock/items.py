@@ -96,7 +96,7 @@ def world_pickups_shuffled(world: BioShockWorld) -> bool:
 
 
 def world_pickup_items(world: BioShockWorld | None = None) -> list[str]:
-    """The items of the pickups that give a bag of chips instead, which only the multiworld hands out then.
+    """The items of the pickups that give nothing instead, which only the multiworld hands out then.
     Telekinesis is one of them, but a progression item (progression_item_names)."""
     if world is None or not world_pickups_shuffled(world):
         return []
@@ -105,7 +105,7 @@ def world_pickup_items(world: BioShockWorld | None = None) -> list[str]:
 
 
 def research_awards_shuffled(world: BioShockWorld) -> bool:
-    """With research checks, research gives chips and its tonics come from the multiworld."""
+    """With research checks, research gives nothing and its tonics come from the multiworld."""
     return world.options.research_checks != ResearchChecks.option_off
 
 

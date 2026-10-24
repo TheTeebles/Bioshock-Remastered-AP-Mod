@@ -371,8 +371,9 @@ def _shuffled_pickups() -> dict[str, tuple[str, ...]]:
     return {map_name: tuple(actors) for map_name, actors in found.items()}
 
 
-# With World Item Checks shuffled, these pickups give the placeholder instead: map -> actor names.
-PICKUP_PLACEHOLDER = "chips"  # the class they give, as the Gatherer's Garden lines that sell other items do
+# With World Item Checks shuffled, these pickups give nothing instead: map -> actor names. The agent gives them an
+# empty copy of PICKUP_PLACEHOLDER, or the class itself when it cannot make the copy.
+PICKUP_PLACEHOLDER = "chips"
 SHUFFLED_PICKUPS: dict[str, tuple[str, ...]] = _shuffled_pickups()
 # (the game's ResearchName, research level) -> location
 RESEARCH_LOCATION: dict[tuple[str, int], int] = {

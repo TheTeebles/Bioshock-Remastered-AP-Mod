@@ -1494,7 +1494,7 @@ class TestSlotChange(unittest.TestCase):
         h.slot_data["world_item_checks"] = 0
         h.connect(("another seed", 0, 1))
         h.step(1)
-        self.assertTrue(any("Restart BioShock" in text and "give chips" in text for text in h.warnings()),
+        self.assertTrue(any("Restart BioShock" in text and "give nothing" in text for text in h.warnings()),
                         h.warnings())
 
     def test_the_same_settings_need_no_restart(self) -> None:

@@ -100,12 +100,12 @@ If the game was started as administrator, Archipelago has to be started as admin
     other levels' Gardens are read from the same map files but have not been tried there yet.
   - *World items and safes (World Item Checks and Safe Checks, Steam):* work in the real game. The client watches
     the plasmid and tonic pickups lying in the level you are in, the wall safes (open ones stay open in a save) and
-    the weapons you hold. With the pickups shuffled it makes them give a bag of chips instead of their item;
-    Electro Bolt and Incinerate! still give themselves, because the story needs them, and Telekinesis arrives from
-    the multiworld.
+    the weapons you hold. With the pickups shuffled it makes them give nothing instead of their item (an
+    Archipelago Check that restores nothing); Electro Bolt and Incinerate! still give themselves, because the story
+    needs them, and Telekinesis arrives from the multiworld.
   - *Research (Research Checks, Steam):* works in the real game. The client reads how far each enemy is researched
-    from the player's research tables, and with research checks on it makes research give a bag of chips instead
-    of its tonics.
+    from the player's research tables, and with research checks on it makes research give nothing instead of its
+    tonics.
 - **DeathLink (Steam):** your deaths are sent, and a death from someone else kills Jack the way the game does
   (he collapses and wakes up in a Vita-Chamber). Turn it on with `death_link` in your YAML, or `/deathlink` in the
   client.

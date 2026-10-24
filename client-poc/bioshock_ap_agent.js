@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-24.5';
+const AGENT_VERSION = '2026-10-24.6';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -1895,9 +1895,10 @@ function readStations(map) {
 // A safe is a SecurityCrate_Safe or a SecurityCrate_WallSafe (set into a wall, as by Medical's Telekinesis plasmid;
 // found 2026-10-15). Both are AnimatedContainers, whose bIsOpened turns true when they are opened and stays true in
 // a save (confirmed 2026-10-14). Lockboxes are out of scope (Teebs, 2026-10-15).
-// With the pickups shuffled, the client names the pickups that must give the placeholder (a bag of chips) instead
-// of their item: the item class in the pickup's LootSlot is swapped, as the probe's pickupItem() did in game
-// (2026-10-15: Telekinesis gave chips).
+// With the pickups shuffled, the client names the pickups that must give nothing instead of their item: the item
+// class in the pickup's LootSlot is swapped, as the probe's pickupItem() did in game (2026-10-15: Telekinesis gave
+// chips). It is swapped for an empty stand-in (a copy of the chips class that restores nothing, named for the
+// multiworld), or for the chips themselves when no stand-in can be made.
 const world = {
   level: null, // the level object the lists below are about
   pickups: [], // { object, name } lying in the level at the last pass
@@ -2120,13 +2121,14 @@ function emptyPickups(map, level) {
     return;
   }
   const wanted = world.empty.maps[normalizeMap(map)];
-  const placeholder = gardens.placeholder;
-  if (!Array.isArray(wanted) || wanted.length === 0) {
-    return;
+  if (!Array.isArray(wanted) || wanted.length === 0 || gardens.placeholder === null) {
+    return; // nothing here, or the chips not found yet: the next pass may find them
   }
-  if (placeholder === null) {
-    return; // not found yet: the next pass may find it
+  const empty = standIn(EMPTY_PICKUP_NAME, EMPTY_PICKUP_DESCRIPTION);
+  if (gardens.placeholder === null) {
+    return; // the chips class went away (a level loaded): the next pass finds it again
   }
+  const placeholder = empty === null ? gardens.placeholder : empty;
   for (const { object, name } of world.pickups) {
     if (!wanted.includes(name)) {
       continue;
@@ -2151,7 +2153,8 @@ function emptyPickups(map, level) {
     }
     if (!world.emptied.has(name)) {
       world.emptied.add(name);
-      detail(`${name} in ${map} now gives ${world.empty.placeholder} instead of ${nameOfObject(slots[0].value)}`);
+      detail(`${name} in ${map} now gives ${empty === null ? GARDEN_PLACEHOLDER : 'nothing'} instead of ` +
+        `${nameOfObject(slots[0].value)}`);
     }
   }
 }
@@ -2181,8 +2184,8 @@ function setEmptyPickups(config) {
 // ScoreRequired its CurrentScore has reached (GetResearchLevelForScore), and reaching a level gives that row's
 // AwardItemClass. The agent reports every subject's level and, once, the table itself. Not tried in game yet.
 const RESEARCH_INTERVAL_MS = 1000;
-// With research checks the client asks for the awards to be emptied: each level's AwardItemClass becomes the
-// placeholder (a bag of chips), as the Garden lines and shuffled pickups do, and the multiworld hands them out.
+// With research checks the client asks for the awards to be emptied: each level's AwardItemClass becomes None, as
+// it is for the research levels that give nothing in the game itself, and the multiworld hands the tonics out.
 const research = { layout: undefined, levels: {}, table: null, readAt: 0, trouble: null, empty: false, emptied: 0,
   watched: false, holdUntil: 0 };
 
@@ -2278,18 +2281,18 @@ function readResearch(pawn, now) {
   }
   research.levels = levels;
   research.watched = true;
-  if (research.empty && gardens.placeholder !== null) {
+  if (research.empty) {
     for (const row of levelRows) {
       const at = row.add(level.fields.AwardItemClass);
       const award = carefulPtr(at);
-      // Only an item class is swapped: a field read wrong would hold something else, and that is left alone.
-      if (award !== null && !award.isNull() && !same(award, gardens.placeholder) &&
+      // Only an item class is cleared: a field read wrong would hold something else, and that is left alone.
+      if (award !== null && !award.isNull() &&
         nameOfObject(classOf(award)) === 'Class' && lineageOf(award).some((c) => nameOfObject(c) === 'Item')) {
-        at.writePointer(gardens.placeholder);
+        at.writePointer(ptr(0));
         research.emptied++;
         const subject = nameOf(carefulS32(row.add(level.fields.ResearchName)));
         detail(`research: ${subject} level ${carefulS32(row.add(level.fields.LevelNumber))} now gives ` +
-          `${GARDEN_PLACEHOLDER} instead of ${nameOfObject(award)}`);
+          `nothing instead of ${nameOfObject(award)}`);
       }
     }
   }
@@ -2441,8 +2444,8 @@ function readWhere(pawn, now) {
 // ---------------------------------------------------------------------------------------------------------------
 
 // With shop checks on, the client tells the agent what each Garden line of the level holds. Every line that is a
-// check is made to sell a stand-in: a copy of the chips class, made in memory with its own name and description, so
-// buying it gives a bag of chips and no gene. The line's CostAdjustment (a multiplier on the item's base price) sets
+// check is made to sell a stand-in: a copy of the chips class, made in memory with its own name and description and
+// with every number the chips add zeroed (emptyEffects), so buying it gives no gene and restores nothing. The line's CostAdjustment (a multiplier on the item's base price) sets
 // the price. Buying a line counts it in its AmountPurchased, which is what the client turns into the check. Lines
 // already bought are hidden by setting AmountPurchased to SupplySize. All of it confirmed with the probe, 2026-10-14.
 // A save names the stand-in's class as chips, so after loading a save the lines are chips until they are redone.
@@ -2451,6 +2454,9 @@ const PLACEHOLDER_PRICE = 4; // ADAM for a bag of chips when CostAdjustment is 1
 const CLASS_COPY_SIZE = 0x1000; // bytes copied from the placeholder class at most
 const CLASS_MIN_SIZE = 0xB58; // ... and at least: it has arrays at +0x54C (its default values) and +0xB4C
 const MAX_CLONES = 400;
+// What a shuffled pickup gives instead of its item: a stand-in under this name, which restores nothing.
+const EMPTY_PICKUP_NAME = 'Archipelago Check';
+const EMPTY_PICKUP_DESCRIPTION = 'Sent to the multiworld.';
 const gardens = {
   list: [],
   config: null, // { map, lines: Map(line -> { name, description, price, bought }) } from the client
@@ -2725,12 +2731,54 @@ function standIn(name, description, iconOf = null) {
   copy.add(defaults.at + 8).writeU32(defaults.count);
   writeText(ownValues.add(defaults.name), texts[0], name);
   writeText(ownValues.add(defaults.description), texts[1], description);
+  emptyEffects(cls, ownValues, defaults.count);
   const iconName = iconOf === null ? null : carefulS32(iconOf.add(objectModel.objectName));
   if (iconName !== null) {
     copy.add(objectModel.objectName).writeU32(iconName);
   }
   gardens.clones.set(key, { copy, ownValues, texts });
   return copy;
+}
+
+// What the chips add when taken (health, and EVE, which the game's script calls BioAmmo) are numbers the chips class
+// and the classes between it and Item declare. In a stand-in's own default values the ones whose names say so are
+// zeroed, so the stand-in restores nothing; any other number is left alone, since zeroing one the game reads as a
+// limit could make the stand-in impossible to take. Item's own numbers (CreditValue, which prices a Garden line) are
+// kept. Both lists are logged once, as no exported source names these fields. Not tried in game yet.
+const EMPTIED_KINDS = ['FloatProperty', 'IntProperty'];
+const EFFECT_NAMES = /health|bioammo|eve|heal|restor|boost|gain/i;
+let effectsLogged = false;
+
+function emptyEffects(cls, values, count) {
+  const zeroed = [];
+  const kept = [];
+  for (const owner of lineageOf(cls)) {
+    const ownerName = nameOfObject(owner);
+    if (ownerName === 'Item') {
+      break;
+    }
+    let field = carefulPtr(owner.add(objectModel.structChildren));
+    for (let n = 0; field !== null && !field.isNull() && n < 1000; n++) {
+      const kind = nameOfObject(classOf(field));
+      const name = nameOfObject(field);
+      const offset = carefulS32(field.add(objectModel.propertyOffset));
+      if (EMPTIED_KINDS.includes(kind) && offset !== null && offset >= 0 && offset + 4 <= count) {
+        const at = values.add(offset);
+        const was = kind === 'FloatProperty' ? at.readFloat() : at.readS32();
+        if (EFFECT_NAMES.test(name || '')) {
+          at.writeU32(0); // 0 as an int is 0.0 as a float
+          zeroed.push(`${ownerName}.${name} ${was}`);
+        } else {
+          kept.push(`${ownerName}.${name} ${was}`);
+        }
+      }
+      field = carefulPtr(field.add(objectModel.fieldNext));
+    }
+  }
+  if (!effectsLogged) {
+    effectsLogged = true;
+    detail(`stand-ins restore nothing: zeroed ${zeroed.join(', ') || 'none'}; kept ${kept.join(', ') || 'none'}`);
+  }
 }
 
 // The class whose name a line's stand-in takes, for its icon: the real item's for one of our own BioShock items, the
