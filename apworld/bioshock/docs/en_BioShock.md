@@ -16,7 +16,7 @@ With the default **Level Access** setting, every level after Medical Pavilion ha
 access item. Anything you already collected there is sent the moment the access item arrives, so you never need to go
 back for it.
 
-**Open Rapture** (Level Access: `open_rapture`, not playable yet) goes further: access items open travel itself, one
+**Open Rapture** (Level Access: `open_rapture`, experimental) goes further: access items open travel itself, one
 per chapter. After Medical Pavilion, the bathysphere takes you to Neptune's Bounty, Arcadia or Fort Frolic in any
 order, as soon as you hold that chapter's access item. Hephaestus opens once you hold its item and the three before it,
 and Olympus Heights and Point Prometheus follow in story order, each behind its own item. Each one appears in the
@@ -51,7 +51,7 @@ otherwise. Your own items show their own icon (a weapon upgrade shows its weapon
 Archipelago icon. Buying a line sends its
 check and gives you nothing instead of the gene.
 
-World Item Checks and Safe Checks (both off by default, and not tried in the game yet) make what lies in the levels
+World Item Checks and Safe Checks (both off by default) make what lies in the levels
 checks. World Item Checks covers the 31 plasmids and tonics lying in the levels and the first time you hold each
 of the 7 weapons (6 when you start with the Research Camera). With Keep Items every pickup still gives its own item
 as well; with Shuffled the plasmid and tonic pickups give nothing instead and their items go into the
@@ -60,7 +60,7 @@ progression item: you need it to clear the debris in front of Surgery, so logic 
 level after Medical Pavilion, behind Telekinesis. Safe Checks makes opening each of the 41
 safes a check; their contents stay as they are.
 
-Research Checks (off by default, not tried in the game yet) make researching enemies with the Research Camera
+Research Checks (off by default) make researching enemies with the Research Camera
 checks. Each of the 11 subjects (Thuggish, Leadhead, Nitro, Spider and Houdini Splicers, Bouncers, Rosies, Little
 Sisters, Security Bots, Turrets and Security Cameras) has 5 research levels. First Level makes the first level of
 each a check (11, one photo each); All makes every level a check (55). Levels 2 to 5 take many photos, so they never
@@ -107,11 +107,12 @@ Defeat Frank Fontaine at the end of Proving Grounds. With Level Access on, you a
 
 ## Status
 
-This world is in early development. Seeds can be generated, and the BioShock Client (in the Archipelago Launcher)
-connects to a multiworld, puts items into the real game by itself (Steam version) and notices every kind of check
-there: story objectives, Little Sisters, Power to the People stations, audio diaries, level completion and Gatherer's
-Garden purchases. DeathLink works both ways. No whole seed has been played through in the real game yet, and the
-GOG and Epic versions are not supported. See the setup guide for exactly what has been tried in the game.
+This is the world's first release (0.2.0). The BioShock Client (in the Archipelago Launcher) connects to a
+multiworld, puts items into the real game by itself (Steam version) and notices every kind of check there: story
+objectives, Little Sisters, Power to the People stations, audio diaries, level completion, Gatherer's Garden
+purchases, world items, safes and research. DeathLink works both ways, and so do the traps that land in your game. Open Rapture is experimental:
+each part of it works in the game, but no whole seed has been played through yet. The GOG and Epic versions are not
+supported. The setup guide lists exactly what has been tried in the game and the known issues.
 
 Universal Tracker works without your YAML: it takes the options from the seed. Its map tab shows the game's own map
 screen, one page per floor and an overview of each level, with a pin on every check that has a place in the level:

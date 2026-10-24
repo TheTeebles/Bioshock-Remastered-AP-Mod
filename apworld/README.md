@@ -1,4 +1,4 @@
-# BioShock APWorld source (v0.1.7)
+# BioShock APWorld source (v0.2.0)
 
 This folder mirrors `worlds/bioshock/` from an Archipelago source checkout: the world, and the client that ships with
 it. The design and rationale live in `claude/bioshock-ap-design.md`.
@@ -20,7 +20,7 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
 - `bioshock/map_tracker.py` and `bioshock/tracker/`: Universal Tracker's map tab. The pages and pins in `tracker/` are
   generated: `client-poc/map_reader/map_pins.py` reads the game's map files, then `client-poc/tracker/build_tracker.py`
   draws the floors from the game's `Maps.swf` and places the pins (run with Pillow and Chromium).
-- `bioshock/test/`: 322 tests.
+- `bioshock/test/`: 550 tests.
 
 ## Rebuild `bioshock.apworld`
 
@@ -29,6 +29,14 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
 3. Package it: `python Launcher.py "Build APWorlds" -- "BioShock"`. The output is `build/apworlds/bioshock.apworld`.
 
 Install by double-clicking the `.apworld` or copying it into Archipelago's `custom_worlds` folder.
+
+## Make a release
+
+1. Set the new version in both `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json`
+   (`world_version`), and add its section to `CHANGELOG.md` at the top of the repository.
+2. Run the tests and build `bioshock.apworld` as above, and the agent's tests (below).
+3. On GitHub, draft a release with the tag `v<version>` on `main`, paste the changelog section as its notes, and
+   attach `bioshock.apworld` and a template YAML ("Generate Template Options" writes `Players/Templates/BioShock.yaml`).
 
 ## Tests
 
@@ -62,7 +70,7 @@ seconds.
 ## The agent script
 
 `client-poc/bioshock_ap_agent.js` is the agent for running by hand with the Frida CLI. It is the same file as
-`bioshock/client/agent.js` (version 2026-10-07.1); keep the two identical.
+`bioshock/client/agent.js` (its version is `AGENT_VERSION` at the top); keep the two identical.
 `client-poc/agent_mock_test.js` tests it under Node against a fake Frida runtime and a fake piece of game memory:
 `node agent_mock_test.js bioshock_ap_agent.js`.
 

@@ -3,9 +3,9 @@
 A mod to use BioShock Remastered with [Archipelago](https://archipelago.gg) for randomization: the APWorld, the
 client that ships inside it, and the script the client puts into the running game.
 
-> **Early development (v0.1.7).** Seeds generate, the client talks to Archipelago and puts items into the real game
-> on the Steam version, and it notices every kind of check: levels reached, story objectives, Little Sisters, audio
-> diaries and Power to the People stations, all seen working in the real game.
+> **First release (v0.2.0).** Seeds generate, the client talks to Archipelago and puts items into the real game on
+> the Steam version, and every kind of check has been seen working there. No whole seed has been played start to
+> finish yet, so expect rough edges. [CHANGELOG.md](CHANGELOG.md) lists what is in each release.
 
 ## Where things stand
 
@@ -21,6 +21,9 @@ client that ships inside it, and the script the client puts into the running gam
 | Audio diaries | All 122 noticed when picked up, from the diary the game hands you. Works in the real game |
 | Power to the People stations | Noticed from each station's use counter. Works in the real game. Stations open no menu: using one sends its check and closes it, and the 12 weapon upgrades come from the multiworld and wait for their weapon |
 | Gatherer's Garden purchases (Shop Checks option) | Off by default; `first_appearances` (61 checks) or `all` (273), every level's Garden, read from the game's map files. Each line is renamed after the multiworld item it holds, priced and given an icon, and buying it sends the check (Steam). Works in the real game at Neptune's Bounty; the other levels' Gardens are not tried in game yet |
+| World items, safes and research (World Item Checks, Safe Checks, Research Checks options) | Off by default. Plasmid and tonic pickups, first time holding each weapon, the 41 wall safes, and each research level. Pickups can keep their item or be shuffled into the multiworld (Telekinesis then becomes progression). Works in the real game |
+| Open Rapture (Level Access option) | Experimental. Access items open the bathysphere one chapter at a time, in any order the seed allows, and level-change doors go where the seed says. Each part works in the real game; no whole seed played yet. The first bathysphere menu in a level can show the vanilla list: close it and pull the switch again |
+| Universal Tracker map tab | A page per floor and per level drawn from the game's own map screen, with a pin on every check that has a place, and a dot where you stand while the client is connected |
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink in the game | Works in the real game, both ways: your deaths are sent, and a received death kills Jack through the game's own OnKilled, so he collapses and wakes in a Vita-Chamber |
 | The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the EVE bar redraws at once; the dollars counter does not flash up (accepted by Teebs) |
@@ -41,11 +44,10 @@ game, how everything is built and tested, what each test in the real game showed
 
 ## Trying it
 
-There is no ready-built download here yet, so `bioshock.apworld` has to be built first.
-[apworld/README.md](apworld/README.md) has the steps. Then:
-
 1. Install [Archipelago](https://github.com/ArchipelagoMW/Archipelago/releases/latest) 0.6.7 or newer.
-2. Install `bioshock.apworld`: double-click it, or copy it into Archipelago's `custom_worlds` folder.
+2. Download `bioshock.apworld` from the [latest release](https://github.com/TheTeebles/Bioshock-Remastered-AP-Mod/releases/latest)
+   and install it: double-click it, or copy it into Archipelago's `custom_worlds` folder. To build it yourself
+   instead, [apworld/README.md](apworld/README.md) has the steps.
 3. Follow the [setup guide](apworld/bioshock/docs/setup_en.md). It covers generating a game, connecting, what the
    real game does today, and playing a seed with the simulated game.
 
