@@ -109,11 +109,18 @@
  *                     bIsOpened if it has one, and what it gives. nearby(600, 'Safe') only matching classes
  *   hub(0)            after events(): point level change 0 of levels() at Medical Pavilion's bathysphere and run it
  *                     from here, to see whether the client's /hub escape hatch can work that way. Save first
+ *
+ * Agent performance, 2026-10-24:
+ *   hookCost()        what a JavaScript hook on the game-thread function the agent hooks costs on its own, and
+ *                     whether Frida can compile native (CModule) hooks in this game. It counts calls of that
+ *                     function with a native hook for 4 s, then 4 s more with an empty JavaScript hook beside it,
+ *                     and prints the calls per second of each and the frames per second lost to the empty hook.
+ *                     Stand still in a level with the game running, not paused, and the BioShock Client closed
  */
 'use strict';
 
 const GAME = 'BioshockHD.exe';
-const PROBE_VERSION = '2026-10-19.1';
+const PROBE_VERSION = '2026-10-24.1';
 const mod = Process.getModuleByName(GAME);
 const base = mod.base;
 
@@ -2580,6 +2587,63 @@ function callScript(object, fn, parms) {
   processEvent.call(object, frame);
   frame.isNull(); // keeps it alive until the call is done
 }
+
+// hookCost(): the agent's hook runs JavaScript on every call of the game-thread function, hundreds of times a second;
+// the agent's own timing ("other", 43 ms of each second in game, 0.1.52) cannot see the cost of getting into
+// JavaScript at all. A native hook counts the calls without that cost; a second, empty JavaScript hook beside it shows
+// how many calls a second the game loses to one.
+const HOOK_COST_PHASE_MS = 4000;
+let hookCostTimer = null;
+
+globalThis.hookCost = function () {
+  if (hookCostTimer !== null) {
+    return 'already measuring: wait for the result';
+  }
+  const calls = Memory.alloc(4);
+  calls.writeS32(0);
+  let cm;
+  try {
+    cm = new CModule(`
+#include <gum/guminterceptor.h>
+
+extern volatile int calls;
+
+void
+onEnter (GumInvocationContext * ic)
+{
+  calls++;
+}
+`, { calls });
+  } catch (e) {
+    return `Frida cannot compile native hooks here (${e.message}), so the agent's hook has to stay JavaScript`;
+  }
+  const target = base.add(DELTA_FUNCTION);
+  const counted = Interceptor.attach(target, cm);
+  const phases = [];
+  const read = () => calls.readS32();
+  let started = Date.now();
+  let from = read();
+  let empty = null;
+  hookCostTimer = setInterval(() => {
+    const now = Date.now();
+    phases.push({ perSecond: (read() - from) * 1000 / (now - started), js: empty !== null });
+    if (empty === null) {
+      empty = Interceptor.attach(target, { onEnter() {} });
+      started = now;
+      from = read();
+      return;
+    }
+    clearInterval(hookCostTimer);
+    hookCostTimer = null;
+    empty.detach();
+    counted.detach();
+    const [alone, beside] = phases;
+    log(`hookCost: native hooks work; ${alone.perSecond.toFixed(1)} calls a second with a native hook alone, ` +
+      `${beside.perSecond.toFixed(1)} with an empty JavaScript hook beside it ` +
+      `(${(100 * (1 - beside.perSecond / alone.perSecond)).toFixed(1)}% fewer)`);
+  }, HOOK_COST_PHASE_MS);
+  return `measuring for ${2 * HOOK_COST_PHASE_MS / 1000} s: stand still, keep the game running`;
+};
 
 // Calls waiting for the game thread: the game's script must only ever run there.
 const onGameThread = [];

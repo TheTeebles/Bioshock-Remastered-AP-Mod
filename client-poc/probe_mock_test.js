@@ -324,7 +324,7 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     return at;
   };
   const runtime = {
-    logs: [], hooks: [], timers: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, playerAt: () => playerAt, stationAt: () => stationAt, plasmidAt: () => plasmidAt, readU32, time: 1000,
+    logs: [], hooks: [], timers: [], intervals: [], compiled: null, ptr, object, frame, constantFrame, index, writeU32, sisterAt, questAt, gathererAt, playerAt: () => playerAt, stationAt: () => stationAt, plasmidAt: () => plasmidAt, readU32, time: 1000,
   };
 
   const context = {
@@ -334,6 +334,8 @@ function makeRuntime({ withNatives = true, cmodule = true, gnatives = null, gobj
     globalThis: null,
     ptr,
     setTimeout: (fn) => runtime.timers.push(fn),
+    setInterval: (fn) => { runtime.intervals.push(fn); return runtime.intervals.length; },
+    clearInterval: (id) => { runtime.intervals[id - 1] = null; },
     Process: {
       getModuleByName: (name) => {
         if (name === 'kernel32.dll') { return { getExportByName: () => ptr(0x76000000) }; }
@@ -682,6 +684,28 @@ test('use() hooks a native by opcode when asked', () => {
   playCalls(rt, 400);
   rt.flush();
   assert.match(rt.logs.join('\n'), /execVirtualFunction is module\+0x1234/);
+});
+
+test('hookCost() measures an empty JavaScript hook against a native counter', () => {
+  const rt = startedProbe();
+  const before = rt.hooks.length;
+  assert.match(rt.context.hookCost(), /measuring for 8 s/);
+  assert.match(rt.context.hookCost(), /already measuring/);
+  const { calls } = rt.compiled.symbols;
+  const native = rt.hooks[before];
+  assert.strictEqual(native.callbacks.onEnter, 'native', 'the counter is the compiled hook');
+  rt.time += 4000; calls.writeS32(1400); rt.intervals[0](); // 4 s alone: 350 calls a second
+  assert.strictEqual(typeof rt.hooks[before + 1].callbacks.onEnter, 'function', 'then an empty JavaScript hook');
+  rt.time += 4000; calls.writeS32(1400 + 1200); rt.intervals[0](); // 4 s beside it: 300
+  assert.strictEqual(rt.intervals[0], null, 'stopped');
+  assert.match(rt.logs.join('\n'), /350\.0 calls a second with a native hook alone, 300\.0 with an empty JavaScript hook beside it \(14\.3% fewer\)/);
+  assert.ok(rt.hooks.slice(before).every((h) => h.detached), 'both hooks taken out');
+  assert.match(rt.context.hookCost(), /measuring/, 'and it can be run again');
+});
+
+test('hookCost() says so when native hooks cannot be compiled', () => {
+  const rt = startedProbe({ cmodule: false });
+  assert.match(rt.context.hookCost(), /cannot compile native hooks/);
 });
 
 test('a filter that does not compile leaves no hook behind', () => {
