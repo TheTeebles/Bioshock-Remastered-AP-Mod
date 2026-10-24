@@ -28,6 +28,7 @@ const HEAP_VALIDATE = 0x76000400; const HEAP_REALLOC = 0x76000500; // HeapValida
 const CREATE_FILE = 0x76000300; // CreateFileW
 const PROCESS_EVENT = 0x736070; // where the Steam build runs script events
 const OPEN_UPGRADE_MENU = 0x1dbf70; // where the Steam build opens a Power to the People station's menu
+const BATHYSPHERE_MENU = BASE + 0x1E5000; // the fake C++ body of ShockPlayer.ShowBathysphereUI
 const PLAYER_EXEC = BASE + 0x700000; // where the fake player's Exec function lives
 const ENGINE = 0x50000000;
 const GUARD_PAGE = 0x00190000; // a page that must never be read
@@ -276,7 +277,7 @@ function makeRuntime({
     runtime.time += ms;
     const levels = runtime.levels.length > 0 ? runtime.levels : [0x12340000]; // or for something unreadable
     for (const level of levels) {
-      runtime.hooks.filter((h) => h.address !== BASE + PROCESS_EVENT && h.address !== CREATE_FILE)
+      runtime.hooks.filter((h) => ![BASE + PROCESS_EVENT, CREATE_FILE, BATHYSPHERE_MENU].includes(h.address))
         .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(level) } }));
     }
   };
@@ -286,6 +287,11 @@ function makeRuntime({
     const stack = runtime.object(0x40); poke(stack + 4, frame);
     runtime.hooks.filter((h) => h.address === BASE + PROCESS_EVENT)
       .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(self), esp: ptr(stack) } }));
+  };
+  // The lever pulled: the bathysphere menu opens, and the hooks on its C++ body run first.
+  runtime.openBathysphereMenu = (pawn) => {
+    runtime.hooks.filter((h) => h.address === BATHYSPHERE_MENU)
+      .forEach((h) => h.callbacks.onEnter.call({ context: { ecx: ptr(pawn) } }));
   };
   // The game opening a file: the path it ends up opening, after the hooks on CreateFileW.
   runtime.openFile = (path) => {
@@ -558,6 +564,13 @@ function makeRuntime({
     const removeCredits = make('RemoveCredits', functionClass);
     const updateUIStats = make('UpdateUIStats', functionClass);
     const updateUIBioAmmoBank = make('UpdateUIBioAmmoBank', functionClass);
+    // ShockPlayer.ShowBathysphereUI, a native whose C++ body is in the module, in front of the player's fields.
+    const bathysphereMenu = () => {
+      const fn = make('ShowBathysphereUI', functionClass);
+      poke(fn + 0xC0, BATHYSPHERE_MENU);
+      poke(fn + 0x44, runtime.memory.get(playerClass + 0x5C)); poke(playerClass + 0x5C, fn);
+      return fn;
+    };
     const playerStats = (functions = true, redraws = false) => {
       fields(playerClass, [['BioAmmo', floatProperty, 0xAF8], ['Credits', intProperty, 0xAEC]]);
       if (functions) { // in front of the properties
@@ -772,6 +785,7 @@ function makeRuntime({
     });
     return { nameIndex: name, rename, storyFlags, unlockBathysphereDestination, playerUnlocks, bathysphere, unlockedOf, arrivalOf, lineOf, gameUnlocks, unlockDestination, levelChange, changeOf, note, textOf, playerStats, removeBioAmmo, removeCredits, updateUIStats, updateUIBioAmmoBank, spawned, splicer, make, quest, diary, station, playerClass, onKilled, tick, inUse, finishInState,
       finishInClass, weapon, garden, chips, defaults, itemClass, item, pickup, gives, roll, container, research,
+      bathysphereMenu,
       journal };
   };
   // A Little Sister in a level. Her HasBeenSavedOrPacified is bit 0x2 of +0x1038.
@@ -1889,6 +1903,48 @@ const tests = {
     r.poke(r.memory.get(manager + 0x8C) + 4, 1); r.poke(manager + 0x90, 2); // the level's script unlocks its own again
     r.frames(6);
     assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'taken back out');
+  },
+  'the first bathysphere menu of a level offers the stops given, not the level\'s own': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.bathysphereMenu();
+    r.load(); r.frames(2);
+    travelRules(r, 4, { stops: [{ map: '1-medical', arrival: 'Backtrack_MedicalStart' },
+      { map: '3-arcadia', arrival: 'FromFisheriesPS' }], redirects: [] });
+    r.frames(3);
+    assert.ok(r.logged('the menu is set before it opens'));
+    // The lever: the level's script makes its manager with its own destination, and the menu opens in the same frame.
+    // Not an actor: found in the table of all objects, before the object scan has come to it.
+    const manager = model.bathysphere([1], 8);
+    r.openBathysphereMenu(game.pawn);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2], 'set before the menu read it');
+    assert.strictEqual(model.arrivalOf(manager, 2), 'FromFisheriesPS');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'the first bathysphere menu gets every stop even when the game has to add them one by one': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.bathysphereMenu();
+    r.onScriptCall = (self, fn) => {
+      if (fn === model.unlockDestination) { model.gameUnlocks(r.scriptCalls.at(-1).parms, self); }
+    };
+    r.load(); r.frames(2);
+    travelRules(r, 4, { stops: [{ map: '1-medical' }, { map: '3-arcadia' }, { map: '4-recreation' }], redirects: [] });
+    r.frames(3);
+    r.gameEvent(game.hud, model.tick); // the game runs its script as ever: a call to copy, watched for since the rules
+    const manager = model.bathysphere([1], 1); // room for one: the game grows the list itself
+    r.openBathysphereMenu(game.pawn);
+    assert.deepStrictEqual(model.unlockedOf(manager), [0, 2, 3], 'all of them, before the menu read the list');
+    assert.strictEqual(r.scriptCalls.length, 3);
+    assert.deepStrictEqual(r.heapAllocs, [], 'no memory of ours');
+    assert.strictEqual(state(r).travelTrouble, null);
+  },
+  'without Open Rapture the bathysphere menu is not hooked': () => {
+    const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
+    r.poke(game.pawn + 0x30, model.playerClass); model.bathysphereMenu();
+    r.load(); r.frames(5);
+    assert.ok(!r.hooks.some((h) => h.address === BATHYSPHERE_MENU));
+    travelRules(r, 1, { off: true });
+    r.frames(5);
+    assert.ok(!r.hooks.some((h) => h.address === BATHYSPHERE_MENU));
   },
   'more stops than the array has room for are added by the game itself, one at a time': () => {
     const r = makeRuntime(); const game = r.game(); const model = r.objectModel();
