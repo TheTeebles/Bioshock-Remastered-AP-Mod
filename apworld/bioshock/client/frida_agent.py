@@ -757,6 +757,7 @@ class FridaAgent:
     # -- GameAgent ----------------------------------------------------------------------------------------------------
 
     def read_state(self) -> GameState:
+        """The game's latest state, marked not ready once the game stops answering. AgentError once it is gone."""
         self._pump()
         if self._gone is not None:
             raise AgentError(self._gone)
@@ -767,6 +768,7 @@ class FridaAgent:
         return self._state
 
     def poll_events(self) -> list[AgentEvent]:
+        """What the game has sent since the last call, oldest first."""
         self._pump()
         events = list(self._events)
         self._events.clear()
@@ -787,6 +789,7 @@ class FridaAgent:
         self._helper.send(message)
 
     def close(self) -> None:
+        """Let go of the game for good: the helper takes the agent, and its hook, out of the game as it leaves."""
         if self._closed:
             return
         self._closed = True
