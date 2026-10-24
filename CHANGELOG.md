@@ -17,6 +17,14 @@ None of this has been tried in the real game yet.
   it is finished (#17).
 - `archipelago.json` no longer sets `version` and `compatible_version`; the APWorld build adds them (#18).
 
+For people working on the mod:
+
+- Every pull request runs the world's tests, Archipelago's general suite, and the agent's, probe's, survey's and
+  release script's tests (#20).
+- `tools/release.py` sets the world's and agent's versions together and builds the `.apworld` (#21).
+- The probe's `hookCost()` measures what a JavaScript hook on the game thread costs (#22), and the map survey
+  records where each research subject is met (#23).
+
 ## 0.2.0 (first release)
 
 The first build of the BioShock Remastered APWorld meant for players. It needs Archipelago 0.6.7 or newer, the Steam
