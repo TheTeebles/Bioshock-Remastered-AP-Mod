@@ -20,7 +20,7 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
 - `bioshock/map_tracker.py` and `bioshock/tracker/`: Universal Tracker's map tab. The pages and pins in `tracker/` are
   generated: `client-poc/map_reader/map_pins.py` reads the game's map files, then `client-poc/tracker/build_tracker.py`
   draws the floors from the game's `Maps.swf` and places the pins (run with Pillow and Chromium).
-- `bioshock/test/`: 550 tests.
+- `bioshock/test/`: the world's and client's tests (580 at the last count).
 
 ## Rebuild `bioshock.apworld`
 
