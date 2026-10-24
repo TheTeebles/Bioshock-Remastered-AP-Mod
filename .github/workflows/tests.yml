@@ -1,0 +1,53 @@
+# Runs on every pull request and every push to main: the world's own tests and Archipelago's general suite inside an
+# Archipelago checkout (as apworld/README.md describes), and the game agent's tests against the fake Frida runtime.
+name: Tests
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  world:
+    name: World and client (Archipelago ${{ matrix.archipelago }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        archipelago: ["0.6.7"]  # the minimum_ap_version in archipelago.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          path: mod
+      - uses: actions/checkout@v4
+        with:
+          repository: ArchipelagoMW/Archipelago
+          ref: ${{ matrix.archipelago }}
+          path: archipelago
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install Archipelago's requirements, and every world's for the general suite
+        working-directory: archipelago
+        run: |
+          python -m pip install --upgrade pip "setuptools<81" pytest
+          python -m pip install -r requirements.txt
+          python ModuleUpdate.py --yes
+      - name: Put the world in place
+        run: cp -r mod/apworld/bioshock archipelago/worlds/bioshock
+      - name: The world's tests
+        working-directory: archipelago
+        run: python -m pytest worlds/bioshock -q
+      - name: Archipelago's general tests
+        working-directory: archipelago
+        run: python -m pytest test/general -q
+
+  agent:
+    name: Game agent (mock Frida)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: node client-poc/agent_mock_test.js apworld/bioshock/client/agent.js
