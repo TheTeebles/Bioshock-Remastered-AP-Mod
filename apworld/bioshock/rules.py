@@ -19,6 +19,11 @@ def items_to_reach_chapter(world: BioShockWorld, number: int) -> frozenset[str]:
     """Open Rapture: every item the way into a chapter needs, the chapters before it on the way included (the rules
     below; chapter 1 needs none)."""
     access = {chapter.number: chapter.access_item for chapter in CHAPTERS}
+    order = world.chapter_sequence
+    if number in order:  # Chapter Order shuffled: the chain up to this chapter
+        before = order[:order.index(number) + 1]
+        return frozenset(access[n] for n in before) | (
+            {NEPTUNES_BOUNTY_ACCESS} if number == 4 and not world.options.start_with_research_camera else set())
     if number in FREE_CHAPTERS:
         camera_chapter = 4 if not world.options.start_with_research_camera else None
         return frozenset({access[number], NEPTUNES_BOUNTY_ACCESS} if number == camera_chapter else {access[number]})

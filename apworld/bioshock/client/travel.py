@@ -11,7 +11,7 @@ The other chapter crossings are bathysphere rides already.
 """
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Collection, Sequence
 from typing import Any, NamedTuple
 
 from ..data import (
@@ -102,10 +102,18 @@ def _next_in_chapter() -> dict[str, str]:
 NEXT_IN_CHAPTER = _next_in_chapter()
 
 
-def open_chapters(held: Collection[str]) -> frozenset[int]:
-    """The chapters the player can reach, as the world's logic counts it (rules.py, regions.py)."""
+def open_chapters(held: Collection[str], order: Sequence[int] = (),
+                  finished: Collection[int] = ()) -> frozenset[int]:
+    """The chapters the player can reach, as the world's logic counts it (rules.py, regions.py).
+
+    With Chapter Order shuffled, `order` is the seed's order of chapters 2 to 4: each of them, and Ryan's chapter
+    after the last, opens only once the one before it is `finished` (finished_chapters) as well. Chapters opened stay
+    open, so the bathysphere still goes back to them."""
     access = {chapter.number: chapter.access_item for chapter in CHAPTERS}
     opened = {number for number, item in access.items() if item is None or item in held}
+    for before, number in zip(order, (*order[1:], 5)):
+        if before not in opened or before not in finished:
+            opened.discard(number)
     if not {5, *FREE_CHAPTERS} <= opened:
         opened.discard(5)  # Ryan's chapter needs the three before it as well
     for number in (6, 7):  # and the story goes on from there in order
@@ -114,10 +122,29 @@ def open_chapters(held: Collection[str]) -> frozenset[int]:
     return frozenset(opened)
 
 
-def offered_stops(held: Collection[str], visited: Collection[str]) -> list[Stop]:
+def finished_chapters(visited: Collection[str], quests: Collection[str]) -> frozenset[int]:
+    """The chapters whose story is done: their last level is finished (completed_levels)."""
+    done = set(completed_levels(visited, quests))
+    return frozenset(chapter.number for chapter in CHAPTERS if chapter.levels[-1] in done)
+
+
+def why_locked(number: int, held: Collection[str], order: Sequence[int] = (),
+               finished: Collection[int] = ()) -> str:
+    """What the player still needs for a chapter that is not open: its item, the chapter before it in the seed's
+    order, or both."""
+    chapter = next(c for c in CHAPTERS if c.number == number)
+    needs = [] if chapter.access_item in held else [f"you receive {chapter.access_item}"]
+    before = dict(zip((*order[1:], 5), order)).get(number)
+    if before is not None and before not in finished:
+        needs.append(f"you finish {next(c for c in CHAPTERS if c.number == before).levels[0]}")
+    return " and ".join(needs) or "the chapters before it are open"
+
+
+def offered_stops(held: Collection[str], visited: Collection[str], order: Sequence[int] = (),
+                  finished: Collection[int] = ()) -> list[Stop]:
     """The stations the bathysphere offers: every chapter the player can reach, as soon as its item arrives. Chapter
     6 is offered as Olympus Heights (its first level) until that has been reached, then as Apollo Square's station."""
-    opened = open_chapters(held)
+    opened = open_chapters(held, order, finished)
     stops = []
     for stop in STOPS:
         chapter = CHAPTER_OF_LEVEL[stop.level].number
@@ -129,11 +156,12 @@ def offered_stops(held: Collection[str], visited: Collection[str]) -> list[Stop]
     return stops
 
 
-def travel_rules(held: Collection[str], visited: Collection[str]) -> dict[str, Any]:
+def travel_rules(held: Collection[str], visited: Collection[str], order: Sequence[int] = (),
+                 finished: Collection[int] = ()) -> dict[str, Any]:
     """What the agent is told: the stops to offer, where each one puts the player, and the scripted crossings into a
-    locked chapter, sent to the hub instead."""
-    opened = open_chapters(held)
-    stops = offered_stops(held, visited)
+    locked chapter, sent to the hub instead. `order` and `finished`: see open_chapters."""
+    opened = open_chapters(held, order, finished)
+    stops = offered_stops(held, visited, order, finished)
     return {
         "stops": [{"map": stop.map,
                    "arrival": FIRST_ARRIVALS.get(stop.level, stop.arrival) if stop.level not in visited
@@ -169,25 +197,29 @@ def completed_levels(visited: Collection[str], quests: Collection[str]) -> list[
     return done
 
 
-def locked_way_on(level: str, held: Collection[str]) -> str | None:
+def locked_way_on(level: str, held: Collection[str], order: Sequence[int] = (),
+                  finished: Collection[int] = ()) -> str | None:
     """Said on entering a level whose way on leads into a chapter still locked."""
     for crossing in CROSSINGS:
-        if MAP_LEVEL.get(crossing.from_map) == level and crossing.chapter not in open_chapters(held):
+        if MAP_LEVEL.get(crossing.from_map) == level and crossing.chapter not in open_chapters(held, order, finished):
             chapter = next(c for c in CHAPTERS if c.number == crossing.chapter)
-            return (f"The way on to {chapter.levels[0]} is locked until you receive {chapter.access_item}. "
+            return (f"The way on to {chapter.levels[0]} is locked until "
+                    f"{why_locked(crossing.chapter, held, order, finished)}. "
                     f"Use a bathysphere to go elsewhere meanwhile.")
     return None
 
 
-def blocked_notice(crossing_to: str, landed: str | None, held: Collection[str]) -> str | None:
+def blocked_notice(crossing_to: str, landed: str | None, held: Collection[str], order: Sequence[int] = (),
+                   finished: Collection[int] = ()) -> str | None:
     """What the player is told when a crossing into a locked chapter went somewhere else (`landed`, a map)."""
     for crossing in CROSSINGS:
-        if crossing.to_map == crossing_to and crossing.chapter not in open_chapters(held):
+        if crossing.to_map == crossing_to and crossing.chapter not in open_chapters(held, order, finished):
             chapter = next(c for c in CHAPTERS if c.number == crossing.chapter)
             if landed == crossing.bounce_map:
                 where = (f"you stay in {MAP_LEVEL.get(landed, landed)}; go back to a bathysphere "
                          f"({HUB.level}'s goes everywhere you can)")
             else:
                 where = f"the way there took you back to {HUB.level}'s bathysphere"
-            return f"{chapter.levels[0]} is locked until you receive {chapter.access_item}: {where}."
+            needs = why_locked(crossing.chapter, held, order, finished)
+            return f"{chapter.levels[0]} is locked until {needs}: {where}."
     return None

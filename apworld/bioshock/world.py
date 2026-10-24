@@ -1,5 +1,6 @@
+import itertools
 from collections.abc import Mapping
-from typing import Any
+from typing import Any, TextIO
 
 from Options import OptionError
 from worlds.AutoWorld import World
@@ -7,14 +8,15 @@ from worlds.AutoWorld import World
 from . import items, locations, map_tracker, regions, rules
 from . import options as bioshock_options
 from .data import (
-    CHAPTER_OF_LEVEL, GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS, WELCOME_TO_RAPTURE,
-    WORLD_VERSION, LocationData,
+    CHAPTER_OF_LEVEL, CHAPTERS, FREE_CHAPTERS, GAME_NAME, LEVELS, MEDICAL_PAVILION, PAST_THE_DEBRIS, TELEKINESIS,
+    WELCOME_TO_RAPTURE, WORLD_VERSION, LocationData,
 )
 from .web_world import BioShockWebWorld
 
 RESEARCH_CAMERA = "Research Camera"
-SLOT_DATA_VERSION = 5  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
-# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2), safe_checks, research_checks (0/1/2)
+SLOT_DATA_VERSION = 6  # 2: story checks; audio_diary_checks is 0/1/2. 3: no directors_commentary_checks.
+# 4: station_touch, and shop_checks is 0/1/2. 5: world_item_checks (0/1/2), safe_checks, research_checks (0/1/2).
+# 6: chapter_order (0/1) and chapter_sequence
 
 
 class BioShockWorld(World):
@@ -29,6 +31,7 @@ class BioShockWorld(World):
 
     options_dataclass = bioshock_options.BioShockOptions
     options: bioshock_options.BioShockOptions
+    chapter_sequence: tuple[int, ...] = ()  # Chapter Order shuffled: the order chapters 2 to 4 open in
 
     location_name_to_id = locations.LOCATION_NAME_TO_ID
     item_name_to_id = items.ITEM_NAME_TO_ID
@@ -40,9 +43,9 @@ class BioShockWorld(World):
     # ... and shows the game's map with a pin on every check that has a place (map_tracker.py).
     if map_tracker.tracker_world():
         tracker_world = map_tracker.tracker_world()
-    TRACKED_OPTIONS = ("level_access", "story_checks", "little_sister_checks", "power_to_the_people_checks",
-                       "level_completion_checks", "audio_diary_checks", "shop_checks", "trap_chance", "death_link",
-                       "start_with_research_camera", "world_item_checks", "safe_checks",
+    TRACKED_OPTIONS = ("level_access", "chapter_order", "story_checks", "little_sister_checks",
+                       "power_to_the_people_checks", "level_completion_checks", "audio_diary_checks", "shop_checks",
+                       "trap_chance", "death_link", "start_with_research_camera", "world_item_checks", "safe_checks",
                        "research_checks")
 
     @staticmethod
@@ -55,12 +58,28 @@ class BioShockWorld(World):
             for name in self.TRACKED_OPTIONS:
                 if name in tracked:
                     getattr(self.options, name).value = tracked[name]
+            self.chapter_sequence = tuple(int(n) for n in tracked.get("chapter_sequence") or ())
         else:  # a seed being rebuilt was checked when it was made, with start inventories the slot data doesn't carry
+            self.chapter_sequence = self._pick_chapter_sequence()  # first: what is open from the start depends on it
             self._check_options()
         if self.options.start_with_research_camera and RESEARCH_CAMERA not in self.options.start_inventory.value:
             self.multiworld.push_precollected(self.create_item(RESEARCH_CAMERA))
 
+    def _pick_chapter_sequence(self) -> tuple[int, ...]:
+        """Chapter Order shuffled: the seed's order of the chapters before Ryan. Empty when they open in any order."""
+        if self.options.chapter_order != bioshock_options.ChapterOrder.option_shuffled:
+            return ()
+        orders = list(itertools.permutations(FREE_CHAPTERS))
+        if not self.options.start_with_research_camera:
+            # Fort Frolic's story needs the camera, which lies in Neptune's Bounty (rules.py).
+            orders = [order for order in orders if order.index(2) < order.index(4)]
+        return self.random.choice(orders)
+
     def _check_options(self) -> None:
+        if (self.options.chapter_order == bioshock_options.ChapterOrder.option_shuffled
+                and self.options.level_access != bioshock_options.LevelAccess.option_open_rapture):
+            raise OptionError(f"{self.player_name}: Chapter Order 'shuffled' only works with Level Access set to "
+                              "'open_rapture'. Set Chapter Order to 'free' or Level Access to 'open_rapture'.")
         if not locations.enabled_locations(self):
             raise OptionError(f"{self.player_name}: every kind of BioShock check is switched off. "
                               "Turn at least one of them on.")
@@ -138,4 +157,11 @@ class BioShockWorld(World):
             # Which item unlocks each level's checks (None = always unlocked). Empty in vanilla access mode.
             "level_access_items": {level.name: items.access_item_of(self, level.name) for level in LEVELS}
             if access_items else {},
+            # Chapter Order shuffled: the order chapters 2 to 4 open in. Empty when they open in any order.
+            "chapter_sequence": list(self.chapter_sequence),
         }
+
+    def write_spoiler_header(self, spoiler_handle: TextIO) -> None:
+        if self.chapter_sequence:
+            names = [CHAPTERS[number - 1].levels[0] for number in self.chapter_sequence]
+            spoiler_handle.write(f"Chapter Order ({self.player_name}): {' -> '.join(names)}\n")

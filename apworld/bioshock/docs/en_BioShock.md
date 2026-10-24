@@ -25,6 +25,13 @@ Square's line until you have been there once. A way into a chapter you
 can't enter yet (the submarine out of Smuggler's Hideout, the way out of Ryan's office) takes you back to Medical
 Pavilion's bathysphere instead.
 
+With **Chapter Order** set to `shuffled`, Neptune's Bounty, Arcadia and Fort Frolic come in an order the seed picks
+(the spoiler log shows it): each opens once its access item has arrived and the chapter before it is finished, and
+Hephaestus once the last of the three is. A chapter is finished when its story is: the submarine out of Smuggler's
+Hideout, the ambush after the Lazarus Vector in Arcadia, Cohen's last photographs in Fort Frolic. The bathysphere
+still takes you back to every chapter you have opened. Without the Research Camera at the start, Neptune's Bounty
+always comes before Fort Frolic, whose story needs the camera.
+
 ## What counts as a check?
 
 These can hold anything, including the items you and other players need:
