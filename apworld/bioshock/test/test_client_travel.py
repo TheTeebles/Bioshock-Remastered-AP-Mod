@@ -301,3 +301,17 @@ class TestShuffledChapterOrder(unittest.TestCase):
         h.restart_client()
         h.step(3)
         self.assertIn("Arcadia", h.game.bathysphere_stops())
+
+    def test_the_client_says_the_order_on_connecting_and_how_far_you_are(self) -> None:
+        h = self.finish_fort_frolic()
+        self.assertTrue(any(n.text.startswith("Chapter order: Fort Frolic -> Arcadia -> Neptune's Bounty, then "
+                                              "Hephaestus") for n in h.notices))
+        self.assertEqual(h.core.chapter_lines()[1:], [
+            "  Fort Frolic: finished", "  Arcadia: open",
+            "  Neptune's Bounty: locked until you finish Arcadia",
+            "  Hephaestus: locked until you finish Neptune's Bounty"])
+
+    def test_chapters_in_any_order_say_so(self) -> None:
+        h = open_rapture().connect()
+        self.assertEqual(h.core.chapter_lines(),
+                         ["This seed opens Neptune's Bounty, Arcadia and Fort Frolic in any order."])

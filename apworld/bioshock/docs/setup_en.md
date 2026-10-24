@@ -124,6 +124,7 @@ If the game was started as administrator, Archipelago has to be started as admin
 | `/detach` | Lets go of the game and stops looking for it until `/attach`. |
 | `/python` | Shows which Python and Frida reach the game. `/python <path>` names the Python to use, `/python auto` goes back to looking for one. |
 | `/deathlink` | Turns DeathLink on or off for this session. |
+| `/chapters` | With Chapter Order shuffled: the seed's chapter order, and which chapters are finished, open or still locked (and what each needs). |
 | `/simulate` | Swaps the real game for a simulated one, or back. |
 | `/sim ...` | Plays the simulated game (see below). |
 

@@ -63,6 +63,12 @@ class BioShockCommandProcessor(ClientCommandProcessor):
             self.output(line)
         return True
 
+    def _cmd_chapters(self) -> bool:
+        """Show the seed's chapter order (Chapter Order shuffled) and how far you are in it."""
+        for line in self.ctx.core.chapter_lines():
+            self.output(line)
+        return True
+
     def _cmd_attach(self) -> bool:
         """Connect to the running game now. The client also keeps trying on its own."""
         self.ctx.auto_attach = True

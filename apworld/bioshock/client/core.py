@@ -24,7 +24,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from .. import map_tracker
-from ..data import GOAL_LEVEL, WORLD_VERSION, ItemKind
+from ..data import CHAPTERS, GOAL_LEVEL, WORLD_VERSION, ItemKind
 from . import flash_movies, game_data, travel
 from .game_data import Delivery
 from .protocol import (
@@ -213,6 +213,8 @@ class BridgeCore:
         self.shop_checks = bool(slot_data.get("shop_checks", 0))
         self.open_rapture = slot_data.get("level_access") == OPEN_RAPTURE
         self.chapter_order = tuple(int(n) for n in slot_data.get("chapter_sequence") or ())
+        if self.chapter_order:
+            self._notice(self.chapter_order_line() + " (/chapters says how far you are).")
         self._travel_sent = None
         self._scouts_asked = False
         self._garden_sent = None
@@ -410,6 +412,29 @@ class BridgeCore:
         self._second_tries = [index for index in sorted(self.skipped) if self._plan(index) is not None]
         self._look_for_second_tries = False
         return len(self._second_tries)
+
+    def chapter_order_line(self) -> str:
+        names = [CHAPTERS[number - 1].levels[0] for number in self.chapter_order]
+        return f"Chapter order: {' -> '.join(names)}, then {CHAPTERS[4].levels[0]}"
+
+    def chapter_lines(self) -> list[str]:
+        """Chapter Order shuffled: the seed's order, and for each chapter whether it is finished, open, or what it
+        still needs."""
+        if not self.chapter_order:
+            return ["This seed opens Neptune's Bounty, Arcadia and Fort Frolic in any order."]
+        finished = self._finished_chapters()
+        opened = travel.open_chapters(self._received_names, self.chapter_order, finished)
+        lines = [self.chapter_order_line()]
+        for number in (*self.chapter_order, 5):
+            name = CHAPTERS[number - 1].levels[0]
+            if number in finished:
+                lines.append(f"  {name}: finished")
+            elif number in opened:
+                lines.append(f"  {name}: open")
+            else:
+                lines.append(f"  {name}: locked until "
+                             f"{travel.why_locked(number, self._received_names, self.chapter_order, finished)}")
+        return lines
 
     def status_lines(self) -> list[str]:
         waiting = sum(1 for reason in self.skipped.values() if reason == UNKNOWN)
