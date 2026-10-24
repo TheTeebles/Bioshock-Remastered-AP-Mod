@@ -130,14 +130,13 @@ def finished_chapters(visited: Collection[str], quests: Collection[str]) -> froz
 
 def why_locked(number: int, held: Collection[str], order: Sequence[int] = (),
                finished: Collection[int] = ()) -> str:
-    """What the player still needs for a chapter that is not open: its item, the chapter before it in the seed's
-    order, or both."""
+    """What the player still needs for a chapter that is not open. It names the chapter's access item, never the
+    chapter before it in a shuffled order: the player should not learn the order from the client (Teebs,
+    2026-10-24)."""
     chapter = next(c for c in CHAPTERS if c.number == number)
-    needs = [] if chapter.access_item in held else [f"you receive {chapter.access_item}"]
-    before = dict(zip((*order[1:], 5), order)).get(number)
-    if before is not None and before not in finished:
-        needs.append(f"you finish {next(c for c in CHAPTERS if c.number == before).levels[0]}")
-    return " and ".join(needs) or "the chapters before it are open"
+    if chapter.access_item not in held:
+        return f"you receive {chapter.access_item}"
+    return "you have finished the chapter before it"
 
 
 def offered_stops(held: Collection[str], visited: Collection[str], order: Sequence[int] = (),
