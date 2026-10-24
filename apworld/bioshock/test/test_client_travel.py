@@ -311,6 +311,11 @@ class TestShuffledChapterOrder(unittest.TestCase):
             "  Neptune's Bounty: locked until you finish Arcadia",
             "  Hephaestus: locked until you finish Neptune's Bounty"])
 
+    def test_outside_open_rapture_the_chapters_are_in_story_order(self) -> None:
+        self.assertEqual(Harness().core.chapter_lines(), ["Not connected to a slot yet."])
+        self.assertEqual(Harness().connect().core.chapter_lines(),
+                         ["This seed's chapters come in story order: Level Access is not Open Rapture."])
+
     def test_chapters_in_any_order_say_so(self) -> None:
         h = open_rapture().connect()
         self.assertEqual(h.core.chapter_lines(),

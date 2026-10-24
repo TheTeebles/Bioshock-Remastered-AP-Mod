@@ -420,6 +420,10 @@ class BridgeCore:
     def chapter_lines(self) -> list[str]:
         """Chapter Order shuffled: the seed's order, and for each chapter whether it is finished, open, or what it
         still needs."""
+        if not self.connected:
+            return ["Not connected to a slot yet."]
+        if not self.open_rapture:
+            return ["This seed's chapters come in story order: Level Access is not Open Rapture."]
         if not self.chapter_order:
             return ["This seed opens Neptune's Bounty, Arcadia and Fort Frolic in any order."]
         finished = self._finished_chapters()
