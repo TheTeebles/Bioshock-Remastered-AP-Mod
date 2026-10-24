@@ -253,6 +253,7 @@ class BridgeCore:
     # ---------------------------------------------------------------------------------------------------------------
 
     def on_agent_attached(self, description: str) -> None:
+        """The game agent is connected: start from a fresh view of the game and try set-aside items again."""
         self.agent_attached = True
         self.agent_description = description
         self._reset_game_view()
@@ -260,6 +261,7 @@ class BridgeCore:
         self._notice(f"Game connected: {description}.")
 
     def on_agent_detached(self, reason: str = "") -> None:
+        """The agent is gone: say so, set aside an item that was being given, and clear the game view."""
         if self.agent_attached:
             self._notice(f"Game disconnected{': ' + reason if reason else '.'}", warning=bool(reason))
         flight = self._in_flight
@@ -297,6 +299,7 @@ class BridgeCore:
         self._out = [action for action in self._out if not isinstance(action, (RunCommand, RunAction, KillPlayer))]
 
     def on_state(self, state: GameState) -> None:
+        """A new reading of the game: follow the level, the goal and finished chapters, and collect its checks."""
         held_before = self.state.weapons or frozenset()
         was_pending = self.state.weapons_pending
         self.state = state
