@@ -53,7 +53,7 @@
  */
 'use strict';
 
-const AGENT_VERSION = '2026-10-19.11';
+const AGENT_VERSION = '2026-10-24.3';
 const GAME = 'BioshockHD.exe';
 
 // Engine addresses for running commands. Only measured on the Steam build so far.
@@ -3438,6 +3438,68 @@ function keepTravel(map) {
   }
 }
 
+// The first bathysphere menu of a level used to show the level's own destinations (known bug, 2026-10-15): pulling
+// the lever has the level's script call ShockPlayer.UnlockBathysphereDestination, which makes the level's
+// BathysphereManager, and ShockPlayer.ShowBathysphereUI in the same frame, and the menu reads the list at once. So the
+// agent hooks ShowBathysphereUI's C++ body (in its function at NATIVE_ENTRY, as for the HUD redraw) and puts the
+// list right just before the menu opens. The manager made a moment ago is looked for among the level's actors.
+// Not tried in game yet.
+const menuHook = { installed: false, trouble: null, level: null, opened: 0 };
+
+function armBathysphereMenu(pawn, level) {
+  menuHook.level = level;
+  if (menuHook.installed || menuHook.trouble !== null || travel.rules === null || travel.rules.off) {
+    return;
+  }
+  const fn = findFunction(pawn, 'ShowBathysphereUI');
+  const entry = fn === null ? null : carefulPtr(fn.add(NATIVE_ENTRY));
+  if (entry === null || entry.toUInt32() < moduleStart || entry.toUInt32() >= moduleEnd) {
+    menuHook.trouble = fn === null ? 'the player has no ShowBathysphereUI' : 'ShowBathysphereUI has no C++ body';
+    detail(`Open Rapture: the first bathysphere menu may show the level's own list: ${menuHook.trouble}`);
+    return;
+  }
+  Interceptor.attach(entry, {
+    onEnter() {
+      try {
+        beforeBathysphereMenu();
+      } catch (e) {
+        travelTrouble(`could not set the bathysphere menu before it opened: ${e.message}`);
+      }
+    },
+  });
+  menuHook.installed = true;
+  detail(`Open Rapture: ShowBathysphereUI's C++ body is at module+${entry.sub(base)}; the menu is set before it opens`);
+}
+
+// On the game thread, as the menu opens.
+function beforeBathysphereMenu() {
+  const rules = travel.rules;
+  if (rules === null || rules.off || objectModel === null) {
+    return;
+  }
+  menuHook.opened += 1;
+  const level = menuHook.level;
+  if (level !== null && levelInfoOf(level) !== null) {
+    for (const actor of actorsOf(level).actors) {
+      const cls = classOfObject(actor);
+      if (cls !== null && kindOf(cls) === 'bathysphere' && !travel.managers.some((m) => same(m, actor))) {
+        travel.managers.push(actor); // made by the lever a moment ago, before the object scan could see it
+      }
+    }
+  }
+  const layout = travelLayout();
+  if (layout === null) {
+    detail('Open Rapture: the bathysphere menu opened before the agent knew where its destinations are');
+    return;
+  }
+  for (const manager of travel.managers) {
+    const cls = classOfObject(manager);
+    if (cls !== null && kindOf(cls) === 'bathysphere') {
+      keepBathysphere(manager, layout, rules);
+    }
+  }
+}
+
 // The level being played changed: if it went where an armed redirect leads, from where it starts, it was taken.
 function noteTravel(from, to) {
   const before = normalizeMap(from);
@@ -4220,6 +4282,7 @@ function watchPlayer(level, info, map, now) {
   if (body === null) {
     return;
   }
+  armBathysphereMenu(body.pawn, level);
   carryOutKills(body.pawn, now);
   carryOutTraps(body.pawn, now);
   watchLife(body.pawn, map);
