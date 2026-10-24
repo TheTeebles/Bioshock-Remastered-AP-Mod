@@ -69,6 +69,7 @@ class SimulatedGame:
         self.empty_pickups: dict[str, Any] | None = None  # the pickups the client said should give the placeholder
         self.research: dict[str, int] = {}  # research subject (the game's name) -> level reached
         self.research_awards_emptied = False  # research gives the placeholder, as the client asks with research checks
+        self.sisters_done: set[str] = set()  # maps where the client said Little Sisters need no more watching
 
         # For tests: what arrived, and ways to misbehave.
         self.commands: list[str] = []
@@ -146,6 +147,10 @@ class SimulatedGame:
             return
         if action == "empty_research_awards" and action not in self.unsupported_actions:  # a setting as well
             self.research_awards_emptied = True
+            self._events.append(ActionResult(command_id, True))
+            return
+        if action.startswith("sisters_done "):  # and the maps where Little Sisters need no more watching
+            self.sisters_done = set(json.loads(action.partition(" ")[2])["maps"])
             self._events.append(ActionResult(command_id, True))
             return
         if action.startswith("redirect_movies "):  # and so is where the Garden's menu with the AP icon is

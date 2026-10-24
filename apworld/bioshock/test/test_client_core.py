@@ -1428,6 +1428,46 @@ class TestGatherersGarden(unittest.TestCase):
         self.assertEqual(set(h.game.garden_lines), {MEDICAL_PAVILION}, "only the level the player is in")
 
 
+class TestLittleSisterWatching(unittest.TestCase):
+    """The agent is told the maps whose Little Sisters need no more watching, which saves it time."""
+
+    def test_maps_without_sisters_are_done_from_the_start(self) -> None:
+        h = Harness(access_items=False)
+        h.connect().attach()
+        h.step(4)
+        self.assertIn("1-welcome", h.game.sisters_done)
+        self.assertNotIn("1-medical", h.game.sisters_done)
+        self.assertNotIn("2-fisheries", h.game.sisters_done)
+
+    def test_a_level_is_done_once_its_sisters_are_collected(self) -> None:
+        h = Harness(access_items=False)
+        h.connect().attach()
+        h.step(4)
+        h.game.deal_with_little_sister(MEDICAL_PAVILION)
+        h.step(4)
+        self.assertNotIn("1-medical", h.game.sisters_done)
+        h.game.deal_with_little_sister(MEDICAL_PAVILION)
+        h.step(4)
+        self.assertIn("1-medical", h.game.sisters_done)
+        self.assertNotIn("2-fisheries", h.game.sisters_done)
+
+    def test_sisters_already_checked_on_the_server_count(self) -> None:
+        h = Harness(access_items=False)
+        h.server_checked.add(game_data.LITTLE_SISTER_LOCATION[MEDICAL_PAVILION, 1])
+        h.server_checked.add(game_data.LITTLE_SISTER_LOCATION[MEDICAL_PAVILION, 2])
+        h.connect().attach()
+        h.step(4)
+        self.assertIn("1-medical", h.game.sisters_done)
+
+    def test_without_sister_checks_every_map_is_done(self) -> None:
+        h = Harness(access_items=False)
+        for location_id in game_data.LITTLE_SISTER_LOCATION.values():
+            h.valid.discard(location_id)
+        h.connect().attach()
+        h.step(4)
+        self.assertEqual(h.game.sisters_done, set(game_data.MAP_LEVEL))
+
+
 class TestVersions(unittest.TestCase):
     def test_says_which_apworld_it_is(self) -> None:
         h = Harness(access_items=False)
