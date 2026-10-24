@@ -10,7 +10,11 @@ Reads BioShock Remastered map files (.bsm) and lists what the randomizer could u
 - given: what the map's scripts hand the player (ActionGiveItemsToPlayer): radio messages, story items and so on;
 - world: plasmid and tonic pickups, weapon pickups and safes, one by one with their Label and position: what
   world-item and safe checks (design section 5) would be made of;
-- pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each.
+- pickups: every other actor with loot (LootSlot -> LootItemSpecification), by item class, with how many of each;
+- enemies: which research subjects the map puts in it (an actor of the subject's class, or a spawner or spawn action
+  naming one), by the game's ResearchName, with how many actors, spawners and spawn actions name each. This is what
+  data.RESEARCH_SUBJECTS's levels should follow (a subject is researched where it is surely met). Matched by class
+  and object names, so an enemy only ever made by something the names do not show is missed [inferred].
 
 Only reads; Python 3.8+, nothing to install. Needs map_stock.py next to it.
 
@@ -29,6 +33,24 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from map_stock import SIZES, Package, compact  # noqa: E402
 
+# The research subjects (ShockPlayer's ResearchName) and how their classes and spawners are named, as ShockAI's
+# class list has them (reference/bioshock_runtime_classes.txt): Aggressor, AggressorSpawner, Assassin, Bouncer, ...
+ENEMY_NAMES = {
+    "MeleeThug": ("MeleeThug", "Thuggish"),
+    "RangedAggressor": ("RangedAggressor", "Aggressor", "Leadhead"),
+    "Grenadier": ("Grenadier", "Nitro"),
+    "CeilingCrawler": ("CeilingCrawler", "Crawler", "Spider"),
+    "Assassin": ("Assassin", "Houdini"),
+    "Bouncer": ("Bouncer",),
+    "Rosie": ("Rosie",),
+    "SecurityBot": ("SecurityBot",),
+    "Gatherer": ("SpawnedGatherer", "Gatherer"),
+    "Turret": ("Turret",),
+    "SecurityCamera": ("SecurityCamera",),
+}
+# Names that look like an enemy's but are not one: its parts, effects and sounds.
+NOT_ENEMIES = ("Weapon", "Ammo", "Projectile", "Attack", "Action", "FX", "Sound", "Hit", "Decal", "Backpack",
+               "Cone", "Gun", "Explo", "Spotlight", "Reward", "Booty", "Panic", "Vent", "Label")
 QUEST_ACTIONS = {"ActionInitiateQuest": "start", "ActionCompleteQuest": "complete",
                  "ActionCompleteQuestObjective": "complete objective"}
 SKIP_MAPS = ("_deu", "_esn", "_fra", "_ita", "_jpn", "_pol", "_rus", "_cze", "_hun")  # localized copies, empty
@@ -170,6 +192,17 @@ WEAPONS = ("Pistol", "MachineGun", "Shotgun", "GrenadeLauncher", "ChemicalThrowe
 PLAIN_WEAPON_PICKUPS = tuple(f"{weapon}Pickup" for weapon in WEAPONS)
 
 
+def enemy_of(name):
+    """The research subject a class or object name stands for, or None. Longest pattern first, so a RangedAggressor
+    is not counted as a plain Aggressor twice and a SpawnedGatherer is a Gatherer."""
+    if not name or any(part in name for part in NOT_ENEMIES):
+        return None
+    for pattern, subject in sorted(((p, s) for s, ps in ENEMY_NAMES.items() for p in ps), key=lambda x: -len(x[0])):
+        if pattern.lower() in name.lower():
+            return subject
+    return None
+
+
 def is_weapon_pickup(cls):
     return ("And" in cls and cls.endswith("Pickup")) or cls in PLAIN_WEAPON_PICKUPS
 
@@ -192,10 +225,12 @@ def position(value):
 def survey(path):
     pkg = Survey(path.read_bytes())
     result = {"map": path.name, "transitions": [], "starts": [], "bathysphere": {"switches": [], "unlocks": [],
-              "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}}
+              "menus": 0}, "quests": [], "world": [], "diaries": [], "given": [], "pickups": {}, "enemies": {}}
     pickups = Counter()
+    enemies: dict[str, Counter] = {}
     for i, e in enumerate(pkg.exports, 1):
         cls = pkg.class_of(e)
+        note_enemy(pkg, i, e, cls, enemies)
         if cls == "ActionChangeLevel":
             found = {**pkg.props(i), **pkg.resolved(i)}
             script = e["outer"]
@@ -233,7 +268,22 @@ def survey(path):
     result["given"].sort()
     result["diaries"].sort()
     result["pickups"] = dict(sorted(pickups.items()))
+    result["enemies"] = {subject: dict(sorted(how.items())) for subject, how in sorted(enemies.items())}
     return result
+
+
+def note_enemy(pkg, i, e, cls, enemies):
+    """Counts export i if it is an enemy, a spawner of one, or a spawn action naming one."""
+    if e["outer"] == 0 and enemy_of(cls) and "Spawn" not in cls:
+        enemies.setdefault(enemy_of(cls), Counter())["actors"] += 1
+    elif "Spawn" in cls and not cls.startswith("ActionSpawnActor"):
+        named = enemy_of(cls[len("Action"):] if cls.startswith("Action") else cls)  # AggressorSpawner, ActionSpawnTurret
+        if named is None:  # a general spawner or ActionSpawnAI: the class it makes is among its settings
+            values = [*pkg.props(i).values(), *pkg.resolved(i).values()]
+            named = next((enemy_of(pkg.name_of(v)) for v in values if isinstance(v, Ref) and enemy_of(pkg.name_of(v))),
+                         None) or next((enemy_of(v) for v in values if isinstance(v, str) and enemy_of(v)), None)
+        if named is not None:
+            enemies.setdefault(named, Counter())["spawn actions" if cls.startswith("Action") else "spawners"] += 1
 
 
 def main():
