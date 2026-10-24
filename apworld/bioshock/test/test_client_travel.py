@@ -245,3 +245,59 @@ class TestLockedWayOn(unittest.TestCase):
             fallback = redirect["fallback"]
             self.assertLessEqual(len(fallback["map"]), len(redirect["to"]))
             self.assertLessEqual(len(fallback["arrival"]), len(arrivals[redirect["to"]]))
+
+
+class TestShuffledChapterOrder(unittest.TestCase):
+    """Chapter Order shuffled: chapters 2 to 4 open one after another, in the seed's order."""
+    order = (4, 3, 2)
+    held = {NEPTUNES_BOUNTY_ACCESS, ARCADIA_ACCESS, FORT_FROLIC_ACCESS, HEPHAESTUS_ACCESS}
+
+    def test_only_the_first_chapter_of_the_order_opens_at_first(self) -> None:
+        self.assertEqual(travel.open_chapters(self.held, self.order), {1, 4})
+
+    def test_each_finished_chapter_opens_the_next(self) -> None:
+        self.assertEqual(travel.open_chapters(self.held, self.order, {4}), {1, 3, 4})
+        self.assertEqual(travel.open_chapters(self.held, self.order, {4, 3}), {1, 2, 3, 4})
+        self.assertEqual(travel.open_chapters(self.held, self.order, {4, 3, 2}), {1, 2, 3, 4, 5})
+
+    def test_a_chapter_needs_its_item_as_well(self) -> None:
+        self.assertEqual(travel.open_chapters({FORT_FROLIC_ACCESS}, self.order, {4}), {1, 4})
+        self.assertEqual(travel.why_locked(3, {FORT_FROLIC_ACCESS}, self.order, {4}), "you receive Arcadia Access")
+
+    def test_why_locked_names_the_chapter_to_finish(self) -> None:
+        self.assertEqual(travel.why_locked(3, {ARCADIA_ACCESS, FORT_FROLIC_ACCESS}, self.order),
+                         "you finish Fort Frolic")
+        self.assertEqual(travel.why_locked(3, set(), self.order),
+                         "you receive Arcadia Access and you finish Fort Frolic")
+
+    def test_a_locked_crossing_says_which_chapter_to_finish(self) -> None:
+        text = travel.blocked_notice("3-arcadia", "1-medical", self.held, (2, 4, 3), {2})
+        self.assertIn("Arcadia is locked until you finish Fort Frolic", text)
+        self.assertIsNone(travel.blocked_notice("3-arcadia", "1-medical", self.held, (2, 3, 4), {2}))
+
+    def finish_fort_frolic(self):
+        h = open_rapture()
+        h.slot_data["chapter_sequence"] = list(self.order)
+        h.connect().attach()
+        h.receive(*EVERY_CHAPTER)
+        h.game.travel("Medical Pavilion")
+        h.step(3)
+        self.assertEqual(h.game.bathysphere_stops(), ["Medical Pavilion", "Fort Frolic"])
+        h.game.travel("Fort Frolic")
+        h.step(3)
+        h.game.quests.add("ReplaceThreeMorePhotos")
+        h.step(3)
+        return h
+
+    def test_the_client_opens_the_next_chapter_once_the_story_is_finished(self) -> None:
+        h = self.finish_fort_frolic()
+        self.assertIn("Arcadia", h.game.bathysphere_stops())
+        self.assertNotIn("Neptune's Bounty", h.game.bathysphere_stops())
+
+    def test_a_finished_chapter_stays_finished_after_a_restart(self) -> None:
+        h = self.finish_fort_frolic()
+        self.assertIn(4, h.core.snapshot()["chapters_done"])
+        h.game.quests.discard("ReplaceThreeMorePhotos")  # an older save loaded
+        h.restart_client()
+        h.step(3)
+        self.assertIn("Arcadia", h.game.bathysphere_stops())

@@ -29,6 +29,23 @@ class LevelAccess(Choice):
     default = option_access_items
 
 
+class ChapterOrder(Choice):
+    """
+    Only with Level Access set to Open Rapture.
+
+    Free: Neptune's Bounty, Arcadia and Fort Frolic open in any order, each as soon as its access item arrives.
+
+    Shuffled: the seed puts those three chapters in an order of its own (shown in the spoiler log). Each opens once
+    its access item has arrived and the chapter before it in that order is finished, and Hephaestus once the last of
+    them is. The bathysphere still takes you back to every chapter you have opened. Without the Research Camera at the
+    start, Neptune's Bounty always comes before Fort Frolic, whose story needs the camera.
+    """
+    display_name = "Chapter Order"
+    option_free = 0
+    option_shuffled = 1
+    default = option_free
+
+
 class CollectibleChecks(Choice):
     """Shared by the hidden collectibles: easy to walk past, so by default nothing important is put on them."""
     option_off = 0
@@ -182,6 +199,7 @@ class TrapChance(Range):
 @dataclass
 class BioShockOptions(PerGameCommonOptions):
     level_access: LevelAccess
+    chapter_order: ChapterOrder
     story_checks: StoryChecks
     little_sister_checks: LittleSisterChecks
     power_to_the_people_checks: PowerToThePeopleChecks
@@ -198,7 +216,7 @@ class BioShockOptions(PerGameCommonOptions):
 
 
 option_groups = [
-    OptionGroup("Progression", [LevelAccess]),
+    OptionGroup("Progression", [LevelAccess, ChapterOrder]),
     OptionGroup("Checks", [StoryChecks, LittleSisterChecks, PowerToThePeopleChecks, LevelCompletionChecks,
                            AudioDiaryChecks, ShopChecks, WorldItemChecks, SafeChecks,
                            ResearchChecks]),

@@ -34,7 +34,7 @@ from .protocol import (
 )
 
 SAVE_VERSION = 1
-SUPPORTED_SLOT_DATA_VERSION = 5  # keep in step with SLOT_DATA_VERSION in world.py
+SUPPORTED_SLOT_DATA_VERSION = 6  # keep in step with SLOT_DATA_VERSION in world.py
 OPEN_RAPTURE = 2  # level_access in the slot data: LevelAccess.option_open_rapture
 
 COMMAND_TIMEOUT = 5.0  # seconds without an answer before the player is told the game has not confirmed yet
@@ -79,6 +79,7 @@ class BridgeCore:
         self.station_touch = False  # stations open no menu: the agent is asked to skip it
         self.shop_checks = False  # Gatherer's Garden lines are checks: they sell stand-ins for multiworld items
         self.open_rapture = False  # access items open travel itself: the agent is told where the bathysphere goes
+        self.chapter_order: tuple[int, ...] = ()  # Chapter Order shuffled: the seed's order of chapters 2 to 4
         self.scouted: dict[int, ScoutedItem] = {}  # location -> what sits there, for the Garden lines
         self._scouts_asked = False  # asked the server this connection
         self.death_link = False
@@ -94,6 +95,7 @@ class BridgeCore:
         self.skipped: dict[int, str] = {}  # index in `items` -> UNKNOWN or REFUSED, for items that were not given
         self.furthest = 0  # furthest story index the player has reached
         self.visited: set[str] = set()  # levels the player has been in
+        self.chapters_done: set[int] = set()  # Open Rapture: chapters whose story the player has finished
         self.goal_reached = False
         self.collected: set[int] = set()  # every location the game has reported, sent or not
         self._dirty = False
@@ -210,6 +212,7 @@ class BridgeCore:
         self.station_touch = bool(slot_data.get("station_touch", False))
         self.shop_checks = bool(slot_data.get("shop_checks", 0))
         self.open_rapture = slot_data.get("level_access") == OPEN_RAPTURE
+        self.chapter_order = tuple(int(n) for n in slot_data.get("chapter_sequence") or ())
         self._travel_sent = None
         self._scouts_asked = False
         self._garden_sent = None
@@ -303,6 +306,11 @@ class BridgeCore:
             self._look_for_weapon_upgrades(None)  # the agent looked and can't tell after all: they go in as before
         self._track_level(state)
         self._track_goal(state)
+        if self.open_rapture:
+            done = travel.finished_chapters(self.visited, state.quests or ()) - self.chapters_done
+            if done:
+                self.chapters_done |= done
+                self._dirty = True
 
         found = self._locations_in(state)
         found.update(game_data.LEVEL_COMPLETION_LOCATION[level] for level in self._completed_levels(state)
@@ -340,7 +348,8 @@ class BridgeCore:
                 self._notice(f"The bathysphere and the level changes are not locked to your access items: "
                              f"{event.reason}.", warning=True)
         elif isinstance(event, TravelRedirected):
-            text = travel.blocked_notice(event.to or "", event.landed, self._received_names)
+            text = travel.blocked_notice(event.to or "", event.landed, self._received_names, self.chapter_order,
+                                         self._finished_chapters())
             if text is not None:
                 self._notice(text, warning=True)
         elif isinstance(event, ActionResult) and event.command_id == self._movies_command_id:
@@ -451,6 +460,7 @@ class BridgeCore:
             "skipped": [[index, reason] for index, reason in sorted(self.skipped.items())],
             "furthest": self.furthest,
             "visited": sorted(self.visited),
+            "chapters_done": sorted(self.chapters_done),
             "goal": self.goal_reached,
             "collected": sorted(self.collected),
         }
@@ -476,6 +486,7 @@ class BridgeCore:
         self.skipped = {}
         self.furthest = 0
         self.visited = set()
+        self.chapters_done = set()
         self.goal_reached = False
         self.collected = set()
         self.scouted = {}
@@ -500,6 +511,7 @@ class BridgeCore:
             self.skipped = self._read_skipped(saved.get("skipped"), saved_delivered)
         self.furthest = max(self.furthest, int(saved.get("furthest", 0)))
         self.visited |= {level for level in saved.get("visited", ()) if level in game_data.STORY_INDEX}
+        self.chapters_done |= {int(number) for number in saved.get("chapters_done", ())}
         self.goal_reached = self.goal_reached or bool(saved.get("goal", False))
         self.collected |= {int(location) for location in saved.get("collected", ())}
         if self.snapshot() != dict(saved):
@@ -551,9 +563,14 @@ class BridgeCore:
             self._dirty = True
         if self.open_rapture and level != self._entered:
             self._entered = level
-            text = travel.locked_way_on(level, self._received_names)
+            text = travel.locked_way_on(level, self._received_names, self.chapter_order, self._finished_chapters())
             if text is not None:
                 self._notice(text)
+
+    def _finished_chapters(self) -> frozenset[int]:
+        """Chapters finished in this save, or in any other the player played: an older save loaded must not lock
+        again what the seed's chapter order opened."""
+        return frozenset(self.chapters_done) | travel.finished_chapters(self.visited, self.state.quests or ())
 
     def _completed_levels(self, state: GameState) -> list[str]:
         if self.open_rapture:  # levels come in any order: what counts is where the player has been, and the story
@@ -879,7 +896,8 @@ class BridgeCore:
         if not (self.connected and self.agent_attached):
             return
         if self.open_rapture:
-            rules = travel.travel_rules(self._received_names, self.visited)
+            rules = travel.travel_rules(self._received_names, self.visited, self.chapter_order,
+                                        finished=self._finished_chapters())
         elif self._travel_ever_sent:
             rules = travel.TRAVEL_RULES_OFF  # this agent still has another slot's rules
         else:

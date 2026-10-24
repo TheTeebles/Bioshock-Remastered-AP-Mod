@@ -57,6 +57,10 @@ def create_open_rapture_regions(world: BioShockWorld) -> None:
     Open Rapture: the story's own way through chapter 1 and Surgery, then the bathysphere hub. Chapters 2 to 4 and 5 hang off
     the hub (each behind its access item, set in rules.py); inside a chapter the levels follow in story order; 6 comes
     after 5 and 7 after 6, as the story needs Ryan dead before them.
+
+    With Chapter Order shuffled, chapters 2 to 4 are a chain in the seed's order instead: the hub leads to the first,
+    the end of each to the next, and the end of the last to chapter 5. The chapters opened stay reachable from the
+    hub, but logic only needs the chain.
     """
     multiworld, player = world.multiworld, world.player
     origin = Region(world.origin_region_name, player, multiworld)
@@ -74,8 +78,13 @@ def create_open_rapture_regions(world: BioShockWorld) -> None:
     origin.connect(first[1])
     assert last[1] is regions[MEDICAL_PAVILION]
     create_surgery(world).connect(hub)
-    for number in (*FREE_CHAPTERS, 5):
-        hub.connect(first[number], chapter_entrance_name(number))
+    order = world.chapter_sequence
+    if order:
+        for before, number in zip((None, *order), (*order, 5)):
+            (hub if before is None else last[before]).connect(first[number], chapter_entrance_name(number))
+    else:
+        for number in (*FREE_CHAPTERS, 5):
+            hub.connect(first[number], chapter_entrance_name(number))
     last[5].connect(first[6], chapter_entrance_name(6))
     last[6].connect(first[7], chapter_entrance_name(7))
 

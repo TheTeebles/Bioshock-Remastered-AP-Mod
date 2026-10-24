@@ -1,5 +1,6 @@
 """Open Rapture (level_access: open_rapture): travel opens chapter by chapter. The world side only; the client side
 is in test_client_travel.py."""
+import io
 import itertools
 
 from BaseClasses import CollectionState
@@ -107,6 +108,72 @@ class TestOpenRaptureWithoutStartingCamera(BioShockTestBase):
         self.assertEqual(self.world.options.level_access.value, 2)
 
 
+class TestShuffledChapterOrder(BioShockTestBase):
+    options = {"level_access": "open_rapture", "chapter_order": "shuffled"}
+
+    def test_the_order_is_in_the_slot_data(self) -> None:
+        order = self.world.chapter_sequence
+        self.assertCountEqual(order, (2, 3, 4))
+        self.assertEqual(self.world.fill_slot_data()["chapter_sequence"], list(order))
+
+    def test_each_chapter_needs_the_ones_before_it_in_the_order(self) -> None:
+        order = self.world.chapter_sequence
+        for k, number in enumerate(order):
+            with self.subTest(chapter=number):
+                first = self.multiworld.get_region(CHAPTERS[number - 1].levels[0], self.player)
+                for left_out in order[:k]:
+                    state = self.state_with(ACCESS[n] for n in order[:k + 1] if n != left_out)
+                    self.assertFalse(first.can_reach(state), f"without {ACCESS[left_out]}")
+                self.assertTrue(first.can_reach(self.state_with(ACCESS[n] for n in order[:k + 1])))
+
+    def test_ryan_comes_after_the_last_of_them(self) -> None:
+        hephaestus = self.multiworld.get_region(CHAPTERS[4].levels[0], self.player)
+        self.assertFalse(hephaestus.can_reach(self.state_with([ACCESS[5], *(ACCESS[n] for n in (2, 3))])))
+        self.assertTrue(hephaestus.can_reach(self.state_with(ACCESS[n] for n in (2, 3, 4, 5))))
+
+    def test_the_client_opens_what_the_logic_reaches_once_each_chapter_is_finished(self) -> None:
+        # Logic counts a chapter as done once its last level can be reached; the client waits for its story to be
+        # finished. With every reachable chapter finished the two must agree.
+        order = self.world.chapter_sequence
+        items = [ACCESS[number] for number in sorted(ACCESS) if ACCESS[number]]
+        for size in range(len(items) + 1):
+            for held in itertools.combinations(items, size):
+                state = self.state_with(held)
+                reached = {chapter.number for chapter in CHAPTERS
+                           if self.multiworld.get_region(chapter.levels[0], self.player).can_reach(state)}
+                with self.subTest(held=held):
+                    self.assertEqual(reached, set(travel.open_chapters(set(held), order, finished=range(1, 8))))
+                    self.assertLessEqual(set(travel.open_chapters(set(held), order)), reached,
+                                         "with nothing finished the client opens no more than logic")
+
+    def test_the_spoiler_log_names_the_order(self) -> None:
+        handle = io.StringIO()
+        self.world.write_spoiler_header(handle)
+        names = [CHAPTERS[number - 1].levels[0] for number in self.world.chapter_sequence]
+        self.assertIn(" -> ".join(names), handle.getvalue())
+
+    def test_universal_tracker_takes_the_order_from_the_slot_data(self) -> None:
+        slot_data = dict(self.world.fill_slot_data(), chapter_sequence=[4, 3, 2])
+        self.multiworld.re_gen_passthrough = {"BioShock": slot_data}
+        self.world.generate_early()
+        self.assertEqual(self.world.chapter_sequence, (4, 3, 2))
+
+    def state_with(self, names) -> CollectionState:
+        state = CollectionState(self.multiworld)
+        for name in names:
+            state.collect(self.world.create_item(name), prevent_sweep=True)
+        return state
+
+
+class TestShuffledChapterOrderWithoutStartingCamera(BioShockTestBase):
+    options = {"level_access": "open_rapture", "chapter_order": "shuffled", "start_with_research_camera": False}
+
+    def test_neptunes_bounty_comes_before_fort_frolic(self) -> None:
+        for _ in range(30):
+            order = self.world._pick_chapter_sequence()
+            self.assertLess(order.index(2), order.index(4), order)
+
+
 class TestOpenRaptureGenerates(PoolTestBase):
     auto_construct = False
 
@@ -118,6 +185,16 @@ class TestOpenRaptureGenerates(PoolTestBase):
     def test_next_to_other_players(self) -> None:
         for others in itertools.product(({"level_access": "access_items"}, {"level_access": "vanilla"}), repeat=1):
             self.generate_for_real({"level_access": "open_rapture"}, *others)
+
+    def test_shuffled_chapters_generate(self) -> None:
+        for seed in range(6):
+            with self.subTest(seed=seed):
+                self.generate_for_real({"level_access": "open_rapture", "chapter_order": "shuffled"}, seed=seed)
+
+    def test_shuffled_chapters_need_open_rapture(self) -> None:
+        with self.assertRaises(OptionError) as raised:
+            self.generate_for_real({"level_access": "access_items", "chapter_order": "shuffled"})
+        self.assertIn("only works with Level Access set to 'open_rapture'", str(raised.exception))
 
     def test_somewhere_to_start_is_still_needed(self) -> None:
         # Stations only: every one is past chapter 1, so the first chapter item would have nowhere to go.
@@ -154,6 +231,7 @@ class TestOpenRaptureOptionSweep(PoolTestBase):
             "shop_checks": rng.choice(["off", "first_appearances", "all"]),
             "start_with_research_camera": rng.random() < 0.5,
             "trap_chance": rng.choice([0, 10, 50]),
+            "chapter_order": rng.choice(["free", "shuffled"]),
         }
 
     def test_random_option_mixes(self) -> None:

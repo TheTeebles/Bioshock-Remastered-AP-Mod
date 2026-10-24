@@ -501,7 +501,8 @@ class TestSlotData(BioShockTestBase):
 
     def test_slot_data(self) -> None:
         slot_data = self.world.fill_slot_data()
-        self.assertEqual(slot_data["slot_data_version"], 5)
+        self.assertEqual(slot_data["slot_data_version"], 6)
+        self.assertEqual(slot_data["chapter_sequence"], [], "chapters open in any order unless shuffled")
         self.assertEqual(SLOT_DATA_VERSION, SUPPORTED_SLOT_DATA_VERSION, "the client that ships with the world")
         self.assertEqual(slot_data["death_link"], 1)
         self.assertEqual(slot_data["story_checks"], 1)
