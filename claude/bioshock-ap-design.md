@@ -7,7 +7,7 @@ record as it grew, and parts of them describe earlier versions.*
 
 ## 1. Summary
 
-- **Target:** BioShock Remastered on PC, Steam build first (GOG and Epic later). Game name in Archipelago:
+- **Target:** BioShock Remastered on PC, the Steam build only (GOG and Epic dropped by Teebs, 2026-10-25). Game name in Archipelago:
   `BioShock`.
 - **Verdict:** feasible, and the hard part of giving items is proven. Console commands such as `GiveItem` run
   *inside* the game process on the game thread, sent to the local player's own command entry.
@@ -56,7 +56,8 @@ record as it grew, and parts of them describe earlier versions.*
   - Noticing story objectives, Little Sisters, Power to the People stations, audio diaries and film reels. With the
     real game, only "Level Complete" checks (from the map the player reaches) and the goal can be sent so far.
   - The EVE Drain and Pickpocket traps.
-  - The GOG and Epic builds.
+  - The GOG and Epic builds: dropped (Teebs, 2026-10-25). The agent still recognizes them by module size and turns
+    commands off there, rather than guessing.
 - **Next** (section 7, "Next session"): the few commands still to try by hand, then the first full run of client,
   real game and a real seed. After that, check detection.
 
@@ -1194,7 +1195,6 @@ declaration without guessing at addresses.
       the weapons then become real progression, with the `story_items` option.
 6. **Later:**
    - sparing players the Python install (section 3)
-   - the GOG and Epic builds
    - hard level locks
    - Gatherer's Garden, research and Tenenbaum-gift checks
    - `loot_sanity`

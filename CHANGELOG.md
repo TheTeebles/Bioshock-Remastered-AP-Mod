@@ -16,6 +16,7 @@ None of this has been tried in the real game yet.
   and Fort Frolic (shown in the spoiler log), and each opens once its access item has arrived and the chapter before
   it is finished (#17).
 - `archipelago.json` no longer sets `version` and `compatible_version`; the APWorld build adds them (#18).
+- The GOG and Epic versions are no longer planned: the mod is for the Steam version only.
 
 For people working on the mod:
 

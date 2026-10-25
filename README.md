@@ -27,7 +27,7 @@ client that ships inside it, and the script the client puts into the running gam
 | Director's Commentary film reels | Not checks: a reel unlocks its film for the whole PC, not the save |
 | DeathLink in the game | Works in the real game, both ways: your deaths are sent, and a received death kills Jack through the game's own OnKilled, so he collapses and wakes in a Vita-Chamber |
 | The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the EVE bar redraws at once; the dollars counter does not flash up (accepted by Teebs) |
-| The GOG and Epic versions | Not supported yet |
+| The GOG and Epic versions | Not supported, and not planned (Teebs, 2026-10-25) |
 
 [claude/bioshock-ap-design.md](claude/bioshock-ap-design.md) has the whole picture: what was found out about the
 game, how everything is built and tested, what each test in the real game showed, and what comes next.

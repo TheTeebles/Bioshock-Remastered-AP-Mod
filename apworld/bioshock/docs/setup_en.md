@@ -80,7 +80,7 @@ If the game was started as administrator, Archipelago has to be started as admin
   - If the game has no class of the name the client gives it, the client notices and says so ("Could not
     deliver ...: the game has no class ..."), and sets the item aside. If the client says "Delivered" and you got
     nothing, that is worth reporting, with the item's name.
-- **GOG and Epic:** not supported yet. The client's game side was made for the Steam version.
+- **GOG and Epic:** not supported, and not planned. The client's game side is made for the Steam version only.
 - **Checks noticed in the game (Steam):**
   - *Story objectives:* all 28, read from the game's own quest list, and seen working in the real game.
   - *Little Sisters:* each one rescued or harvested counts as the next Little Sister of that level. Works in the
