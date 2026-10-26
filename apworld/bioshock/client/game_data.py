@@ -852,6 +852,7 @@ _GENE_KINDS = (ItemKind.PLASMID, ItemKind.TONIC, ItemKind.CHARACTER_UPGRADE)
 
 
 def garden_price(item: str, flags: int, own: bool) -> int:
+    """A Garden line's price in ADAM: what the game charges for this slot's own genes, else by the item's flags."""
     if own and ITEM_KIND.get(item) in _GENE_KINDS and item in GENE_PRICES:
         return GENE_PRICES[item]
     if flags & 0b001:

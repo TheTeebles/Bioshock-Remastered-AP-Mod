@@ -119,7 +119,7 @@ multiworld, puts items into the real game by itself (Steam version) and notices 
 objectives, Little Sisters, Power to the People stations, audio diaries, level completion, Gatherer's Garden
 purchases, world items, safes and research. DeathLink works both ways, and so do the traps that land in your game. Open Rapture is experimental:
 each part of it works in the game, but no whole seed has been played through yet. The GOG and Epic versions are not
-supported. The setup guide lists exactly what has been tried in the game and the known issues.
+supported, and support is not planned. The setup guide lists exactly what has been tried in the game and the known issues.
 
 Universal Tracker works without your YAML: it takes the options from the seed. Its map tab shows the game's own map
 screen, one page per floor and an overview of each level, with a pin on every check that has a place in the level:

@@ -36,6 +36,11 @@ WORLD_FORMAT = re.compile(r"\d+\.\d+\.\d+")  # the apworld specification's "majo
 AGENT_FORMAT = re.compile(r"\d{4}-\d{2}-\d{2}\.\d+")  # the day, then a count for that day
 
 
+def shown(path: Path) -> str:
+    """A file of the repository as it is named in output and in read_versions(): with / on every platform."""
+    return path.relative_to(ROOT).as_posix()
+
+
 def read_versions() -> dict[str, str | None]:
     found: dict[str, str | None] = {}
     match = WORLD_LINE.search(DATA.read_text(encoding="utf-8"))
@@ -43,14 +48,14 @@ def read_versions() -> dict[str, str | None]:
     found["archipelago.json"] = json.loads(MANIFEST.read_text(encoding="utf-8")).get("world_version")
     for agent in AGENTS:
         match = AGENT_LINE.search(agent.read_text(encoding="utf-8"))
-        found[str(agent.relative_to(ROOT))] = match.group(2) if match else None
+        found[shown(agent)] = match.group(2) if match else None
     return found
 
 
 def problems(found: dict[str, str | None]) -> list[str]:
     out = []
     world = {found["data.py"], found["archipelago.json"]}
-    agents = {found[str(agent.relative_to(ROOT))] for agent in AGENTS}
+    agents = {found[shown(agent)] for agent in AGENTS}
     if len(world) != 1:
         out.append(f"the world's versions disagree: data.py {found['data.py']}, "
                    f"archipelago.json {found['archipelago.json']}")
@@ -58,7 +63,7 @@ def problems(found: dict[str, str | None]) -> list[str]:
         out.append(f"the world's version {next(iter(world))} is not major.minor.build")
     if len(agents) != 1:
         out.append("the agent's versions disagree: " + ", ".join(
-            f"{agent.relative_to(ROOT)} {found[str(agent.relative_to(ROOT))]}" for agent in AGENTS))
+            f"{shown(agent)} {found[shown(agent)]}" for agent in AGENTS))
     elif not AGENT_FORMAT.fullmatch(next(iter(agents)) or ""):
         out.append(f"the agent's version {next(iter(agents))} is not day.count (2026-10-25.1)")
     return out
@@ -68,7 +73,7 @@ def replace_in(path: Path, pattern: re.Pattern[str], version: str) -> None:
     text = path.read_text(encoding="utf-8")
     new, count = pattern.subn(lambda m: m.group(1) + version + m.group(3), text)
     if count != 1:
-        sys.exit(f"{path.relative_to(ROOT)}: expected one version line, found {count}")
+        sys.exit(f"{shown(path)}: expected one version line, found {count}")
     path.write_text(new, encoding="utf-8")
 
 

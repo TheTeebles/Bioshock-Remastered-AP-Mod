@@ -6,14 +6,14 @@
  * It cannot check the addresses and layouts themselves, nor how Frida and Windows really hand over an exception.
  * Only the real game can do that.
  *
- *   node agent_mock_test.js path/to/agent.js
+ *   node agent_mock_test.js [path/to/agent.js]    (the apworld's agent when no path is given)
  */
 'use strict';
 const fs = require('fs');
 const vm = require('vm');
 const assert = require('assert');
 
-const agentPath = process.argv[2] || 'agent.js';
+const agentPath = process.argv[2] || `${__dirname}/../apworld/bioshock/client/agent.js`;
 const source = fs.readFileSync(agentPath, 'utf8');
 
 // Frames (100 ms) for the object scan's rest between passes, so that a change mid-level is seen.
