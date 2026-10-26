@@ -1,7 +1,7 @@
 # BioShock APWorld source (v0.2.0)
 
 This folder mirrors `worlds/bioshock/` from an Archipelago source checkout: the world, and the client that ships with
-it. The design and rationale live in `claude/bioshock-ap-design.md`.
+it. The design and rationale live in `docs/design.md`.
 
 ## Layout
 
@@ -18,7 +18,7 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
     - `agent.js` runs inside the game.
 - `bioshock/components.py`: the Launcher entry.
 - `bioshock/map_tracker.py` and `bioshock/tracker/`: Universal Tracker's map tab. The pages and pins in `tracker/` are
-  generated: `client-poc/map_reader/map_pins.py` reads the game's map files, then `client-poc/tracker/build_tracker.py`
+  generated: `tools/map_reader/map_pins.py` reads the game's map files, then `tools/tracker/build_tracker.py`
   draws the floors from the game's `Maps.swf` and places the pins (run with Pillow and Chromium).
 - `bioshock/test/`: the world's and client's tests (580 at the last count).
 
@@ -30,7 +30,7 @@ it. The design and rationale live in `claude/bioshock-ap-design.md`.
 
 `tools/release.py` does steps 1 and 3 for you (`--build path/to/Archipelago`, run with that checkout's Python) and
 sets the versions a release needs, all at once: `--world 0.2.1` for the world (`data.py` and `archipelago.json`),
-`--agent 2026-10-25.1` for the game agent (both copies). With no arguments it says what they are and fails if they
+`--agent 2026-10-25.1` for the game agent (`agent.js`). With no arguments it says what they are and fails if they
 disagree.
 
 Install by double-clicking the `.apworld` or copying it into Archipelago's `custom_worlds` folder.
@@ -39,7 +39,7 @@ Install by double-clicking the `.apworld` or copying it into Archipelago's `cust
 
 1. Run `python tools/release.py --world 0.2.1 --agent 2026-10-25.1` to set the world's version in
    `bioshock/data.py` (`WORLD_VERSION`) and `bioshock/archipelago.json` (`world_version`), and the agent's
-   version in both agent copies. Add the changelog section by hand at the top of `CHANGELOG.md`.
+   version in `agent.js`. Add the changelog section by hand at the top of `CHANGELOG.md`.
 2. Run the tests and the agent's tests (below), then `python tools/release.py --build path/to/Archipelago` with
    that checkout's Python to copy the world in and build `bioshock.apworld`.
 3. On GitHub, draft a release with the tag `v<version>` on `main`, paste the changelog section as its notes, and
@@ -82,10 +82,9 @@ seconds.
 
 ## The agent script
 
-`client-poc/bioshock_ap_agent.js` is the agent for running by hand with the Frida CLI. It is the same file as
-`bioshock/client/agent.js` (its version is `AGENT_VERSION` at the top); keep the two identical.
-`client-poc/agent_mock_test.js` tests it under Node against a fake Frida runtime and a fake piece of game memory:
-`node agent_mock_test.js bioshock_ap_agent.js`.
+`bioshock/client/agent.js` (its version is `AGENT_VERSION` at the top) is also the agent for running by hand with
+the Frida CLI. `frida/agent_mock_test.js`, at the top of the repository, tests it under Node against a fake Frida
+runtime and a fake piece of game memory: `node frida/agent_mock_test.js`.
 
 ## Reference
 

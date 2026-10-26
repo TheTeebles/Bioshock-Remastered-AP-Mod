@@ -29,7 +29,7 @@ client that ships inside it, and the script the client puts into the running gam
 | The EVE Drain and Pickpocket traps inside the game | Work in the real game (EVE drops to zero, half your dollars go); the EVE bar redraws at once; the dollars counter does not flash up (accepted by Teebs) |
 | The GOG and Epic versions | Not supported, and not planned (Teebs, 2026-10-25) |
 
-[claude/bioshock-ap-design.md](claude/bioshock-ap-design.md) has the whole picture: what was found out about the
+[docs/design.md](docs/design.md) has the whole picture: what was found out about the
 game, how everything is built and tested, what each test in the real game showed, and what comes next.
 
 ## What is where
@@ -38,8 +38,9 @@ game, how everything is built and tested, what each test in the real game showed
 |---|---|
 | [`apworld/bioshock/`](apworld/bioshock) | The APWorld's source: the world, the client in `client/`, its pages in `docs/` and its tests in `test/` |
 | [`apworld/README.md`](apworld/README.md) | How the source is laid out, how to run the tests and how to build the `.apworld` |
-| [`client-poc/`](client-poc) | The in-game script for running by hand with the Frida command line, its tests, a script that sends one command through it, and the probe (below) |
-| [`claude/bioshock-ap-design.md`](claude/bioshock-ap-design.md) | Design, findings, test notes and the list of what comes next |
+| [`frida/`](frida) | What runs against the game through Frida by hand: the agent's tests, a script that sends one command through the agent, and the probe (below) with its tests |
+| [`tools/`](tools) | Scripts for working on the mod: the map file readers, the tracker builder, the AP icon maker, the test-log reader and the release script |
+| [`docs/design.md`](docs/design.md) | Design, findings, test notes and the list of what comes next |
 | [`reference/`](reference) | Class names of the game, and nothing but names: what its script packages declare, and what the running game listed |
 
 ## Trying it
@@ -58,12 +59,13 @@ game, how everything is built and tested, what each test in the real game showed
 `apworld/bioshock/` goes into an Archipelago source checkout as `worlds/bioshock/`.
 [apworld/README.md](apworld/README.md) has the steps for running the tests and building the `.apworld`.
 
-`apworld/bioshock/client/agent.js` and `client-poc/bioshock_ap_agent.js` are the same file and have to stay that
-way. Their tests run with `node client-poc/agent_mock_test.js apworld/bioshock/client/agent.js`.
+The game agent is `apworld/bioshock/client/agent.js`, the one script for the client and for running by hand with the
+Frida command line (`frida -n BioshockHD.exe -l apworld/bioshock/client/agent.js`). Its tests run with
+`node frida/agent_mock_test.js`.
 
 ### The probe
 
-[`client-poc/probe_script_calls.js`](client-poc/probe_script_calls.js) is how the checks above were found. It goes
+[`frida/probe_script_calls.js`](frida/probe_script_calls.js) is how the checks above were found. It goes
 into the running game on its own (close the client first):
 
 ```
@@ -81,7 +83,7 @@ At its prompt, among others:
 | `where('PlaceableWeaponUpgradeStation')` | Each object of the matching classes, where it is and how far away |
 | `goto('PlaceableWeaponUpgradeStation', 0)` | Moves you next to one, for testing. Save first: it writes your position straight into memory |
 
-Its tests run with `node client-poc/probe_mock_test.js`.
+Its tests run with `node frida/probe_mock_test.js`.
 
 ## Credits
 

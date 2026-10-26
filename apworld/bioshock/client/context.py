@@ -455,7 +455,7 @@ class BioShockContext(CommonContext):
                 # replays those on every login, including a login to a different seed. The core re-sends what a
                 # reconnect needs by itself.
                 names = [game_data.LOCATION_NAME.get(location, str(location)) for location in action.locations]
-                # One line per batch, for reading a test back from the log (builds/read_batch_logs.py). The server
+                # One line per batch, for reading a test back from the log (tools/read_batch_logs.py). The server
                 # already tells the window what each check held.
                 logger.info(f"Sent {len(names)} check(s): " + "; ".join(names[:8]) +
                             (f"; and {len(names) - 8} more" if len(names) > 8 else ""), extra={"skip_gui": True})

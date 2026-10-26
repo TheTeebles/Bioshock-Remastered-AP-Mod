@@ -9,7 +9,7 @@ HERE = Path(__file__).resolve().parent
 spec = importlib.util.spec_from_file_location("release", HERE / "release.py")
 release = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(release)
-REAL = {name: getattr(release, name) for name in ("ROOT", "WORLD", "DATA", "MANIFEST", "AGENTS")}
+REAL = {name: getattr(release, name) for name in ("ROOT", "WORLD", "DATA", "MANIFEST", "AGENT")}
 
 
 class TestRelease(unittest.TestCase):
@@ -18,14 +18,12 @@ class TestRelease(unittest.TestCase):
         self.addCleanup(shutil.rmtree, self.root)
         world = self.root / "apworld" / "bioshock"
         (world / "client").mkdir(parents=True)
-        (self.root / "client-poc").mkdir()
         (world / "data.py").write_text('GAME_NAME = "BioShock"\nWORLD_VERSION = "0.2.0"  # comment\n')
         (world / "archipelago.json").write_text('{\n\t"game": "BioShock",\n\t"world_version": "0.2.0"\n}\n')
-        agents = (world / "client" / "agent.js", self.root / "client-poc" / "bioshock_ap_agent.js")
-        for agent in agents:
-            agent.write_text("'use strict';\n\nconst AGENT_VERSION = '2026-10-24.6';\n")
+        agent = world / "client" / "agent.js"
+        agent.write_text("'use strict';\n\nconst AGENT_VERSION = '2026-10-24.6';\n")
         for name, value in (("ROOT", self.root), ("WORLD", world), ("DATA", world / "data.py"),
-                            ("MANIFEST", world / "archipelago.json"), ("AGENTS", agents)):
+                            ("MANIFEST", world / "archipelago.json"), ("AGENT", agent)):
             setattr(release, name, value)
         self.addCleanup(lambda: [setattr(release, name, value) for name, value in REAL.items()])
 
@@ -35,7 +33,6 @@ class TestRelease(unittest.TestCase):
             "data.py": "0.2.0",
             "archipelago.json": "0.2.0",
             "apworld/bioshock/client/agent.js": "2026-10-24.6",
-            "client-poc/bioshock_ap_agent.js": "2026-10-24.6",
         })
         self.assertEqual(release.problems(found), [])
 
@@ -53,13 +50,9 @@ class TestRelease(unittest.TestCase):
                 call(version)
         self.assertEqual(release.read_versions()["data.py"], "0.2.0", "nothing changed")
 
-    def test_agent_copies_that_disagree_are_a_problem(self) -> None:
-        second = release.AGENTS[1]
-        second.write_text(second.read_text().replace("2026-10-24.6", "2026-10-24.7"))
-        problems = release.problems(release.read_versions())
-        self.assertEqual(len(problems), 1)
-        self.assertIn("agent's versions disagree", problems[0])
+    def test_setting_the_agent_version(self) -> None:
         release.set_agent("2026-10-25.1")
+        self.assertEqual(release.read_versions()["apworld/bioshock/client/agent.js"], "2026-10-25.1")
         self.assertEqual(release.problems(release.read_versions()), [])
 
     def test_build_refuses_a_link_to_another_world(self) -> None:

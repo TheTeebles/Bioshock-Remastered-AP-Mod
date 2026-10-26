@@ -4,7 +4,7 @@ Send one console command to BioShock through the agent, the way the Archipelago 
     pip install frida
     python frida_bridge_demo.py "GiveItem 10 ShockGame.ADAM"
 
-Needs bioshock_ap_agent.js next to this file. That is the same script the client ships as client/agent.js.
+Loads the agent the client ships, apworld/bioshock/client/agent.js.
 The BioShock Client in the Archipelago Launcher does all of this by itself; this is for trying one command by hand.
 """
 import sys
@@ -22,7 +22,8 @@ def on_message(message: dict, data: bytes | None) -> None:
 
 def main() -> None:
     command = sys.argv[1] if len(sys.argv) > 1 else "GiveItem 10 ShockGame.ADAM"
-    agent_source = (Path(__file__).parent / "bioshock_ap_agent.js").read_text(encoding="utf-8")
+    agent = Path(__file__).resolve().parent.parent / "apworld" / "bioshock" / "client" / "agent.js"
+    agent_source = agent.read_text(encoding="utf-8")
 
     session = frida.attach("BioshockHD.exe")
     script = session.create_script(agent_source)

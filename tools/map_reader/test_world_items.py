@@ -2,7 +2,7 @@
 Tests for world_items.py on a made-up two-map survey. Run from an Archipelago checkout with the BioShock world in
 worlds/bioshock:
 
-    python -m pytest path/to/client-poc/map_reader/test_world_items.py
+    python -m pytest path/to/tools/map_reader/test_world_items.py
 """
 import sys
 from pathlib import Path

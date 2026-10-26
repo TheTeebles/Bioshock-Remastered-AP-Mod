@@ -1,9 +1,9 @@
 """
 Sets the version numbers a release needs, all together, and can build the .apworld.
 
-The world's version lives in two places (data.py's WORLD_VERSION and archipelago.json's world_version) and the game
-agent's in two more (agent.js and its hand-run copy, client-poc/bioshock_ap_agent.js). A release with any of them out
-of step tells players the wrong thing, so they are only ever set here.
+The world's version lives in two places (data.py's WORLD_VERSION and archipelago.json's world_version), and the game
+agent's in agent.js. A release with the world's two out of step tells players the wrong thing, so they are only ever
+set here.
 
     python tools/release.py                       say what each version is now, and whether they agree
     python tools/release.py --world 0.2.1         set the world's version (major.minor.build)
@@ -28,7 +28,7 @@ ROOT = Path(__file__).resolve().parent.parent
 WORLD = ROOT / "apworld" / "bioshock"
 DATA = WORLD / "data.py"
 MANIFEST = WORLD / "archipelago.json"
-AGENTS = (WORLD / "client" / "agent.js", ROOT / "client-poc" / "bioshock_ap_agent.js")
+AGENT = WORLD / "client" / "agent.js"
 
 WORLD_LINE = re.compile(r'^(WORLD_VERSION = ")([^"]*)(")', re.M)
 AGENT_LINE = re.compile(r"^(const AGENT_VERSION = ')([^']*)(';)", re.M)
@@ -46,26 +46,21 @@ def read_versions() -> dict[str, str | None]:
     match = WORLD_LINE.search(DATA.read_text(encoding="utf-8"))
     found["data.py"] = match.group(2) if match else None
     found["archipelago.json"] = json.loads(MANIFEST.read_text(encoding="utf-8")).get("world_version")
-    for agent in AGENTS:
-        match = AGENT_LINE.search(agent.read_text(encoding="utf-8"))
-        found[shown(agent)] = match.group(2) if match else None
+    match = AGENT_LINE.search(AGENT.read_text(encoding="utf-8"))
+    found[shown(AGENT)] = match.group(2) if match else None
     return found
 
 
 def problems(found: dict[str, str | None]) -> list[str]:
     out = []
     world = {found["data.py"], found["archipelago.json"]}
-    agents = {found[shown(agent)] for agent in AGENTS}
     if len(world) != 1:
         out.append(f"the world's versions disagree: data.py {found['data.py']}, "
                    f"archipelago.json {found['archipelago.json']}")
     elif not WORLD_FORMAT.fullmatch(next(iter(world)) or ""):
         out.append(f"the world's version {next(iter(world))} is not major.minor.build")
-    if len(agents) != 1:
-        out.append("the agent's versions disagree: " + ", ".join(
-            f"{shown(agent)} {found[shown(agent)]}" for agent in AGENTS))
-    elif not AGENT_FORMAT.fullmatch(next(iter(agents)) or ""):
-        out.append(f"the agent's version {next(iter(agents))} is not day.count (2026-10-25.1)")
+    if not AGENT_FORMAT.fullmatch(found[shown(AGENT)] or ""):
+        out.append(f"the agent's version {found[shown(AGENT)]} is not day.count (2026-10-25.1)")
     return out
 
 
@@ -92,8 +87,7 @@ def set_world(version: str) -> None:
 def set_agent(version: str) -> None:
     if not AGENT_FORMAT.fullmatch(version):
         sys.exit(f"{version} is not day.count (2026-10-25.1)")
-    for agent in AGENTS:
-        replace_in(agent, AGENT_LINE, version)
+    replace_in(AGENT, AGENT_LINE, version)
 
 
 def build(archipelago: Path) -> None:
