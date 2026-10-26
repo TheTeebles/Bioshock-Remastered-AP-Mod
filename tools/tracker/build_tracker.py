@@ -4,7 +4,7 @@ PopTracker's format.
 
     python build_tracker.py map_pins.json mapsPC.swf ../../apworld/bioshock/tracker
 
-- map_pins.json: what client-poc/map_reader/map_pins.py read from the game's map files (floors, calibration markers
+- map_pins.json: what tools/map_reader/map_pins.py read from the game's map files (floors, calibration markers
   and the actors checks sit on).
 - mapsPC.swf: the game's map screen (ContentBaked/PC/FlashMovies). Every MapUIRegion is a sprite drawn in its floor's
   coordinates, and every floor is a sprite named like the map file's LayerName holding a PositionalMarker (the floor

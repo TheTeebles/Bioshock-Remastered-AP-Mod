@@ -1,4 +1,4 @@
-"""The survey's command line: python -m unittest client-poc/map_reader/test_map_survey.py (no game files needed)."""
+"""The survey's command line: python -m unittest tools/map_reader/test_map_survey.py (no game files needed)."""
 import json
 import subprocess
 import sys

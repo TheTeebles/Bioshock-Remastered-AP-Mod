@@ -94,7 +94,7 @@ const PAWN_STATS = [
   { name: 'ADAM', offset: 0xAF4, float: false, code: '29 9E F4 0A 00 00' },
 ];
 
-// How the engine describes its objects and classes, on the Steam build (found with client-poc/probe_script_calls.js,
+// How the engine describes its objects and classes, on the Steam build (found with frida/probe_script_calls.js,
 // 2026-10-07). The name table is an array of entries with the name's text (UTF-16) at entry + nameText. An object
 // keeps its name's index and its class; a class keeps the class it extends and its first field; a field keeps the
 // next one; a property keeps its offset into an object. All of it is checked against names before it is used.
@@ -3701,7 +3701,7 @@ function setTravelRules(config) {
 
 // Sets one of the scripts' global_ variables (the story flags their ActionVariableAssign actions keep, such as
 // global_transitionedFromRyan). Null when done, else why not. Where the game keeps them is not known yet: the probe's
-// globals() and scriptApi() look for it (builds/OPEN-RAPTURE-TESTS.md), and this is filled in from what they find.
+// globals() and scriptApi() look for it (Open Rapture tests, 2026-10-14), and this is filled in from what they find.
 // Story flags are the scripts' global_ variables: objects of class VariableBool (or VariableFloat, VariableName...)
 // named global_X, with Value at +0x40 (probe, 2026-10-15). The ones made in a level are carried to the next in
 // LevelInfo.GlobalTravelContainer.TravelObjects. A flag set in an earlier chapter (Ryan's global_transitionedFromRyan,

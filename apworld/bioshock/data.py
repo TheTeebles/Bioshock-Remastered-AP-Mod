@@ -358,7 +358,7 @@ def little_sister_location_name(level: str, index: int) -> str:
 
 # What each level's Gatherer's Garden sells, in the order of its stock list (VendingLootSpec). Every line can be
 # bought once (the Plasmid Slot sometimes twice), and each line is one check. Each level has one Garden. Read from
-# the map files with client-poc/map_reader/map_stock.py on 2026-10-14 (notes/logs/map_stock_2026-10-14.json); the
+# the map files with tools/map_reader/map_stock.py on 2026-10-14 (notes/logs/map_stock_2026-10-14.json); the
 # Neptune's Bounty list matches the probe's read of the running game (2026-10-13).
 GATHERERS_GARDEN_STOCK: dict[str, tuple[str, ...]] = {
     MEDICAL_PAVILION: (  # 5 lines
@@ -472,7 +472,7 @@ class WorldSpot(NamedTuple):
     vanilla: str | None  # the plasmid, tonic or weapon it gives (None for safes)
 
 
-# Read from the map files with client-poc/map_reader/world_items.py on 2026-10-14
+# Read from the map files with tools/map_reader/world_items.py on 2026-10-14
 # (notes/logs/map_survey_2026-10-14.json).
 # Weapons are listed once, at the level where the maps first place one. The Pistol and the Shotgun are given by
 # scripts earlier (Welcome to Rapture and Medical Pavilion), which only means their check may come in early and wait

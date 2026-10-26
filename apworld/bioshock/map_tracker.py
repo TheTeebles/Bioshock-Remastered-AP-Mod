@@ -2,7 +2,7 @@
 Universal Tracker's map tab: the game's own map screen, one page per floor and one overview per level, with a pin on
 every check that has a place.
 
-The pages and pins in tracker/ are made by client-poc/tracker/build_tracker.py from the game's map files and its map
+The pages and pins in tracker/ are made by tools/tracker/build_tracker.py from the game's map files and its map
 screen (Maps.swf). Each pin's sections are named exactly like the AP locations, so Universal Tracker colours them with
 this world's own logic and only shows the ones in the seed.
 

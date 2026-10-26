@@ -4,7 +4,7 @@ the story has gone. The client works this out and hands it to the game agent as 
 changes; the agent makes the bathysphere menu offer exactly these stops and rewrites the scripted level changes that
 would cross into a chapter that is still locked.
 
-Everything here comes from the map files (client-poc/map_reader/map_survey.py over the Steam install, 2026-10-14):
+Everything here comes from the map files (tools/map_reader/map_survey.py over the Steam install, 2026-10-14):
 each bathysphere station's map and the PlayerStart its arrivals use, and the two scripted level changes that cross
 from one chapter into the next (Smuggler's Hideout's submarine to Arcadia, and Ryan's office to Olympus Heights).
 The other chapter crossings are bathysphere rides already.

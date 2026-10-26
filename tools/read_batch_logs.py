@@ -1,5 +1,6 @@
 """
-Reads the logs of an in-game test batch back, step by step (builds/OPEN-RAPTURE-TESTS.md).
+Reads the logs of an in-game test batch back, step by step (the Open Rapture test batch of 2026-10-14
+and the ones after it).
 
     python read_batch_logs.py BioShockClient_<date>.txt probe_log.txt > batch_summary.md
 

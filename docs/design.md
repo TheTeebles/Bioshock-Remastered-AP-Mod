@@ -1,14 +1,17 @@
 # BioShock Remastered × Archipelago: Design and Feasibility
 
-*Status 2026-10-19: APWorld 0.2.0, the first release. Every kind of check, item delivery, traps, DeathLink, Open
-Rapture and the Universal Tracker map work in the real game (Steam); see [CHANGELOG.md](../CHANGELOG.md) and the
+*Status 2026-10-26: APWorld 0.2.0, the first release, plus unreleased changes on `main`. Every kind of check, item
+delivery, traps, DeathLink, Open Rapture and the Universal Tracker map work in the real game (Steam). Since 0.2.0,
+not yet tried in the game: shuffled pickups and research give nothing instead of chips, a faster game agent, the first
+bathysphere menu set before it opens, and Chapter Order (shuffled). See [CHANGELOG.md](../CHANGELOG.md) and the
 [setup guide](../apworld/bioshock/docs/setup_en.md) for where things stand today. The sections below are the design
-record as it grew, and parts of them describe earlier versions.*
+record as it grew, and parts of them describe earlier versions (paths there are as they are now: the hand-run tools
+moved from `client-poc/` to `frida/` and `tools/` on 2026-10-26).*
 
 ## 1. Summary
 
-- **Target:** BioShock Remastered on PC, the Steam build only (GOG and Epic dropped by Teebs, 2026-10-25). Game name in Archipelago:
-  `BioShock`.
+- **Target:** BioShock Remastered on PC, the Steam build only (GOG and Epic dropped by Teebs, 2026-10-25). Game name
+  in Archipelago: `BioShock`.
 - **Verdict:** feasible, and the hard part of giving items is proven. Console commands such as `GiveItem` run
   *inside* the game process on the game thread, sent to the local player's own command entry.
 - **Decision (2026-09-30):** deliver items in-process with Frida instead of key binds and simulated key presses. See
@@ -450,7 +453,7 @@ that; an injected agent can.
 ### How the agent does it
 
 1. **Map the world from the game itself.** Walk each level's actor list and dump every pickup and container: class,
-   object name and position. *(2026-10-14: the map files already hold all of it. `client-poc/map_reader/map_survey.py`
+   object name and position. *(2026-10-14: the map files already hold all of it. `tools/map_reader/map_survey.py`
    lists every plasmid, tonic and weapon pickup and every safe with its Label, position and loot, read offline from
    the .bsm files. Neptune's Bounty has Security Bullseye, three tonics, the Grenade Launcher and four safes plus a
    lockbox. `world_items.py` turns that survey into the candidate location table with the IDs
@@ -824,8 +827,9 @@ as a zip, plus 61 for the agent under Node. The world's own tests are described 
 Not tested: a real network socket, anything on Windows, and the client's own link to the real game. The agent
 script has been run in the game by hand (section 7); the client has never attached to it by itself.
 
-**One agent file.** `client-poc/bioshock_ap_agent.js` and the apworld's `client/agent.js` are the same file
-(version 2026-10-07.1). Two of its comments are behind the facts: the opening one still counts the game's printed
+**One agent file.** The apworld's `client/agent.js` is the only copy since 2026-10-26; it was then also kept as
+`client-poc/bioshock_ap_agent.js` (version 2026-10-07.1). Two of its comments are behind the facts: the opening one
+still counts the game's printed
 answers and what the game raises as "not seen yet", though both were seen with this very version (section 7), and
 the one on named actions says the player object is still to be located. They are to be put right in the next
 version of the agent and not in this one, so that one version number never stands for two different files.
@@ -1056,7 +1060,7 @@ Later:
 **Next session**
 
 *A. What is left to try at the Frida prompt.* In a save that does not matter, standing in a level, with the agent
-that ships with 0.1.4: `frida -n BioshockHD.exe -l bioshock_ap_agent.js -o frida_log.txt` (the first line it prints
+that ships with 0.1.4: `frida -n BioshockHD.exe -l apworld/bioshock/client/agent.js -o frida_log.txt` (the first line it prints
 should say `agent 2026-10-07.1`). Each line is one command; after each, look at the game. A line starting `raised
 during` is the game's own word on the command.
 

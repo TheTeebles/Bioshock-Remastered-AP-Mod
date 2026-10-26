@@ -4844,7 +4844,7 @@ globalThis.hub = function (n = 0, functionName = 'latentExecute') {
   return 'queued for the game thread; the result follows';
 };
 
-// Each batch step starts with a marker line, so builds/read_batch_logs.py can tell the steps apart in probe_log.txt.
+// Each batch step starts with a marker line, so tools/read_batch_logs.py can tell the steps apart in probe_log.txt.
 for (const name of ['globals', 'scriptApi', 'research', 'researchDiff', 'researchTable', 'pickups', 'pickupItem',
   'nearby', 'hub']) {
   const step = globalThis[name];

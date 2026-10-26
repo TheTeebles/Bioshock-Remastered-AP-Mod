@@ -8,7 +8,7 @@ folder of its own, next to APIcons.swf, and the agent hands the game those two f
 menus again on every load). A line whose class is named ICON_SYMBOL then shows the AP icon. Tried in the game on
 2026-10-14.
 
-client-poc/ap_icon/make_ap_icon.py builds APIcons.swf from the Archipelago logo.
+tools/ap_icon/make_ap_icon.py builds APIcons.swf from the Archipelago logo.
 """
 from __future__ import annotations
 
